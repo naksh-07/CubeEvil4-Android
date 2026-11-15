@@ -575,17 +575,19 @@ constexpr char kColourFs[] =
     "    g *= vec3(1.0) + vec3(0.06, 0.0, -0.14) * clamp(l * 1.6, 0.0, 1.0);\n"
     "    g = clamp(scurve(clamp(g, 0.0, 1.0), 0.25), 0.0, 1.0);\n"
     "  } else if (mode == 3) {\n"
-    // "Requiem" (wish of DevJunior, 15.11.2026, a rainy night street of Resident Evil Requiem as the reference): the
-    // cold colours pale and the picture turns blue-grey while warm lights (fire, lamps, neon) keep their colour; a
-    // dark, hard curve with blue in the middle tones and darker corners
-    "    float warm = clamp((c.r - c.b) * 3.0, 0.0, 1.0);\n"
-    "    g = vec3(l) + (c - vec3(l)) * (0.40 + 0.60 * warm);\n"
-    "    g *= mix(vec3(0.84, 0.97, 1.10), vec3(1.0), warm);\n"
-    "    g = scurve(clamp((g - 0.03) / 0.97, 0.0, 1.0), 0.45) * 0.96;\n"
+    // "Requiem" (wish of DevJunior, 15.11.2026, a rainy night street of Resident Evil Requiem as the reference; "it
+    // must not take colours away: the characters keep theirs"): no colour is paled, the coloured parts even gain a
+    // little; only what is grey already (walls, fog, sky, stone) turns cold blue-grey, most in the middle tones; a
+    // harder, darker curve and darker corners
+    "    float hi = max(c.r, max(c.g, c.b)), lo = min(c.r, min(c.g, c.b));\n"
+    "    float grey = 1.0 - clamp((hi - lo) / max(hi, 0.04) * 2.5, 0.0, 1.0);\n"
+    "    g = vec3(l) + (c - vec3(l)) * 1.12;\n"
+    "    g *= mix(vec3(1.0), vec3(0.88, 0.98, 1.10), grey * 0.85);\n"
+    "    g = scurve(clamp((g - 0.02) / 0.98, 0.0, 1.0), 0.40);\n"
     "    float lg = lum(g);\n"
-    "    g = clamp(g + lg * (1.0 - lg) * 4.0 * vec3(-0.030, 0.008, 0.035), 0.0, 1.0);\n"
+    "    g = clamp(g + grey * lg * (1.0 - lg) * 4.0 * vec3(-0.020, 0.005, 0.025), 0.0, 1.0);\n"
     "    vec2 d = (vUv - 0.5) * vec2(1.0, 0.8);\n"
-    "    g *= 1.0 - 0.45 * smoothstep(0.30, 0.75, length(d));\n"
+    "    g *= 1.0 - 0.35 * smoothstep(0.30, 0.75, length(d));\n"
     "  } else {\n"
     "    g = vec3(l) + (c - vec3(l)) * 0.40;\n"
     "    g = scurve(clamp((g - 0.03) / 0.97, 0.0, 1.0), 0.45);\n"

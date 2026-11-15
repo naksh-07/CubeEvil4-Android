@@ -143,7 +143,7 @@ public final class ActionMapTests {
     check(ActionMap.PAGE.length == ActionMap.ACTIONS && ActionMap.PAGE[4] == ActionMap.C_UP);
     // a mapping saved before 0.99.15 (no C stick in it): the C stick takes its default keys where they are free
     String old = "0=51;1=47;2=29;3=32;4=33;5=59;6=65538;7=65538+65537;8=65538+46;9=31;10=31+65537;11=45;12=61;13=41;"
-        + "14=111;15=131";
+        + "14=111;15=131;20=46";  // (the mods' quick reload on R, as their default; R is also the reload's second key)
     ActionMap before = ActionMap.decode(ActionMap.KIND_KEYBOARD, old);
     check(before.isDefault());
     // ... and where the player put I on Ashley: C up stays without a key, the others get theirs
