@@ -54,6 +54,13 @@ int gParries = 0;
 const void* gGrabEm = 0;  // the enemy whose hold started last (patch 0917)
 int gGrabFrames = 0;      // game frames of that hold so far
 int gEscapes = 0;
+// The chainsaw parried (device report 15.11.2026: "when I parry the chainsaw there is no clash"): its swing's hit
+// (em10CsawHitCk) goes through EmAtkHitCk2 too, so the parry used to turn it aside like any blow and the saw's catch,
+// where the clash happens, never came. Now a parried saw swing connects; its catch becomes the clash.
+const int kSawFrames = 20;  // game frames the parried saw may take to catch
+void* gSawEm = 0;
+int gSawFrames = 0;
+int gSawLife = 0;           // Leon's life before the saw's hit (em10CsawHitCk sets it to 1)
 
 // The villagers' family (em10, em_dm_val.cpp's Dmg_tbl_em10 ids): SE 0xD of their block is the armour hit.
 bool villager(int id)
@@ -123,6 +130,9 @@ void re4_parry_input(cPlayer* pl)
     if (gWindow > 0) {
         gWindow--;
     }
+    if (gSawFrames > 0 && --gSawFrames == 0) {
+        gSawEm = 0;
+    }
     if (gGuard > 0) {
         gGuard--;
     }
@@ -159,6 +169,19 @@ int re4_parry_hit(Vec* pos)
         return 1;
     }
     if (gWindow > 0 && pPL && pPL->r_no_0 == 0) {
+        if (pos) {
+            noteAttacker(pos);
+        }
+        cEm* saw = gAttacker;
+        if (saw && villager(saw->id) && EM10_WK(saw)->Wep_type == 0xC && saw->r_no_0 == 1 &&
+            (saw->r_no_1 == 0x2F || saw->r_no_1 == 0x31)) {
+            gSawEm = saw;
+            gSawFrames = kSawFrames;
+            gSawLife = pG->pl_life;
+            gWindow = 0;
+            re4_log("parry: the chainsaw's swing parried: it connects, its catch becomes the clash");
+            return 0;
+        }
         gWindow = 0;
         gGuard = kGuard;
         gSlash = kSlash;
@@ -166,7 +189,6 @@ int re4_parry_hit(Vec* pos)
         re4_log("parry: a blow turned aside (%d so far)", gParries);
         if (pos) {
             clash(pos);
-            noteAttacker(pos);
         }
         return 1;
     }
@@ -255,7 +277,8 @@ extern "C" {
 // takes the clash, R1 0x30, instead of the decapitation)
 int re4_csaw_parry_open(void)
 {
-    return re4_parry_on() && pG->pl_type == 0 && gWindow > 0 && pPL && pPL->r_no_0 == 0;
+    return re4_parry_on() && pG->pl_type == 0 && pPL &&
+           ((gSawEm && gSawFrames > 0) || (gWindow > 0 && pPL->r_no_0 == 0));
 }
 
 // Patch 0924 (em10_R1_C_SawHit, its first frame): Leon's routine for the catch: the clash's when parried, else `orig`
@@ -265,6 +288,11 @@ void* re4_csaw_clash_routine(void* em, void* orig)
         gClashEm = 0;
         return orig;
     }
+    if (gSawEm == em && gSawFrames > 0 && gSawLife > 1) {
+        pG->pl_life = gSawLife;  // the saw's hit left him at 1: the clash takes no life
+    }
+    gSawEm = 0;
+    gSawFrames = 0;
     gWindow = 0;
     gParries++;
     gClashEm = (cEm*) em;

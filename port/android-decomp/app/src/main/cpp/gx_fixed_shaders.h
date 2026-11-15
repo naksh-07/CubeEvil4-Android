@@ -580,14 +580,18 @@ constexpr char kColourFs[] =
     // little; only what is grey already (walls, fog, sky, stone) turns cold blue-grey, most in the middle tones; a
     // harder, darker curve and darker corners
     "    float hi = max(c.r, max(c.g, c.b)), lo = min(c.r, min(c.g, c.b));\n"
-    "    float grey = 1.0 - clamp((hi - lo) / max(hi, 0.04) * 2.5, 0.0, 1.0);\n"
-    "    g = vec3(l) + (c - vec3(l)) * 1.12;\n"
-    "    g *= mix(vec3(1.0), vec3(0.88, 0.98, 1.10), grey * 0.85);\n"
-    "    g = scurve(clamp((g - 0.02) / 0.98, 0.0, 1.0), 0.40);\n"
+    // (second round, 15.11.2026, "more power, it does not look like the picture": the cold cast on everything, a
+    // third of it on strong colours and all of it on greys; the middle tones darker, the curve harder)
+    "    float grey = 1.0 - clamp((hi - lo) / max(hi, 0.04) * 1.6, 0.0, 1.0);\n"
+    "    float w = 0.35 + 0.65 * grey;\n"
+    "    g = vec3(l) + (c - vec3(l)) * 1.15;\n"
+    "    g = clamp(g * mix(vec3(1.0), vec3(0.74, 0.95, 1.18), w), 0.0, 1.0);\n"
+    "    g = mix(g, g * g, 0.35);\n"
+    "    g = scurve(clamp((g - 0.03) / 0.97, 0.0, 1.0), 0.55);\n"
     "    float lg = lum(g);\n"
-    "    g = clamp(g + grey * lg * (1.0 - lg) * 4.0 * vec3(-0.020, 0.005, 0.025), 0.0, 1.0);\n"
+    "    g = clamp(g + w * lg * (1.0 - lg) * 4.0 * vec3(-0.035, 0.010, 0.045), 0.0, 1.0);\n"
     "    vec2 d = (vUv - 0.5) * vec2(1.0, 0.8);\n"
-    "    g *= 1.0 - 0.35 * smoothstep(0.30, 0.75, length(d));\n"
+    "    g *= 1.0 - 0.50 * smoothstep(0.28, 0.75, length(d));\n"
     "  } else {\n"
     "    g = vec3(l) + (c - vec3(l)) * 0.40;\n"
     "    g = scurve(clamp((g - 0.03) / 0.97, 0.0, 1.0), 0.45);\n"

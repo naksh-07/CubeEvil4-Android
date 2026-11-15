@@ -49,6 +49,12 @@ frames; the slash's hits on its frames 6..10 stagger the attacker as the knife's
 chainsaw clash (runtime/parry.cpp, patch 0924; the 2023 game's chc0_jack_pl_2nd_wp5300 1200 / 1202: Leon holds the
 saw off with his knife, then pushes it away).
 
+--react OUT/melee/react.dat writes the Ganados' hit reactions of the 2023 game (chc0_damage_0th_com, which the mod ships;
+wish of DevJunior, 15.11.2026) for runtime/react.cpp (patch 0925, em10.cpp Dm_Small): the flinches by where the bullet
+hit (REACTS: the class, the motions drawn among), fitted to the Ganado's skeleton, three source frames a game frame
+(1.5 times the speed: 62..102 frames, as long as the game's own 55..97). Entry 0 ("RCT1", big-endian): per motion u8
+its class, u8 0, u16 its entry, u16 its last frame, u16 0.
+
 --move OUT/melee/move.dat writes Leon's movements of the 2023 game (cha0_general, which the mod ships; wish of DevJunior,
 13.11.2026: "remaster Leon's movements", phase 1) for runtime/locomotion.cpp (patch 0923): one seamless cycle each
 (searched: the pair of frames LOOP_SEARCH apart whose poses differ least) of the stand, the walk, the jog (the game's
@@ -96,6 +102,7 @@ KNIFE_HIT = 8         # knife_r3_fire10: hits on frames 6..10, full damage on 7.
 KNIFE_TAIL = 30       # source frames kept after the blade's fastest one
 PARRIES = ["0800_parry_just", "0830_parry_crash_L", "0840_parry_crash_R"]
 PARRY_END = 56        # source frames of a parry kept
+PARRY_BACK = 450.0    # mm Leon steps back at most in a parry answer
 # the 2023 game's chainsaw clash (Leon's side; wp5300 the chainsaw): his knife against the saw, then the push
 CSAW = "_chainsaw/animation/ch/chc0/motlist/2nd/chc0_jack_pl_2nd_wp5300.motlist.663"
 CSAW_MOVES = ["1200_knife_parry_F_start", "1202_knife_parry_F_end"]
@@ -138,7 +145,8 @@ def find_motion(path, key):
 class Fit:
     """One motion fitted to a skeleton, its root kept apart (the root motion)."""
 
-    def __init__(self, motion, model, map_name, step, tol, end, no_fingers=False, frames=None, loop=False):
+    def __init__(self, motion, model, map_name, step, tol, end, no_fingers=False, frames=None, loop=False,
+                 game_like=False):
         body, fingers, nexts = RT.MAPS[map_name]
         mapping = dict(body)
         if not no_fingers:
@@ -155,8 +163,11 @@ class Fit:
         self.hold_back = False
         if loop:
             self.rows = RT.close_loop(self.rows)
+        self.game_like = game_like or map_name == "leon"
         if map_name == "leon":
             self.rows, self.order = RT.split_hips(self.rows, self.order)
+        elif game_like:  # a Ganado's own reactions: his motions do not turn part 0 either (em10.drs)
+            self.rows, self.order = RT.split_hips(self.rows, self.order, rest_parts=(9, 15))
         self.model, self.mapping, self.nexts, self.tol = model, mapping, nexts, tol
         self.root = [r[3] for r in self.rows]  # (position in metres, heading) of the source's root
 
@@ -167,19 +178,22 @@ class Fit:
         track = []
         for p, y in self.root:
             d = turn @ (np.array(p) - np.array(p0)) * world_scale
-            track.append((d[0], 0.0, min(d[2], 0.0) if self.hold_back else d[2], y - y0))
+            # an answer to a parried blow: a step forward turns into one back, at most PARRY_BACK (device report
+            # 15.11.2026: "the parries that look powerful should go backwards")
+            z = max(-abs(d[2]), -PARRY_BACK) if self.hold_back else d[2]
+            track.append((d[0], 0.0, z, y - y0))
         return track
 
     def keep_low(self):
-        """An answer to a parried blow stays where Leon stands (device report 15.11.2026: in one parry he stepped
-        into the enemy, in one he rose taller than him): no step forward (track), the hips no higher than at rest."""
+        """An answer to a parried blow (device report 15.11.2026: in one parry he stepped into the enemy, in one he rose
+        taller than him): its steps go back, never forward (track), the hips no higher than at rest."""
         self.hold_back = True
         top = float(self.model.parts[0].pos[1])
         self.rows = [(r[0], np.array([r[1][0], min(r[1][1], top), r[1][2]])) + tuple(r[2:]) for r in self.rows]
 
     def motion(self, world_scale):
         fixed = None
-        if self.map_name == "leon":
+        if self.game_like:
             fixed = {p: self.model.parts[p].pos for p in (10, 16, 20, 24) if p in self.order}
         return RT.build_motion(self.rows, self.order, self.tol, root=self.track(world_scale), fixed_pos=fixed)
 
@@ -400,6 +414,43 @@ def moves(root, model, tol, out_path):
     print("%s: %d bytes, %d movements" % (out, len(body), len(table)))
 
 
+DAMAGE = "_chainsaw/animation/ch/chc0/motlist/0th/chc0_damage_0th_com.motlist.663"
+# (class of runtime/react.cpp, the motions): 0 body from the front, 1 / 2 right / left forearm, 3 / 4 right / left hand,
+# 5 / 6 right shin (light, heavier), 7 / 8 left shin, 9 body from behind, 10 / 11 right / left arm from behind
+REACTS = [(0, ["0100_body_small_F_verA", "0101_body_small_FL_verB", "0102_body_small_FR_verC"]),
+          (1, ["0300_armR_small_F_verA"]), (2, ["0200_armL_small_F_verA"]),
+          (3, ["0310_armR_medium_F_verA", "0311_armR_medium_F_verB"]),
+          (4, ["0210_armL_medium_F_verA", "0211_armL_medium_F_verB"]),
+          (5, ["0500_LegR_small_F_verA"]), (6, ["0510_LegR_medium_F_verA"]),
+          (7, ["0400_LegL_small_F_verA"]), (8, ["0410_LegL_medium_F_verA"]),
+          (9, ["0130_body_small_B_verA", "0141_body_medium_BL_verB", "0142_body_medium_BR_verC"]),
+          (10, ["0330_armR_small_B_verA"]), (11, ["0230_armL_small_B_verA"])]
+REACT_STEP = 3.0
+
+
+def reacts(root, model, tol, out_path):
+    """The Ganados' hit reactions (see --react)."""
+    _v, mots = R.read_motlist(root / DAMAGE)
+    entries, table = [b""], []
+    for cls, names in REACTS:
+        for name in names:
+            m = next(x for x in mots if x.name.endswith(name))
+            fit = Fit(m, model, "ganado", REACT_STEP, tol, m.frames, game_like=True)
+            data = fcv.serialise(fit.motion(fit.scale))
+            c = fit.check(data)
+            entries.append(data)
+            table.append(struct.pack(">BBHHH", cls, 0, len(entries) - 1, len(fit.frames) - 1, 0))
+            end = fit.track(fit.scale)[-1]
+            print("react class %2d %-26s %3d game frames, %6d bytes, ends %5.0f, %5.0f mm away; check %.1f/%.1f deg" % (
+                cls, name, len(fit.frames), len(data), end[0], end[2], c[0], c[1]))
+    entries[0] = b"RCT1" + struct.pack(">I", len(table)) + b"".join(table)
+    body = U.build_body(entries, [b"RCT\x00"] + [b"FCV\x00"] * (len(entries) - 1))
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(body)
+    print("%s: %d bytes, %d reactions" % (out, len(body), len(table)))
+
+
 def sequence(frames, kill, down):
     keys = []
     for f in range(frames):
@@ -439,6 +490,7 @@ def main(argv=None):
     ap.add_argument("--kicks", help="also write the mod's kicks as the pack's melee archive (melee/melee.dat)")
     ap.add_argument("--box-from", help="the box strike's kick from another pack's melee.dat (entries 16 / 17); "
                     "default RE9's low kick")
+    ap.add_argument("--react", help="also write the Ganados' hit reactions of the 2023 game (melee/react.dat)")
     ap.add_argument("--move", help="also write Leon's movements of the 2023 game (melee/move.dat)")
     a = ap.parse_args(argv)
 
@@ -462,6 +514,8 @@ def main(argv=None):
     leon_model, ganado_model = model_of(a.leon), model_of(a.ganado)
     if a.kicks:
         kicks(root, leon_model, a.tolerance, a.kicks, a.no_fingers, a.box_from)
+    if a.react:
+        reacts(root, ganado_model, a.tolerance, a.react)
     if a.move:
         moves(root, leon_model, a.tolerance, a.move)
     want = set(a.only.split(",")) if a.only else None

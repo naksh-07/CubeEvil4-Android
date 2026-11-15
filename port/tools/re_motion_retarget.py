@@ -283,7 +283,7 @@ def axis_keys_pos(values, tol):
     return fcv.Axis(frames=ks, keys=[(float(v[k]), t_in, t_out) for k, (t_in, t_out) in zip(ks, tangents(v, ks))])
 
 
-def split_hips(rows, order):
+def split_hips(rows, order, rest_parts=None):
     """Leon's motions never turn part 0 (the hips; 1 of the game's 66 does): the game's own turn its children, the
     waist (1) and the pelvis (17), and the player's routines pose the body on that (device report 13.11.2026: with the
     hips turned, the body bent in half while standing and walking). The hips' turn goes to both; part 0 keeps none."""
@@ -297,7 +297,7 @@ def split_hips(rows, order):
         out.append((local,) + tuple(row[1:]))
     # the forearms' twist bones (9, 15) and part 32: the game's motions turn them (its arm IK the twists); left out, they
     # keep the turn of the motion before (device report 13.11.2026: an arm twisted round during the strikes)
-    rest = [p for p in REST_PARTS if p not in order]
+    rest = [p for p in (REST_PARTS if rest_parts is None else rest_parts) if p not in order]
     for row in out:
         for p in rest:
             row[0][p] = np.eye(3)
