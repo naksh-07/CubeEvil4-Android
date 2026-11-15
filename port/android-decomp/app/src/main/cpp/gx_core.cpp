@@ -1331,7 +1331,7 @@ void GxCore::SetTexturePack(std::shared_ptr<const TexPack> pack, unsigned firstL
 }
 void GxCore::SetCrt(int level) { this->crtLevel = level < 0 ? 0 : level > 2 ? 2 : level; }
 void GxCore::SetColour(int mode, int level) {
-  this->colourMode = mode < 0 || mode > 2 ? 0 : mode;
+  this->colourMode = mode < 0 || mode > 3 ? 0 : mode;  // 3 "Requiem" (the mods)
   this->colourStrength = level >= 2 ? 1.0f : 0.5f;
 }
 void GxCore::SetFlares(bool on) { this->flaresOn = on; }

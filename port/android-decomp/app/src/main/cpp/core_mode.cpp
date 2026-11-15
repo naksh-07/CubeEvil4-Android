@@ -3888,9 +3888,9 @@ extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setBloom(JNI
 // Colour (the menu, 0.99.9; GxRenderer::SetColour): mode 0 off, 1 warm film, 2 survival horror; level 1 light,
 // 2 strong.
 extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setColour(JNIEnv *, jclass, jint mode, jint level) {
-  const int m = mode < 0 || mode > 2 ? 0 : mode, l = level >= 2 ? 2 : 1;
+  const int m = mode < 0 || mode > 3 ? 0 : mode, l = level >= 2 ? 2 : 1;  // 3 "Requiem" (the mods, 15.11.2026)
   if (optColour.exchange(m * 4 + l) != m * 4 + l)
-    LOG("colour: %s, %s", m == 1 ? "warm film" : m == 2 ? "survival horror" : "off", l == 2 ? "strong" : "light");
+    LOG("colour: %s, %s", m == 1 ? "warm film" : m == 2 ? "survival horror" : m == 3 ? "requiem" : "off", l == 2 ? "strong" : "light");
 }
 
 // Sharpen (the menu, 0.99.2): a contrast-adaptive sharpening of every picture after FXAA, movies left out

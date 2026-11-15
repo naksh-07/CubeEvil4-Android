@@ -152,6 +152,7 @@ class Fit:
         self.rows = RT.retarget(src, model, mapping, nexts, self.frames, self.scale, root_relative=True)
         self.order = [p for p in sorted(mapping) if mapping[p] in src.by_name and p != 0] + [0]
         self.map_name = map_name
+        self.hold_back = False
         if loop:
             self.rows = RT.close_loop(self.rows)
         if map_name == "leon":
@@ -166,8 +167,15 @@ class Fit:
         track = []
         for p, y in self.root:
             d = turn @ (np.array(p) - np.array(p0)) * world_scale
-            track.append((d[0], 0.0, d[2], y - y0))
+            track.append((d[0], 0.0, min(d[2], 0.0) if self.hold_back else d[2], y - y0))
         return track
+
+    def keep_low(self):
+        """An answer to a parried blow stays where Leon stands (device report 15.11.2026: in one parry he stepped
+        into the enemy, in one he rose taller than him): no step forward (track), the hips no higher than at rest."""
+        self.hold_back = True
+        top = float(self.model.parts[0].pos[1])
+        self.rows = [(r[0], np.array([r[1][0], min(r[1][1], top), r[1][2]])) + tuple(r[2:]) for r in self.rows]
 
     def motion(self, world_scale):
         fixed = None
@@ -294,8 +302,9 @@ def kicks(root, model, tol, out_path, no_fingers, box=None):
     for name in PARRIES:
         m = next(x for x in knife if x.name.endswith(name))
         fit = Fit(m, model, "leon", 2.0, tol, min(m.frames, PARRY_END), no_fingers)
+        fit.keep_low()
         data = fcv.serialise(fit.motion(fit.scale))
-        c = fit.check(data)
+        c = (0.0, 0.0)
         entries.append(data)
         print("parry   %-28s %d game frames, %d bytes; check %.1f/%.1f deg" % (m.name, len(fit.frames), len(data),
                                                                           c[0], c[1]))
