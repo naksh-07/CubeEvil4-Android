@@ -274,8 +274,8 @@ void* re4_csaw_clash_routine(void* em, void* orig)
     return (void*) plCsawClash;
 }
 
-// Patch 0924 (em10_R1_C_SawHit, its struggle step, each frame): in the clash no death timer, no blood on the saw, the
-// metal clash instead of the cutting sound
+// Patch 0924 (em10_R1_C_SawHit, its struggle step, each frame): in the clash the mash with its button icon, no death
+// timer, no blood on the saw, the metal clash instead of the cutting sound
 void re4_csaw_clash_frame(void* p)
 {
     cEm* em = (cEm*) p;
@@ -283,6 +283,10 @@ void re4_csaw_clash_frame(void* p)
         return;
     }
     FREE_EM10* w = EM10_WK(em);
+    // the game's mash: its button icon (ActBtn DISP_GACHA) and the presses counted (m_GachaCtr; C_SawHit itself never
+    // calls it, so in the GameCube game the struggle shows no icon and the mash never frees him: the saw always kills).
+    // More than 30 (1.5x on the easy levels) break him free.
+    PlGachaMove();
     w->Timer = 2;   // the death comes when Timer and Timer2 have run out
     w->Timer3 = 2;  // the blood on the saw every other frame when it runs out
     if (!gClashCut) {
