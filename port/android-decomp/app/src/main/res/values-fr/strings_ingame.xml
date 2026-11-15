@@ -88,6 +88,8 @@
     <string name="ingame_far_camera">Caméra éloignée</string>
     <string name="ingame_auto_aim_help">Visée auto : quand tu lèves ton arme, la visée saute sur l’ennemi le plus proche devant toi et le suit un instant (l’aide à la visée du jeu).</string>
     <string name="ingame_always_run_help">Toujours courir : Leon court dès que tu te déplaces ; maintiens le bouton de course (par ex. B) pour marcher.</string>
+    <string name="ingame_gentle_qte">QTE plus doux (Professional)</string>
+    <string name="ingame_gentle_qte_help">QTE plus doux\u00A0: en Professional, les séquences de boutons (esquiver, le combat au couteau, appuyer vite) laissent autant de temps et demandent autant d’appuis qu’en Normal\u00A0; les dégâts et les ennemis restent ceux de Professional. Un doigt sur l’image appuie sur les boutons d’une invite dès qu’il touche l’écran, dans toutes les difficultés.</string>
     <string name="ingame_far_camera_help">Garde la caméra d\'épaule un peu plus loin derrière Leon en marchant et à l\'arrêt. En visant et dans les endroits étroits, elle se rapproche comme avant ; entre les deux, elle glisse en douceur.</string>
     <string name="ingame_free_move">Déplacement libre</string>
     <string name="ingame_aim_move">Bouger en visant</string>
@@ -102,6 +104,7 @@
     <string name="ingame_aim_touch_area">Zone tactile</string>
     <string name="ingame_aim_c_stick">Stick C</string>
     <string name="ingame_touch_aim_help">Visée tactile : tant que L ou R tient une arme prête, la zone tactile vise en glissant sur la moitié droite (la visée suit votre doigt et s’arrête quand il s’arrête) ou le stick C tactile vise comme un stick (ajoutez-le avec l’engrenage en haut à droite). Stick de déplacement : comme sur GameCube.</string>
+    <string name="ingame_touch_zoom_help">Zoomer dans la lunette ou les jumelles au tactile\u00A0: glissez vers le haut ou le bas sur la moitié droite (en visant avec le stick de déplacement ou le stick C) ou sur le stick C tactile, ou ajoutez les boutons de zoom + et − avec l’engrenage en haut à droite (ils zooment tant qu’on les maintient).</string>
     <string name="ingame_gyro_sensitivity">Sensibilité du gyroscope</string>
     <string name="ingame_gyro_invert_v">Inverser la verticale</string>
     <string name="ingame_gyro_invert_h">Inverser l’horizontale</string>
@@ -121,10 +124,15 @@
     <string name="ingame_update_page">La dernière version s\'ouvre sur GitHub\u00A0: téléchargez-y l\'APK et installez-le.</string>
 
     <string name="ingame_card">Carte mémoire (emplacement A)</string>
-    <string name="ingame_card_help">Exporter et importer les données de jeu\u00A0: les sauvegardes au format .gci (pour Dolphin ou GameCube) et votre disposition tactile personnalisée dans CubeEvil4-touch-layout.json. L’importation restaure les deux.</string>
+    <string name="ingame_card_help">Exporter les données de jeu\u00A0: les sauvegardes au format .gci (pour Dolphin ou GameCube) avec votre disposition tactile personnalisée dans CubeEvil4-touch-layout.json, ou tout dans un .zip (sauvegardes, sauvegarde instantanée, RetroTouch et réglages de l’application). L’importation restaure le tout. Supprimer toutes les données vide la carte mémoire.</string>
     <string name="ingame_card_busy">La carte est utilisée (le jeu sauvegarde ou charge) ou le jeu charge encore – fermez le menu et rouvrez-le dans un instant.</string>
     <string name="ingame_card_none">Aucune carte mémoire.</string>
     <string name="ingame_export">Exporter les données de jeu (.gci)</string>
+    <string name="ingame_export_zip">Exporter les données de jeu (.zip)</string>
+    <string name="ingame_wipe">Supprimer toutes les données</string>
+    <string name="ingame_wipe_text">Toutes les sauvegardes de la carte mémoire et la sauvegarde instantanée seront supprimées, comme si la carte était formatée. RetroTouch reste (votre disposition tactile et ses réglages), de même que les disques, les textures HD et les réglages de l’application. Impossible d’annuler\u00A0: pour garder vos sauvegardes, exportez-les d’abord (.zip). Le jeu redémarre pour cela.</string>
+    <string name="ingame_wipe_cancel">Annuler</string>
+    <string name="ingame_wipe_yes">Supprimer</string>
     <string name="ingame_import">Importer des données de jeu (.gci, .zip, .raw)</string>
     <string name="ingame_discs">Disques</string>
     <string name="ingame_discs_help">Pour jouer à une autre version\u00A0: la partie se termine et vous importez ses deux disques depuis l’écran de démarrage. Les sauvegardes, la carte mémoire et les réglages sont conservés.</string>
@@ -139,7 +147,7 @@
     <string name="ingame_report_send">Envoyer le rapport …</string>
     <string name="ingame_report_save">Enregistrer le rapport …</string>
 
-    <string name="ingame_source">Code source</string>
+    <string name="ingame_source">Code source et mises à jour</string>
     <string name="ingame_source_line">Plus d’infos sur ce portage\u00A0: %1$s</string>
     <string name="ingame_no_browser">Aucun navigateur sur cet appareil</string>
 
@@ -184,6 +192,26 @@
     <string name="ingame_touch_imported">Disposition tactile importée\u00A0: active immédiatement.</string>
     <string name="ingame_touch_skipped">Disposition tactile ignorée\u00A0: la vôtre est conservée.</string>
     <string name="ingame_touch_import_bad">Disposition tactile non importée\u00A0: %1$s</string>
+    <plurals name="ingame_backup_saved">
+        <item quantity="one">%1$d fichier de la carte mémoire enregistré dans %2$s.</item>
+        <item quantity="many">%1$d fichiers de la carte mémoire enregistrés dans %2$s.</item>
+        <item quantity="other">%1$d fichiers de la carte mémoire enregistrés dans %2$s.</item>
+    </plurals>
+    <string name="ingame_backup_with_instant">Avec la sauvegarde instantanée.</string>
+    <string name="ingame_backup_with_touch">Avec votre disposition tactile.</string>
+    <string name="ingame_backup_with_settings">Avec les réglages de l’application et de RetroTouch.</string>
+    <string name="ingame_backup_instant_imported">Sauvegarde instantanée importée.</string>
+    <string name="ingame_backup_instant_exists">Vous avez déjà une sauvegarde instantanée. La remplacer par celle importée\u00A0?</string>
+    <string name="ingame_backup_instant_skipped">Sauvegarde instantanée ignorée\u00A0: la vôtre est conservée.</string>
+    <string name="ingame_backup_instant_bad">Sauvegarde instantanée non importée\u00A0: %1$s</string>
+    <string name="ingame_backup_settings_exists">Remplacer vos réglages par ceux importés (commandes, RetroTouch, jeu, graphismes et son)\u00A0?</string>
+    <string name="ingame_backup_settings_imported">Réglages importés.</string>
+    <string name="ingame_backup_settings_skipped">Réglages ignorés\u00A0: les vôtres sont conservés.</string>
+    <string name="ingame_backup_settings_same">Réglages\u00A0: identiques aux vôtres.</string>
+    <string name="ingame_backup_settings_bad">Réglages non importés\u00A0: %1$s</string>
+    <string name="ingame_backup_graphics_kept">La sauvegarde vient d’un autre appareil (%1$s)\u00A0: la résolution, le moteur de rendu et les autres réglages de performance de cet appareil sont conservés.</string>
+    <string name="ingame_backup_newer">Le fichier vient d’une version plus récente (%1$s)\u00A0: les réglages que cette version n’a pas sont ignorés.</string>
+    <string name="ingame_backup_restart">Le jeu redémarre pour utiliser les réglages importés. La progression non sauvegardée est perdue.</string>
     <string name="ingame_report_chooser">Envoyer le rapport d’erreurs</string>
     <string name="ingame_report_failed">Impossible de créer le rapport\u00A0: %1$s</string>
     <string name="ingame_capture_saved">Capture graphique enregistrée</string>
@@ -204,7 +232,7 @@
     <string name="ingame_display_summary">Résolution, format et effets</string>
     <string name="ingame_controls_summary">Tactile, gyroscope et confort</string>
     <string name="ingame_performance_summary">Cœurs performants, 60 FPS et compteur</string>
-    <string name="ingame_management_summary">Carte mémoire, disques, rapports et sources</string>
+    <string name="ingame_management_summary">Carte mémoire, disques, rapports, sources et mises à jour</string>
     <string name="ingame_audio">Audio</string>
     <string name="ingame_audio_summary">Musique et effets sonores</string>
     <string name="ingame_cheats_summary">Général, armes, argent et textures</string>
@@ -337,6 +365,10 @@
     <string name="ingame_act_left">Gauche</string>
     <string name="ingame_act_back">Reculer</string>
     <string name="ingame_act_forward">Avancer</string>
+    <string name="ingame_act_c_up">Stick C haut (zoom avant)</string>
+    <string name="ingame_act_c_down">Stick C bas (zoom arrière)</string>
+    <string name="ingame_act_c_left">Stick C gauche</string>
+    <string name="ingame_act_c_right">Stick C droite</string>
     <string name="ingame_map_swapped">%1$s est maintenant sur %2$s.</string>
     <string name="ingame_map_fixed_key">Cette touche est fixe (croix, valider, retour).</string>
     <string name="ingame_map_use_keyboard">Appuyez sur une touche du clavier.</string>
@@ -349,6 +381,7 @@
     <string name="ingame_map_press">Appuyez sur une touche …</string>
     <string name="ingame_map_keyboard">Clavier et souris</string>
     <string name="ingame_mouse_help">La souris (Android 8 et plus) appartient au jeu pendant la partie : la déplacer tourne la caméra, en visant elle déplace la visée, aux jumelles le regard. Sa molette zoome avec la lunette et les jumelles (vers le haut : plus près). Le menu de l’app (F1) libère le pointeur.</string>
+    <string name="ingame_keyboard_c_help">Le couteau\u00A0: maintenez sa touche et bougez la souris pour viser, comme avec les armes. Les touches du stick C (I, K, J, L sauf si vous les changez) tournent la caméra et zooment la lunette et les jumelles (haut\u00A0: zoom avant, bas\u00A0: zoom arrière), comme la molette.</string>
     <string name="ingame_mouse_sensitivity">Sensibilité de la souris</string>
     <string name="ingame_map_controller">Manette</string>
     <string name="ingame_map_device">Appareil</string>
@@ -390,7 +423,7 @@
     <string name="ingame_limit_none">rien de notable</string>
     <string name="ingame_bench_welcome">Bienvenue dans CubeEvil4</string>
     <string name="ingame_bench_redo">Mesurer à nouveau</string>
-    <string name="ingame_bench_redo_text">Nouveau\u00A0: le benchmark mesure maintenant aussi le processeur, pour une proposition mieux adaptée à cet appareil. Tes réglages restent tels quels tant que tu n\'acceptes pas la nouvelle proposition.</string>
+    <string name="ingame_bench_redo_text">Nouveau\u00A0: le benchmark garde maintenant une réserve pour les endroits plus lourds, pour que la résolution reste stable pendant que tu joues. Tes réglages restent tels quels tant que tu n\'acceptes pas la nouvelle proposition.</string>
     <string name="ingame_bench_text">L\'app mesure ce que cet appareil peut faire et propose les meilleurs réglages. Le jeu se rend pour cela au ponton du lac (pluie, eau, brouillard) et la caméra tourne autour du personnage. Cela prend environ 2 à 3 minutes ; le son est coupé. Ensuite, tu reviens là où tu étais. B / Retour annule.</string>
     <string name="ingame_bench_first_note">Ce sera proposé à nouveau au prochain démarrage.</string>
     <string name="ingame_bench_start">Lancer la mesure</string>

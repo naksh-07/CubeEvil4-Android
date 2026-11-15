@@ -113,6 +113,9 @@ struct Frame {
   // (SubmitWork, else Submit), read once its fence was waited for (VkRenderer::ReadGpuTime)
   VkQueryPool gpuTime = VK_NULL_HANDLE;
   bool gpuTimeOpen = false, gpuTimeEnded = false;
+  // a Run (a chunk or an in-between picture) was recorded into it (0.99.15): only then its time is a picture's (as GL's
+  // chunk timer); a refresh without a new chunk (30 FPS: every second vsync) goes to the presents' time
+  bool ran = false;
 };
 
 // The end of a render pass: what waits for its attachments (PassDependencies). Until 0.99.8 the vertex shaders
@@ -432,8 +435,9 @@ struct VkRenderer final : GxCore {
   Image flareVis[2];
   Fixed flareVisFx, flareFx;
   // bloom (0.99.13, as GlRenderer::BloomPass): its bright parts, the blur, the add; the bloom's two pictures
-  Fixed bloomPickFx, bloomBlurFx, bloomAddFx;
-  Image bloomImg[2];
+  Fixed bloomKeyFx, bloomPickFx, bloomBlurFx, bloomAddFx;
+  // [0] the pick and the wide glow, [1] the blurs' half way, [2] the narrow glow (0.99.14); the scene's key (1 x 1)
+  Image bloomImg[3], bloomKeyImg;
   int flareVisCur = 0;
   // the gameplay autofocus (Autofocus): the focus (this picture's and the one before), the blur at the full or at
   // half the resolution, their pipelines; the EFB's colour alone (the mix without MSAA)
@@ -778,6 +782,8 @@ struct VkRenderer final : GxCore {
       f.workPending = false;
     }
     ReadGpuTime(f);
+    // (a submit in the middle of a chunk: its rest is the same picture's work)
+    f.ran = continuing && f.ran;
     f.split = false;
     for (auto &t : f.trash)
       t();
@@ -847,6 +853,16 @@ struct VkRenderer final : GxCore {
     if (ms >= 0.0 && ms < 1000.0) {
       timing.gpuMs += ms;
       timing.gpuMeasured++;
+      // (0.99.14: also for "Dynamic", gx_auto_level.h: a picture's GPU time, as GL's timer queries.) 0.99.15: only a
+      // frame with a Run; until then a refresh without a new chunk counted as a picture of almost no time, so at 30
+      // FPS a picture read about half its time and Dynamic hardly stepped down (review of 0.99.14)
+      if (f.ran) {
+        stats.gpuMicros += static_cast<unsigned long long>(ms * 1000.0);
+        stats.gpuTimed++;
+      } else {
+        stats.presentMicros += static_cast<unsigned long long>(ms * 1000.0);
+        stats.presentTimed++;
+      }
     }
   }
   // The frame to the GPU. wait: until it is done; next: the next frame is another one (else this frame goes on
@@ -1302,6 +1318,15 @@ struct VkRenderer final : GxCore {
 
   // ---- shaders and pipelines ----
   VkShaderModule Module(const std::string &glsl, bool vertex, std::string *log) {
+    // (made on the render thread: loading for "Dynamic", GxStats::loadUs)
+    struct Loading {
+      std::uint64_t &us;
+      const std::chrono::steady_clock::time_point at = std::chrono::steady_clock::now();
+      ~Loading() {
+        us += static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - at).count());
+      }
+    } loading{stats.loadUs};
     std::vector<std::uint32_t> spirv;
     // the SPIR-V a run before compiled (E8), else compiled now and kept
     static const std::uint64_t compiler = Fnv(CompilerName(), std::strlen(CompilerName()));
@@ -1398,6 +1423,7 @@ struct VkRenderer final : GxCore {
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     timing.pipelines++;
     timing.pipelineMs += ms;
+    stats.loadUs += static_cast<std::uint64_t>(ms * 1000.0);
     timing.pipelineMax = std::max(timing.pipelineMax, ms);
     // made anew, not from the driver's cache (at least 2 ms): what the app's list missed or had not made yet
     if (ms >= 2.0)
@@ -1988,6 +2014,12 @@ struct VkRenderer final : GxCore {
       cba.srcColorBlendFactor = cba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
       cba.srcAlphaBlendFactor = cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
       cba.colorBlendOp = cba.alphaBlendOp = VK_BLEND_OP_ADD;
+    } else if (blend == 3) {  // a screen over what is there: one + one minus the source's colour (the bloom, 0.99.14)
+      cba.blendEnable = VK_TRUE;
+      cba.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+      cba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+      cba.srcAlphaBlendFactor = cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      cba.colorBlendOp = cba.alphaBlendOp = VK_BLEND_OP_ADD;
     } else if (blend == 2) {  // over what is there by the source's alpha (the autofocus's mix)
       cba.blendEnable = VK_TRUE;
       cba.srcColorBlendFactor = cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -2184,6 +2216,7 @@ struct VkRenderer final : GxCore {
     if (!interpPass && peekReady)
       DeliverDepth();  // the depth maps the GPU finished since the last chunk go to the core
     Begin();
+    F().ran = true;  // its GPU time is a picture's (ReadGpuTime)
   }
   void UploadChunk(const Re4GxChunk &chunk) override {
     Begin();
@@ -2347,12 +2380,13 @@ struct VkRenderer final : GxCore {
   bool MakeBloom() {
     std::string error;
     const VkColorComponentFlags rgb = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT;
-    if (!FilterProgram(bloomPickFx, fixed::kQuadVs, fixed::kBloomPickFs, "bloom") ||
+    if (!FilterProgram(bloomKeyFx, fixed::kQuadVs, fixed::kBloomKeyFs, "bloom") ||
+        !FilterProgram(bloomPickFx, fixed::kQuadVs, fixed::kBloomPickFs, "bloom") ||
         !FilterProgram(bloomBlurFx, fixed::kQuadVs, fixed::kBloomBlurFs, "bloom") ||
-        !MakeFixed(bloomAddFx, fixed::kQuadVs, fixed::kBloomAddFs, efbPass, rgb, false, &error, false, nullptr, 1)) {
+        !MakeFixed(bloomAddFx, fixed::kQuadVs, fixed::kBloomAddFs, efbPass, rgb, false, &error, false, nullptr, 3)) {
       if (!error.empty())
         GXLOG("bloom (Vulkan): shader failed: %s", error.c_str());
-      for (Fixed *f : {&bloomPickFx, &bloomBlurFx, &bloomAddFx})
+      for (Fixed *f : {&bloomKeyFx, &bloomPickFx, &bloomBlurFx, &bloomAddFx})
         FreeFixed(*f);
       return false;
     }
@@ -2371,36 +2405,49 @@ struct VkRenderer final : GxCore {
     const int f = 2 * std::max(1, halves);  // a texel per 4 x 4 game pixels (halves: texels per 2 game pixels)
     const int taps = std::min(f, 4);
     const int bw = (region[2] + f - 1) / f, bh = (region[3] + f - 1) / f;
-    if (!FilterImage(bloomImg[0], bw, bh) || !FilterImage(bloomImg[1], bw, bh)) {
+    if (!FilterImage(bloomImg[0], bw, bh) || !FilterImage(bloomImg[1], bw, bh) || !FilterImage(bloomImg[2], bw, bh) ||
+        !FilterImage(bloomKeyImg, 1, 1)) {
       bloomFailed = true;
       return;
     }
     float halos[8][4];
     BloomHalos(halos);
     const float rf[4] = {float(region[0]), float(region[1]), float(region[2]), float(region[3])};
+    const float keep[4] = {look.keepMax, look.cap, look.least, look.power};
+    {
+      // the scene's key: the threshold and the budget's scale (kBloomKeyFs)
+      std::vector<std::uint8_t> pc(bloomKeyFx.constants.bytes, 0);
+      Put(pc, bloomKeyFx, "region", rf);
+      const float pick[4] = {look.base, look.slope, look.lo, look.hi};
+      Put(pc, bloomKeyFx, "pick", pick);
+      Put(pc, bloomKeyFx, "keep", keep);
+      Image *from[1] = {&efbColor};
+      FilterPass(bloomKeyFx, bloomKeyImg, from, 1, pc);
+    }
     {
       std::vector<std::uint8_t> pc(bloomPickFx.constants.bytes, 0);
       Put(pc, bloomPickFx, "region", rf);
       const float size[4] = {float(bw), float(bh), float(f), float(taps)};
       Put(pc, bloomPickFx, "size", size);
-      const float pick[4] = {look.threshold, 1.0f / (1.0f - look.threshold), 0.0f, 0.0f};
-      Put(pc, bloomPickFx, "pick", pick);
+      Put(pc, bloomPickFx, "keep", keep);
       PutArray(pc, bloomPickFx, "halo", halos, sizeof(halos[0]), 8);
-      Image *from[1] = {&efbColor};
-      FilterPass(bloomPickFx, bloomImg[0], from, 1, pc);
+      Image *from[2] = {&efbColor, &bloomKeyImg};  // (src, key: as the shader declares them)
+      FilterPass(bloomPickFx, bloomImg[0], from, 2, pc);
     }
+    // the first pair into bloomImg[2] (the narrow glow, kept), the others from there into bloomImg[0] (the wide one)
     for (int b = 0; b < look.blurs; b++) {
       const float spread = BloomLook::Spread(b);
       std::vector<std::uint8_t> pc(bloomBlurFx.constants.bytes, 0);
       const float h[4] = {spread / float(bw), 0.0f, float(bw), float(bh)};
       Put(pc, bloomBlurFx, "dir", h);
-      Image *a[1] = {&bloomImg[0]};
+      Image *a[1] = {b == 1 ? &bloomImg[2] : &bloomImg[0]};
       FilterPass(bloomBlurFx, bloomImg[1], a, 1, pc);
       const float v[4] = {0.0f, spread / float(bh), float(bw), float(bh)};
       Put(pc, bloomBlurFx, "dir", v);
       Image *c[1] = {&bloomImg[1]};
-      FilterPass(bloomBlurFx, bloomImg[0], c, 1, pc);
+      FilterPass(bloomBlurFx, b == 0 ? bloomImg[2] : bloomImg[0], c, 1, pc);
     }
+    Image &wide = look.blurs >= 2 ? bloomImg[0] : bloomImg[2];
     // added into the EFB's colour over the scene's part (the EFB pass goes on with the full viewport)
     VkCommandBuffer cb = F().draw;
     BeginEfbPass();
@@ -2411,8 +2458,9 @@ struct VkRenderer final : GxCore {
     Put(pa, bloomAddFx, "region", rf);
     const float size[4] = {float(bw), float(bh), float(f), look.strength};
     Put(pa, bloomAddFx, "size", size);
-    const VkImageView view = bloomImg[0].view;
-    BindFixed(bloomAddFx, &view, &linearClamp, 1, pa);
+    const float glow[4] = {look.core, 0.0f, 0.0f, 0.0f};
+    Put(pa, bloomAddFx, "glow", glow);
+    BindFixedNamed(bloomAddFx, {{"bloom", wide.view, linearClamp}, {"core", bloomImg[2].view, linearClamp}}, pa);
     vkCmdDraw(cb, 4, 1, 0, 0);
     stats.bloomPasses++;
   }
@@ -4481,10 +4529,11 @@ struct VkRenderer final : GxCore {
     colourShown = crtReady = false;
     for (Fixed *f : {&fxaaFx, &sharpFx, &psxFx, &flareVisFx, &flareFx, &focusFx, &blurFx, &halfFx, &mixFx, &dofBackFx})
       FreeFixed(*f);
-    for (Fixed *f : {&bloomPickFx, &bloomBlurFx, &bloomAddFx})
+    for (Fixed *f : {&bloomKeyFx, &bloomPickFx, &bloomBlurFx, &bloomAddFx})
       FreeFixed(*f);
     for (Image &b : bloomImg)
       Destroy(b);
+    Destroy(bloomKeyImg);
     for (Image &v : flareVis)
       Destroy(v);
     for (Image *img : {&focusImg[0], &focusImg[1], &blurImg, &halfImg})

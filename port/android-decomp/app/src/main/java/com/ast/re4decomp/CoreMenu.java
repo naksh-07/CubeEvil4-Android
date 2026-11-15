@@ -46,7 +46,13 @@ final class CoreMenu extends Dialog {
     /** Picture options changed (the preferences hold them). */
     void graphicsChanged();
     void exportAll();
+    /** "Export Player Data (.zip)" (0.99.15, PlayerBackup): the memory card's files, the touch layout, the instant save
+     *  and the settings in one ZIP the player names. */
+    void exportZip();
     void importFiles();
+    /** "Delete All Data" (the menu asked first, 0.99.15, PlayerWipe): the game restarts and the memory card and the
+     *  instant save are deleted before the core opens them. */
+    void wipePlayerData();
     /** "Import other discs" (the menu asked first): the game ends and the start screen opens without starting it. */
     void importDiscs();
     /** "Import texture pack" (Cheats & Mods, TexturePacks): the file picker, then the copy into the app's textures
@@ -119,6 +125,8 @@ final class CoreMenu extends Dialog {
     void movementChanged(boolean freeMove, boolean aimMove, boolean quickSlots, boolean parry);
     /** "Leon's outfit" (0 the story's, 1 the first, 2 the second) and "Weapon on the back" (CoreBridge.setWardrobe). */
     void wardrobeChanged(int outfit, boolean backWeapon);
+    /** "Gentler QTEs" (0.99.15): Professional's quick-time events as Normal's (CoreBridge.setGentleQte). */
+    void gentleQteChanged(boolean on);
     /** The European discs are imported: the home page offers "Game language". */
     boolean gameLanguages();
     /** The debug build's discs are imported: SELECT held opens the game's debug menu (the button mapping says so). */
@@ -202,6 +210,8 @@ final class CoreMenu extends Dialog {
   private static final int UPDATE_RED = 0xff7a2a26, UPDATE_RED_EDGE = 0xffb2463f;
   // the warning before another player character (08.11.2026): a dark red under the text, the "Update" button's edge
   private static final int WARN_RED = 0xff4e1f1c;
+  // "Delete All Data" in a quiet red (wish of the project owner, 14.11.2026: "dezent rötlich"), as the Benchmark's green
+  private static final int WIPE_RED = 0xff3a2321, WIPE_RED_EDGE = 0xff6e3c37, WIPE_TEXT = 0xffe2c7c2;
   // the Benchmark button: the green of "Up to date", quieter (wish of the project owner, 06.11.2026)
   private static final int BENCH_GREEN = 0xff223a27, BENCH_GREEN_EDGE = 0xff3b6343, BENCH_TEXT = 0xffc3d6c5;
   private final Handler main = new Handler(Looper.getMainLooper());
@@ -225,7 +235,7 @@ final class CoreMenu extends Dialog {
   private Button hdImport;
   private boolean updateAsked;  // the question after an update (PerfProfile.FIRST_ASK) shown in this menu
   private int cheatBits;  // the cheat switches as the page sent them last (CoreActivity.CHEATS)
-  private Button exportAll, saveSlot, loadSlot;
+  private Button exportAll, exportZip, saveSlot, loadSlot;
   private TextView modsLine;
   private MenuLayout.Buttons modsBox;
   private Button modsRemove;
@@ -1078,8 +1088,13 @@ final class CoreMenu extends Dialog {
     // the knife's own (wish of DevJunior, 11.11.2026: "the knife's sensitivity apart from the gun's")
     sliderRow(R.string.ingame_knife_speed, CoreActivity.AIM_SPEED_MIN, CoreActivity.AIM_SPEED_MAX,
         CoreActivity.AIM_SPEED_STEP, host == null ? 1f : host.knifeSpeed(), value -> host.knifeSpeedChanged(value));
+    // "Gentler QTEs" (wish of the project owner, 14.11.2026: Professional's quick-time events "not to be done by touch,
+    // just about with a controller"): on by default, the whole row, at the comfort controls' end
+    toggle(buttonsRow(body), R.string.ingame_gentle_qte,
+        input.getBoolean(CoreActivity.GENTLE_QTE, CoreActivity.GENTLE_QTE_DEFAULT), on -> host.gentleQteChanged(on));
     help(R.string.ingame_alternate_help); help(R.string.ingame_latch_help); help(R.string.ingame_auto_aim_help);
-    help(R.string.ingame_always_run_help); help(R.string.ingame_aim_help); help(R.string.ingame_knife_speed_help);
+    help(R.string.ingame_always_run_help); help(R.string.ingame_gentle_qte_help); help(R.string.ingame_aim_help);
+    help(R.string.ingame_knife_speed_help);
     help(R.string.ingame_knife_swipe_help);
     // touch aiming (wish of the project owner, 28.10.2026): what aims while L or R is held; since 05.11.2026 a section
     // of its own, a third of the row each
@@ -1088,6 +1103,7 @@ final class CoreMenu extends Dialog {
         s(R.string.ingame_aim_c_stick)}, new int[] {CoreInput.AIM_MOVE_STICK, CoreInput.AIM_LOOK, CoreInput.AIM_C_STICK},
         input.getInt(CoreActivity.TOUCH_AIM, CoreInput.AIM_MOVE_STICK), 3, mode -> host.touchAimChanged(mode));
     help(R.string.ingame_touch_aim_help);
+    help(R.string.ingame_touch_zoom_help);  // (0.99.15, GitHub #247)
     // PLAYER VIEW above the laser sight (wish of the project owner, 05.11.2026): the far camera (a user's wish,
     // 01.11.2026; patch 0171) in the left half, the field of view (patch 0205) as a slider in the right half
     heading(R.string.ingame_player_view);
@@ -1193,7 +1209,8 @@ final class CoreMenu extends Dialog {
       R.string.ingame_act_left, R.string.ingame_act_right, R.string.ingame_act_action, R.string.ingame_act_run,
       R.string.ingame_act_aim, R.string.ingame_act_fire, R.string.ingame_act_reload, R.string.ingame_act_knife,
       R.string.ingame_act_slash, R.string.ingame_act_ashley, R.string.ingame_act_inventory, R.string.ingame_act_map,
-      R.string.ingame_act_options, R.string.ingame_act_menu, R.string.ingame_act_quick_reload};
+      R.string.ingame_act_options, R.string.ingame_act_menu, R.string.ingame_act_c_up, R.string.ingame_act_c_down,
+      R.string.ingame_act_c_left, R.string.ingame_act_c_right, R.string.ingame_act_quick_reload};
 
   /** An action's name; the app menu's says "held: debug menu" only with the debug build's discs (the retail discs
    *  have none, 06.11.2026). */
@@ -1272,7 +1289,8 @@ final class CoreMenu extends Dialog {
     ActionMap def = ActionMap.defaults(mapKind), m = host == null ? null : host.mapping(mapKind);
     if (m == null) m = def;
     bindingButtons = new Button[ActionMap.ACTIONS];
-    for (int a = 0; a < ActionMap.ACTIONS; a++) {
+    // (in the page's order: the C stick's keys after the moves, 0.99.15)
+    for (int a : ActionMap.PAGE) {
       if (!ActionMap.available(mapKind, a)) continue;
       final int action = a;
       LinearLayout line = new MenuLayout.Columns(getContext(), -300, 420, false);
@@ -1333,6 +1351,8 @@ final class CoreMenu extends Dialog {
       @Override public void onStopTrackingTouch(SeekBar b) {}
     });
     body.addView(line);
+    help(R.string.ingame_mouse_help);
+    help(R.string.ingame_keyboard_c_help);  // (0.99.15, GitHub #247: the knife by the mouse, the C stick's keys)
   }
 
   /** Waits for the key of `action` (a second press on its button: no change); after 8 s it gives up. */
@@ -1666,9 +1686,13 @@ final class CoreMenu extends Dialog {
   private void management() {
     heading(R.string.ingame_card); help(R.string.ingame_card_help);
     cardLine = text("", 15, false); cardLine.setPadding(dp(MenuLayout.GAP), 0, dp(MenuLayout.GAP), 0); body.addView(cardLine);
+    // the .zip export beside the .gci one, then the import and "Delete All Data" (wish of the project owner,
+    // 14.11.2026, 0.99.15)
     MenuLayout.Buttons cardButtons = buttonsRow(body);
     exportAll = cellAction(cardButtons, s(R.string.ingame_export), v -> host.exportAll());
-    cellAction(cardButtons, s(R.string.ingame_import), v -> host.importFiles()); refreshCard();
+    exportZip = cellAction(cardButtons, s(R.string.ingame_export_zip), v -> host.exportZip());
+    cellAction(cardButtons, s(R.string.ingame_import), v -> host.importFiles());
+    cardButtons.addButton(wipeButton()); refreshCard();
     // another release over the imported discs (wish of the project owner, 06.11.2026)
     heading(R.string.ingame_discs); help(R.string.ingame_discs_help);
     cellAction(buttonsRow(body), s(R.string.ingame_import_discs), v -> askImportDiscs());
@@ -1683,8 +1707,82 @@ final class CoreMenu extends Dialog {
     // owner, 08.11.2026): emptied by hand here
     heading(R.string.ingame_shader_cache); help(R.string.ingame_shader_cache_help);
     cellAction(buttonsRow(body), s(R.string.ingame_shader_clear), v -> askClearShaders());
+    // "Source and updates" (wish of the project owner, 14.11.2026): the releases are on the same page
     heading(R.string.ingame_source);
     cellAction(buttonsRow(body), getContext().getString(R.string.ingame_source_line, SOURCE_URL), v -> openSource());
+  }
+
+  /** "Delete All Data" in a quiet red (the Benchmark button's way, in red). */
+  private Button wipeButton() {
+    Button wipe = button(s(R.string.ingame_wipe), v -> askWipe());
+    StateListDrawable quiet = new StateListDrawable();
+    quiet.addState(new int[] {android.R.attr.state_focused}, focused());
+    quiet.addState(new int[] {android.R.attr.state_pressed}, shape(WIPE_RED, UPDATE_RED_EDGE, 6));
+    quiet.addState(new int[0], shape(WIPE_RED, WIPE_RED_EDGE, 6));
+    wipe.setBackground(quiet);
+    wipe.setTextColor(FocusLook.text(ColorStateList.valueOf(WIPE_TEXT)));
+    wipe.setEnabled(host != null);
+    return wipe;
+  }
+
+  /**
+   * Before "Delete All Data" (wish of the project owner, 14.11.2026): the red question of the player characters
+   * (warnCharacter) with two buttons, "Cancel" and "Delete" in red; the text says what goes and what stays. The focus
+   * starts on "Cancel"; Back, B, Esc, START, SELECT or a touch beside it cancel, A or Enter press the focused button.
+   * "Delete" closes the menu, and the game restarts without the memory card's data (Host.wipePlayerData).
+   */
+  private void askWipe() {
+    LinearLayout box = column();
+    box.setPadding(dp(24), dp(20), dp(24), dp(18));
+    TextView title = text(s(R.string.ingame_wipe), 20, true);
+    title.setGravity(Gravity.CENTER); title.setTextAlignment(View.TEXT_ALIGNMENT_GRAVITY);
+    box.addView(title, new LinearLayout.LayoutParams(-1, -2));
+    TextView message = text(s(R.string.ingame_wipe_text), 16, false);
+    message.setTextColor(INK); message.setLineSpacing(0, 1.1f);
+    message.setGravity(Gravity.CENTER_HORIZONTAL); message.setTextAlignment(View.TEXT_ALIGNMENT_GRAVITY);
+    ScrollView scroller = new ScrollView(getContext());
+    scroller.addView(message, new ViewGroup.LayoutParams(-1, -2));
+    LinearLayout.LayoutParams between = new LinearLayout.LayoutParams(-1, -2, 1);
+    between.setMargins(0, dp(12), 0, dp(18));
+    box.addView(scroller, between);
+    final AlertDialog[] shown = new AlertDialog[1];
+    Button cancel = button(s(R.string.ingame_wipe_cancel), v -> shown[0].cancel());
+    Button delete = button(s(R.string.ingame_wipe_yes), v -> {
+      shown[0].dismiss(); close();
+      if (host != null) host.wipePlayerData();
+    });
+    StateListDrawable look = new StateListDrawable();
+    look.addState(new int[] {android.R.attr.state_focused}, focused());
+    look.addState(new int[] {android.R.attr.state_pressed}, shape(UPDATE_RED, INK, 6));
+    look.addState(new int[0], shape(UPDATE_RED, UPDATE_RED_EDGE, 6));
+    delete.setBackground(look); delete.setTextColor(FocusLook.text(ColorStateList.valueOf(INK)));
+    for (Button b : new Button[] {cancel, delete}) b.setPadding(dp(24), dp(8), dp(24), dp(8));
+    LinearLayout buttons = row();
+    buttons.setGravity(Gravity.CENTER);
+    LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, -2, 1);
+    half.setMarginEnd(dp(6));
+    buttons.addView(cancel, half);
+    half = new LinearLayout.LayoutParams(0, -2, 1);
+    half.setMarginStart(dp(6));
+    buttons.addView(delete, half);
+    box.addView(buttons, new LinearLayout.LayoutParams(-1, -2));
+    AlertDialog dialog = new AlertDialog.Builder(getContext()).setView(box).create();
+    shown[0] = dialog;
+    GradientDrawable frame = shape(WARN_RED, UPDATE_RED_EDGE, 10); frame.setStroke(dp(2), UPDATE_RED_EDGE);
+    dialog.getWindow().setBackgroundDrawable(frame);
+    dialog.setOnKeyListener((d, key, event) -> {
+      if (key == KeyEvent.KEYCODE_BUTTON_A) {
+        return dialog.getWindow().superDispatchKeyEvent(new KeyEvent(event.getDownTime(), event.getEventTime(),
+            event.getAction(), KeyEvent.KEYCODE_DPAD_CENTER, event.getRepeatCount()));
+      }
+      if (key != KeyEvent.KEYCODE_ESCAPE && !KeyEvent.isGamepadButton(key)) return false;
+      if ((key == KeyEvent.KEYCODE_ESCAPE || key == KeyEvent.KEYCODE_BUTTON_B || key == KeyEvent.KEYCODE_BUTTON_START
+          || key == KeyEvent.KEYCODE_BUTTON_SELECT) && event.getAction() == KeyEvent.ACTION_DOWN
+          && event.getRepeatCount() == 0) dialog.cancel();
+      return true;
+    });
+    dialog.setOnShowListener(d -> cancel.requestFocus());
+    Immersive.show(dialog);
   }
 
   /** "Cheats" at the top of Management (wish and decisions of the project owner, 27.10.2026;
@@ -2313,10 +2411,15 @@ final class CoreMenu extends Dialog {
   void refreshCard() {
     if (cardLine == null || exportAll == null) return;
     String[] rows = CoreBridge.cardList();
+    // the .zip also without saves (the touch layout, the instant save and the settings), not while the card is busy
     if (rows == null) {
       cardLine.setText(s("busy".equals(CoreBridge.cardNote()) ? R.string.ingame_card_busy : R.string.ingame_card_none));
       cardLine.setVisibility(View.VISIBLE); exportAll.setEnabled(false);
-    } else { cardLine.setVisibility(View.GONE); exportAll.setEnabled(rows.length > 0); }
+      if (exportZip != null) exportZip.setEnabled(false);
+    } else {
+      cardLine.setVisibility(View.GONE); exportAll.setEnabled(rows.length > 0);
+      if (exportZip != null) exportZip.setEnabled(true);
+    }
   }
   private String version() {
     try {
@@ -2372,13 +2475,19 @@ final class CoreMenu extends Dialog {
     return Math.min(448, (int) (336.0 * 16.0 / 9.0 / a + 0.5) & ~1);
   }
 
+  /** "Dynamic"'s highest level (halves), as core_mode.cpp takes it: the benchmark's level `cap` for 30 or 60 FPS
+   *  (since 0.99.14 nothing above it; until 0.99.13 half a level more), without one the screen's (`screen`, whole
+   *  levels, autoScale). */
+  static int dynamicTop(int cap, int screen) {
+    return cap >= 2 && cap <= 8 ? cap : 2 * screen;
+  }
+
   /** The resolution the chosen level gives. */
   private void showGraphics() {
     int chosen = scaleHalves(graphics), halves = chosen;
     if (halves < 2 || halves > 8) {
-      // Dynamic: half a level above the benchmark's level for 30 or 60 FPS (4x at most; core_mode.cpp), else the screen's
       int cap = graphics.getInt(graphics.getBoolean("smooth60", false) ? DYN_CAP_60 : DYN_CAP_30, 0);
-      halves = cap >= 2 && cap <= 8 ? Math.min(8, cap + 1) : 2 * autoScale(screenWidth, screenHeight);
+      halves = dynamicTop(cap, autoScale(screenWidth, screenHeight));
     }
     int rows = pictureRows(graphics.getInt("aspect", 0), screenWidth, screenHeight);
     // the numbers as digits 0..9 in every language (Locale.ROOT), the level with the language's separator

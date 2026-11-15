@@ -119,6 +119,7 @@ struct CoreApi {
   void (*aimTurn)(float, float){};  // optional (cores since 29.10.2026): swipe aiming
   void (*zoom)(int){};            // optional (cores since 12.11.2026, 0.99.12): the mouse wheel zooms
   void (*setEnemyRandom)(int){};  // optional (cores since 12.11.2026, 0.99.12): the cheat "Random enemies"
+  void (*setGentleQte)(int){};    // optional (cores since 14.11.2026, 0.99.15): "Gentler QTEs"
   void (*swipe)(int){};           // optional (cores since 22.10.2026): a swipe across it
   void (*slash)(float){};         // optional (cores since 22.10.2026): the knife by a swipe
   int (*instant)(int, Re4InstantInfo *){};
@@ -470,6 +471,7 @@ void loadCore(JNIEnv *env) {
   api.aimTurn = reinterpret_cast<void (*)(float, float)>(dlsym(api.main, "re4_core_aim_turn"));
   api.zoom = reinterpret_cast<void (*)(int)>(dlsym(api.main, "re4_core_zoom"));
   api.setEnemyRandom = reinterpret_cast<void (*)(int)>(dlsym(api.main, "re4_core_set_enemy_random"));
+  api.setGentleQte = reinterpret_cast<void (*)(int)>(dlsym(api.main, "re4_core_set_gentle_qte"));
   api.swipe = reinterpret_cast<void (*)(int)>(dlsym(api.main, "re4_core_swipe"));
   api.slash = reinterpret_cast<void (*)(float)>(dlsym(api.main, "re4_core_slash"));
   api.instant = reinterpret_cast<int (*)(int, Re4InstantInfo *)>(dlsym(api.main, "re4_core_instant"));
@@ -579,6 +581,25 @@ std::atomic<int> optInvalidate{-1}, optTiled{0}, optHalfDof{1};
 std::atomic<unsigned> optSerial{0};
 unsigned optApplied = ~0u;
 std::atomic<bool> corePaused{false};
+// Android's thermal status and headroom (ThermalWatch, 0.99.15; set by CoreBridge.setThermal from the app's main thread,
+// read by the render thread): Dynamic's lines name them, so a report shows whether a step down came with heat
+std::atomic<int> thermalStatus{-2};
+std::atomic<int> thermalHeadroom{-1};  // headroom x 100, -1 unknown
+
+// "; heat: moderate, headroom 0.71" for a line of Dynamic ("" while the app said nothing)
+std::string heatText() {
+  static const char *const names[] = {"none", "light", "moderate", "severe", "critical", "emergency", "shutdown"};
+  const int s = thermalStatus.load(), h = thermalHeadroom.load();
+  if (s < 0 && h < 0) return "";
+  char text[64];
+  std::snprintf(text, sizeof(text), "; heat: %s", s >= 0 && s <= 6 ? names[s] : "unknown");
+  std::string out = text;
+  if (h >= 0) {
+    std::snprintf(text, sizeof(text), ", headroom %d.%02d", h / 100, h % 100);
+    out += text;
+  }
+  return out;
+}
 // what the device can do and what the renderer uses (CoreBridge.graphicsInfo)
 std::atomic<int> infoMaxSamples{0}, infoMaxAnisotropy{0}, infoScale{0}, infoSamples{0}, infoAnisotropy{0};  // infoScale in halves
 
@@ -1016,12 +1037,14 @@ struct LevelBench {
   unsigned droppedAt = 0, polls = 0;
   // the core thread's processor time of the chunks (Re4GxChunk::coreCpuUs, cores since 0.99.12), and their count
   unsigned long long cpuUs = 0, cpuUsAt = 0, cpuChunks = 0, cpuChunksAt = 0;
+  // the GPU's time of the pictures (GxStats::gpuMicros / gpuTimed) at the last second's start (0.99.14: the reserve)
+  unsigned long long gpuUsAt = 0;
+  unsigned gpuPicturesAt = 0;
 };
 LevelBench levelBench;
 constexpr double kBenchLimit = 360.0;  // seconds for the whole benchmark at most (the way there and back included)
 // The benchmark sets the level and the 60 FPS itself (mode 0 measuring); the check (mode 1) leaves them to Dynamic
 bool benchForcing() { return levelBench.active && levelBench.mode.load() == 0; }
-bool benchChecking() { return levelBench.active && levelBench.mode.load() == 1; }
 int aimSent = -1;  // what the core was told last (-1: nothing yet)
 int backPlaceSent = -1;  // the weapon on the back's placement the core was told last (-1: nothing yet)
 // the menu's "Knife aim speed" in percent (CoreBridge.setKnifeSpeed; 0 as the "Aim speed"), sent as a third aim word
@@ -1861,6 +1884,8 @@ void levelBenchTick(std::chrono::steady_clock::time_point now, bool chunk, unsig
     b.res30 = b.res60 = b.rate10 = b.held = 0;
     b.chunks = 0;
     b.cpuUs = b.cpuUsAt = b.cpuChunks = b.cpuChunksAt = 0;
+    b.gpuUsAt = 0;
+    b.gpuPicturesAt = 0;
     b.cpuLoad = -1;
     b.polls = 0;
     b.failed = false;
@@ -1964,6 +1989,17 @@ void levelBenchTick(std::chrono::steady_clock::time_point now, bool chunk, unsig
                                    : -1.0;
     b.cpuUsAt = b.cpuUs;
     b.cpuChunksAt = b.cpuChunks;
+    // the GPU's time a picture in this second (ms; negative: not measured, or a new renderer's counters began anew)
+    double gpuMs = -1.0;
+    if (gx) {
+      const re4gx::GxStats &gs = gx->Stats();
+      if (gs.gpuTimed >= b.gpuPicturesAt + 10 && gs.gpuMicros >= b.gpuUsAt)
+        gpuMs = static_cast<double>(gs.gpuMicros - b.gpuUsAt) / 1000.0 / (gs.gpuTimed - b.gpuPicturesAt);
+      // (a timer busier than the clock: not trusted, as Dynamic)
+      if (gpuMs >= 0.0 && gpuMs * (gs.gpuTimed - b.gpuPicturesAt) > sec * 1000.0 * 1.25) gpuMs = -1.0;
+      b.gpuUsAt = gs.gpuMicros;
+      b.gpuPicturesAt = gs.gpuTimed;
+    }
     b.chunksAt = b.chunks;
     b.shownAt = picturesMade.load();
     b.droppedAt = gxBetweenDropped;
@@ -1982,7 +2018,7 @@ void levelBenchTick(std::chrono::steady_clock::time_point now, bool chunk, unsig
     }
     std::string line;
     const re4gx::BenchSteps::Step step =
-        b.steps.Second(std::chrono::duration<double>(now - b.start).count(), c, sh, dropped, &line, cpuMs);
+        b.steps.Second(std::chrono::duration<double>(now - b.start).count(), c, sh, dropped, &line, cpuMs, gpuMs);
     b.rate10 = b.steps.Rate10();
     if (step != re4gx::BenchSteps::kNone) {
       LOG("%s", line.c_str());
@@ -2063,25 +2099,20 @@ bool drawGx() {
       // CoreMenu.autoScale is the same)
       const int rows = std::min(height, width * 9 / 16);
       scale = 2 * std::max(1, std::min(3, (rows + 168) / 336) - 1);
-      // measured by the benchmark on this device: its level for 30 or 60 pictures a second and half a level more
-      // (wish of the project owner, 06.11.2026: the rainy dock is one of the heaviest places of the game; Dynamic
-      // starts there and goes down half a level where the GPU falls behind, up again where it keeps up), 4x at most
+      // measured by the benchmark on this device: its level for 30 or 60 pictures a second (the rainy dock is one of
+      // the heaviest places of the game; since 0.99.14 a level holds there only with a reserve, gx_bench_steps.h).
+      // Until 0.99.13 half a level more (wish of the project owner, 06.11.2026): his Retroid measured 3x with 60 FPS
+      // and went to 3.5x again and again, back down within seconds (report 09914-benchmark-dynres). Decision of the
+      // project owner, 13.11.2026: up to the measured level, nothing above it
       const int cap = optSmooth.load() ? optCap60.load() : optCap30.load();
       if (cap >= 2 && cap <= 8) {
-        scale = std::min(8, cap + 1);
+        scale = cap;
         proven = cap;
-        LOG("dynamic resolution: up to %sx, half a level above the benchmark's %sx for %d pictures a second",
-            ScaleName(scale).c_str(), ScaleName(cap).c_str(), optSmooth.load() ? 60 : 30);
+        LOG("dynamic resolution: up to %sx, the benchmark's level for %d pictures a second (nothing above it)",
+            ScaleName(scale).c_str(), optSmooth.load() ? 60 : 30);
       }
     }
-    const int dynTop = scale;  // Dynamic's highest level
-    // the benchmark's check (mode 1, 0.99.10): a new renderer starts at the benchmark's level, not half a level
-    // above it (the project owner's Retroid check 11.11.2026 started each window at 3.5x and counted the way down)
-    if (autoLevelOn && proven && benchChecking()) {
-      scale = proven;
-      LOG("benchmark: the check's new renderer at the benchmark's level %s (Dynamic up to %s)", ScaleName(scale).c_str(),
-          ScaleName(dynTop).c_str());
-    }
+    const int dynTop = scale;  // Dynamic's highest level (the benchmark's check, mode 1, starts there too)
     // once per run: does this GPU compute the movie colours like the GameCube (gx_selfcheck.cpp;
     // the Galaxy A36 showed them green and brown)? Before any renderer, on a renderer of its own;
     // on wrong pixels it picks a way of writing the TEV's lerp that this GPU computes right.
@@ -2095,6 +2126,18 @@ bool drawGx() {
       scale = levelBench.level.load();
       autoLevelOn = false;
       LOG("benchmark: the new renderer at the benchmark's level %s", re4gx::BenchSteps::Name(scale).c_str());
+    }
+    // (0.99.14) Dynamic: not at a level that did not hold in this room in the last minutes (a renderer made anew after
+    // the app menu or a benchmark began at the top again, also where the top had just failed)
+    if (autoLevelOn) {
+      const double t = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+      const int safe = autoLevel.StartLevel(dynTop, scale, t, static_cast<int>(frame.room), 2);
+      if (safe != scale) {
+        LOG("dynamic resolution: %sx did not hold in r%03x in the last %.0f min: the new renderer starts at %sx",
+            ScaleName(scale).c_str(), static_cast<unsigned>(frame.room), re4gx::AutoLevel::kRoomForget / 60.0,
+            ScaleName(safe).c_str());
+        scale = safe;
+      }
     }
     replayGx(scale);
     const bool vulkan = gxVulkan() && !vulkanFailed;
@@ -2215,8 +2258,10 @@ bool drawGx() {
       // in half steps down to 1x (wish of the project owner, 27.10.2026: 2x straight to 1x lost too much)
       autoLevel.Start(dynTop, std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(),
                       2, true, proven, scale);
-      LOG("dynamic resolution: from level %sx (the screen's), half a level lower while the GPU falls behind",
-          ScaleName(scale).c_str());
+      LOG("dynamic resolution: from level %sx (the top %sx, %s), half a level lower where the GPU falls behind, up "
+          "again only with room for the next level; a level that did not hold in a room is not tried there for %.0f min",
+          ScaleName(scale).c_str(), ScaleName(dynTop).c_str(), proven ? "the benchmark's" : "the screen's",
+          re4gx::AutoLevel::kRoomForget / 60.0);
     }
   }
   // one chunk per displayed frame: every picture the game makes is shown (a
@@ -2364,6 +2409,9 @@ bool drawGx() {
       const double t = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
       autoLevel.Restart(t);
       if (!benchForcing()) smoothPacer.Restart(t, re4gx::AutoLevel::kQuiet);
+      // (0.99.14) where Dynamic stands at each room's start: the level, its steps, the rooms remembered
+      if (roomStart && autoLevelOn && !benchForcing())
+        LOG("%s; now r%03x", autoLevel.Summary(t).c_str(), static_cast<unsigned>(frame.room));
     }
     breakRoom = static_cast<int>(frame.room);
     breakPaused = paused;
@@ -2479,8 +2527,10 @@ bool drawGx() {
         }
       }
     }
-    // the core thread's processor time for this chunk (the benchmark; the chunk may go back to the core below)
+    // the core thread's processor time for this chunk (the benchmark; the chunk may go back to the core below), and
+    // whether it is a menu picture of the game (Dynamic does not judge those)
     const unsigned chunkCpuUs = chunk->coreCpuUs;
+    const bool chunkStill = (chunk->flags & RE4_GX_CHUNK_STILL) != 0;
     // the in-between picture first when the switch is on and nothing records this chunk's picture;
     // Run(chunk) then at the next refresh
     bool between = false;
@@ -2651,18 +2701,32 @@ bool drawGx() {
     if (autoLevelOn && !between && !benchForcing()) {
       const auto &st = gx->Stats();
       std::string why, status;
-      const int level = autoLevel.Chunk(std::chrono::duration<double>(now.time_since_epoch()).count(), st.behindSum,
-                                        st.behindChecks,
+      re4gx::AutoLevel::Sample sample;
+      sample.t = std::chrono::duration<double>(now.time_since_epoch()).count();
+      sample.behindSum = st.behindSum;
+      sample.behindChecks = st.behindChecks;
+      sample.dropped = gxBetweenDropped;  // (counts only while 60 FPS is on; never falls back)
+      sample.waitMs = gxRunWaitMs;
+      sample.gpuUs = st.gpuMicros;  // (0.99.14) the GPU's time a picture: Vulkan's timestamps, GL's timer queries
+      sample.gpuPictures = st.gpuTimed;
+      sample.loadUs = st.loadUs;    // HD textures, shaders and pipelines made on this thread
+      sample.pauses = smoothPacer.Offs();
+      // (60 FPS given up for this renderer, smoothTooSlow: judged as 30 a second, as it then runs)
+      sample.sixty = optSmooth.load() != 0 && !smoothTooSlow;
+      // 60 FPS making in-between pictures now: a step up by them, not the fences
+      sample.smooth = sample.sixty && !smoothPacer.Off();
+      // a game menu (no in-between pictures by design), the game's own 60 a second (movies, the title)
+      sample.calm = chunkStill || stream60 || gameMenuNow();
+      sample.room = static_cast<int>(frame.room);
+      const int level = autoLevel.Chunk(sample,
                                         !corePaused.load() && !gxDumpSeriesLeft && !gxHitShotsLeft && !bench.measuring &&
                                             !benchForcing(),
-                                        &why, gxBetweenDropped,  // (counts only while 60 FPS is on; never falls back)
-                                        gxRunWaitMs,
-                                        // 60 FPS making in-between pictures now: a step up by them, not the fences
-                                        optSmooth.load() != 0 && !smoothTooSlow && !smoothPacer.Off(), &status);
+                                        &why, &status);
+      // (each with the device's heat, ThermalWatch: whether a step down came with heat)
       if (!status.empty())
-        LOG("%s", status.c_str());  // why it stays below the top (every 10 s at most)
+        LOG("%s%s", status.c_str(), heatText().c_str());  // why it stays below the top, or late not by the GPU (10 s)
       if (level != gx->Halves()) {
-        LOG("%s", why.c_str());
+        LOG("%s%s", why.c_str(), heatText().c_str());
         // no in-between picture across the change (a chunk taken ahead, skipNext, is not run yet:
         // it stays and is drawn at the next refresh; the core sends only what changed)
         if (smoothPrev) {
@@ -3073,6 +3137,7 @@ void useCoreProcess(const std::string &why) {
   api.aimTurn = re4ipc_aim_turn;
   api.zoom = re4ipc_zoom;
   api.setEnemyRandom = re4ipc_set_enemy_random;
+  api.setGentleQte = re4ipc_set_gentle_qte;
   api.swipe = re4ipc_swipe;
   api.slash = re4ipc_slash;
   api.instant = re4ipc_instant;
@@ -3200,7 +3265,21 @@ extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_tap(JNIEnv *
   const float u = (x - static_cast<float>(picX.load())) / static_cast<float>(w);
   const float inBox = (y - static_cast<float>(picY.load())) / static_cast<float>(h);
   if (u < 0.f || u > 1.f || inBox < 0.f || inBox > 1.f) return;
-  api.touch(u, picTop.load() + inBox * picRows.load());
+  // (u + 2: the sub screens only; the quick-time prompts had the finger at its touch down, touchDown)
+  api.touch(u + 2.f, picTop.load() + inBox * picRows.load());
+}
+
+// Android's thermal status (-1 unknown) and headroom (NaN unknown) from ThermalWatch (0.99.15): for Dynamic's lines
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setThermal(JNIEnv *, jclass, jint status,
+                                                                             jfloat headroom) {
+  thermalStatus.store(status);
+  thermalHeadroom.store(headroom == headroom && headroom >= 0.f ? static_cast<int>(headroom * 100.f + 0.5f) : -1);
+}
+
+// A finger touching down beside the touch controls (CoreActivity.watchTap, 0.99.15): a quick-time prompt's press at
+// once, also a second finger and outside the picture's box (runtime/menu_touch.cpp re4_core_touch, u -2)
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_touchDown(JNIEnv *, jclass) {
+  if (api.touch) api.touch(-2.f, -2.f);
 }
 
 // A swipe across the picture (CoreActivity.watchTap): 1 to the left (the next tab of a sub
@@ -3860,6 +3939,10 @@ extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_zoom(JNIEnv 
 }
 
 // The cheat "Random enemies" (CoreMenu): its seed, 0 off (cores since 12.11.2026, 0.99.12; older ones: nothing).
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setGentleQte(JNIEnv *, jclass, jboolean on) {
+  if (api.setGentleQte) api.setGentleQte(on ? 1 : 0);
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setEnemyRandom(JNIEnv *, jclass, jint seed) {
   if (api.setEnemyRandom) api.setEnemyRandom(seed);
 }

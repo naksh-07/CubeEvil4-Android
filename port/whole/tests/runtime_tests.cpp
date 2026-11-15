@@ -1495,6 +1495,7 @@ int re4_move_count(void);
 void re4_mod_move_path_set(const char* path);
 void re4_mod_melee_path_set(const char* path);
 int re4probe_qte_touch(void);
+int re4probe_qte_level(void);
 int re4probe_qte_auto(void);
 int re4probe_cheat_extras(void);
 int re4probe_potato(void);
@@ -2610,6 +2611,21 @@ static void testAshleyGun()
     report("ashleygun", bad == 0);
 }
 
+// "Gentler QTEs" (0.99.15; game_probe.cpp re4probe_qte_level): Professional's rank for the quick-time events at most
+// Normal's start with the switch on, the game's own otherwise and in the other difficulties; the switch's log line
+static void testQteLevel()
+{
+    const int bad = re4probe_qte_level();
+    static char tail[48 * 160];
+    re4_log_tail(tail, sizeof tail);
+    const bool logged = strstr(tail, "qte: gentler quick-time events on (Professional's as Normal's)") != nullptr &&
+                        strstr(tail, "qte: a quick-time event of Professional reads rank 10 as 5 (gentler QTEs)") != nullptr;
+    if (bad || !logged) {
+        re4_log("  qtelevel: failed checks 0x%x%s", bad, logged ? "" : ", no log line");
+    }
+    report("qtelevel", bad == 0 && logged);
+}
+
 // Quick-time events by a tap (runtime/qte_touch.cpp; game_probe.cpp re4probe_qte_touch): the
 // prompt's buttons for two frames, nothing for doors, in sub screens or without a prompt; the log line
 static void testQteTouch()
@@ -3101,6 +3117,7 @@ int re4_runtime_tests()
     testKnifeSpeed();
     testAshleyGun();
     testQteTouch();
+    testQteLevel();
     testQteAuto();
     testCheatExtras();
     testCheatList();
