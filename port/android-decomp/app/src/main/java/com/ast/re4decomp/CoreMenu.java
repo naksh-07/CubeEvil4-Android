@@ -2099,6 +2099,9 @@ final class CoreMenu extends Dialog {
     // Leon's movements of the 2023 remake from a mod pack's melee/move.dat (the core's runtime/locomotion.cpp)
     toggle(buttonsRow(body), R.string.ingame_melee_move, input.getBoolean(CoreActivity.REMAKE_MOVE, true),
         on -> { input.edit().putBoolean(CoreActivity.REMAKE_MOVE, on).apply(); CoreBridge.setRemakeMove(on); });
+    // the Ganados' flinches of the 2023 remake from a mod pack's melee/react.dat (the core's runtime/react.cpp)
+    toggle(buttonsRow(body), R.string.ingame_melee_react, input.getBoolean(CoreActivity.REMAKE_REACT, true),
+        on -> { input.edit().putBoolean(CoreActivity.REMAKE_REACT, on).apply(); CoreBridge.setRemakeReact(on); });
     help(R.string.ingame_melee_help);
   }
   /** The weapon on the back to taste (wish of DevJunior, 09.11.2026: "rotate it as I like, show it in cutscenes; it

@@ -120,6 +120,9 @@ void* re4_melee_kneel(void* game);
 /* Patch 0904: re4_melee_neck gives 2 for the axe execution of a standing stunned Ganado (it kneels, then the axe
  * strike); this is Leon's routine for it. */
 void* re4_melee_execute(void);
+/* Patch 0925 (em10.cpp Dm_Small; runtime/react.cpp): the flinch chosen by the hit zone; a mod's remake reaction of the
+ * same zone may take its place (motion, sequence, mirroring). */
+void re4_react_motion(void* em, int type, void** m0, void** m1, int* flag);
 /* Patch 0924 (em10.cpp chainsaw C_SawHit / br_C_SawCriAtk; runtime/parry.cpp): the knife parry's clash with the
  * chainsaw: the window open, Leon's clash routine in place of the saw's catch, the clash's rules each frame. */
 int re4_csaw_parry_open(void);

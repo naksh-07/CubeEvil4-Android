@@ -1,0 +1,15 @@
+# Patch 0925 (wish of DevJunior, 15.11.2026: the Ganados' hit reactions of the 2023 remake). Not a bug of the
+# prototype: a port feature of the mods.
+# em10.cpp Dm_Small (the flinch): before it sets the motion it chose by the hit zone, re4_react_motion
+# (runtime/react.cpp) may put a mod pack's remake flinch of the same zone in its place, with a sequence that keeps
+# the game's events (prompts, voice, end) at the same shares of it. Declared in re4_whole_prelude.h.
+--- a/src/em10/em10.cpp
++++ b/src/em10/em10.cpp
+@@ -13922,6 +13922,7 @@
+             w->Timer5 = 0;
+             break;
+         }
++        re4_react_motion(em, (int) type, &m0, &m1, &flag); /* port: patch 0925 */
+         MotionSetCore(em, &em->Motion, m0, m1, 6, flag, 0);
+         w->Timer4 = 10;
+         em10SetDmWaterEff(em, 0);

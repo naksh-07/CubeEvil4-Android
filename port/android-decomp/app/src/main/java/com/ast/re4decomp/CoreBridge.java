@@ -143,6 +143,8 @@ public final class CoreBridge {
   public static native void setFinishers(boolean on);
   /** The menu's "Remake movement" (Leon's movements of a mod pack's melee/move.dat, patch 0923): bit 14 of the third aim word. */
   public static native void setRemakeMove(boolean on);
+  /** The menu's "Remake reactions" (the Ganados' flinches of a mod pack's melee/react.dat, patch 0925): bit 15 of the third aim word. */
+  public static native void setRemakeReact(boolean on);
   /** The game's own options changed "reverse" since the last call (patch 0188): -1, else 0 / 1 for "Invert vertical". */
   public static native int aimFromGame();
   /** The Potato mode bits from the graphics settings ("weatherEffects", "specialEffects", both on by default; since

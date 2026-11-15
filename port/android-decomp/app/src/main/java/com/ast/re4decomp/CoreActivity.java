@@ -158,6 +158,8 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
   static final String FINISHERS = "finishers";
   /** The menu's "Remake movement" (a mod pack's remake movements for Leon, patch 0923), on by default. */
   static final String REMAKE_MOVE = "remakeMove";
+  /** The menu's "Remake reactions" (a mod pack's remake flinches for the Ganados, patch 0925), on by default. */
+  static final String REMAKE_REACT = "remakeReact";
   // "Skip intro logos" (wish of DevJunior, 10.11.2026; patch 0905): the title starts at its main menu (bit 28 of the
   // placement word, on by default)
   static final String SKIP_INTRO = "skipIntro";
@@ -458,6 +460,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     CoreBridge.setBoxStrike(inputPrefs.getBoolean(BOX_STRIKE, true));
     CoreBridge.setFinishers(inputPrefs.getBoolean(FINISHERS, true));
     CoreBridge.setRemakeMove(inputPrefs.getBoolean(REMAKE_MOVE, true));
+    CoreBridge.setRemakeReact(inputPrefs.getBoolean(REMAKE_REACT, true));
     input.setStickShape(inputPrefs.getInt(STICK_DEAD_ZONE, 0), inputPrefs.getInt(STICK_RANGE, 100));
     stickWatch.setShape(input.deadZone(), input.range());
     if (input.deadZone() != 0 || input.range() != 100) {

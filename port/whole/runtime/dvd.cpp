@@ -521,6 +521,8 @@ char gMeleePath[1600];
 char gFinishPath[1600];
 // A mod's movements for Leon (mods/<pack>/melee/move.dat; patch 0923, runtime/locomotion.cpp)
 char gMovePath[1600];
+// A mod's reactions for the Ganados (mods/<pack>/melee/react.dat; patch 0925, runtime/react.cpp)
+char gReactPath[1600];
 
 void modFolder(Disc& d, const char* pack, const char* full, const char* rel, int depth, int no)
 {
@@ -541,6 +543,14 @@ void modFolder(Disc& d, const char* pack, const char* full, const char* rel, int
             if (strcmp(gMeleePath, path) != 0) {
                 snprintf(gMeleePath, sizeof(gMeleePath), "%s", path);
                 re4_log("DVD: mod %s: %s holds its melee motions", pack, name);
+            }
+            free(names[k]);
+            continue;
+        }
+        if (strcmp(name, "melee/react.dat") == 0) {
+            if (strcmp(gReactPath, path) != 0) {
+                snprintf(gReactPath, sizeof(gReactPath), "%s", path);
+                re4_log("DVD: mod %s: %s holds the Ganados' reactions", pack, name);
             }
             free(names[k]);
             continue;
@@ -931,6 +941,17 @@ const char* re4_mod_melee_path(void)
 void re4_mod_melee_path_set(const char* path)
 {
     snprintf(gMeleePath, sizeof(gMeleePath), "%s", path);
+}
+
+// The active mods' reactions for the Ganados (see gReactPath), "" without them; the second for the runtime test.
+const char* re4_mod_react_path(void)
+{
+    return gReactPath;
+}
+
+void re4_mod_react_path_set(const char* path)
+{
+    snprintf(gReactPath, sizeof(gReactPath), "%s", path);
 }
 
 // The active mods' movements for Leon (see gMovePath), "" without them; the second for the runtime test.

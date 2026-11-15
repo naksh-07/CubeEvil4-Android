@@ -1492,6 +1492,8 @@ int re4_knife_combo_count(void);
 int re4_box_strike_motion(void);
 void* re4_csaw_motion(int i);
 int re4_move_count(void);
+int re4_react_count(void);
+void re4_mod_react_path_set(const char* path);
 void re4_mod_move_path_set(const char* path);
 void re4_mod_melee_path_set(const char* path);
 int re4probe_qte_touch(void);
@@ -2535,6 +2537,15 @@ static void testFinish()
         bad |= n != 4 ? 0x40000 : 0;
         re4_mod_move_path_set("");
         bad |= re4_move_count() != 0 ? 0x40000 : 0;
+    }
+    // the Ganados' remake reactions (re9_finisher_pack.py --react; RE4_TEST_REACT_DAT=path)
+    if (const char* real = getenv("RE4_TEST_REACT_DAT")) {
+        re4_mod_react_path_set(real);
+        const int n = re4_react_count();
+        re4_log("  finishers: %s holds %d reactions (expected 18)", real, n);
+        bad |= n != 18 ? 0x80000 : 0;
+        re4_mod_react_path_set("");
+        bad |= re4_react_count() != 0 ? 0x80000 : 0;
     }
     report("finishers", bad == 0);
 }

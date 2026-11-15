@@ -426,6 +426,7 @@ REACTS = [(0, ["0100_body_small_F_verA", "0101_body_small_FL_verB", "0102_body_s
           (9, ["0130_body_small_B_verA", "0141_body_medium_BL_verB", "0142_body_medium_BR_verC"]),
           (10, ["0330_armR_small_B_verA"]), (11, ["0230_armL_small_B_verA"])]
 REACT_STEP = 3.0
+REACT_TRAVEL = 1600.0  # mm a reaction carries the Ganado at most (the game's own: up to 1.5 m; the remake's: 3 m)
 
 
 def reacts(root, model, tol, out_path):
@@ -436,11 +437,13 @@ def reacts(root, model, tol, out_path):
         for name in names:
             m = next(x for x in mots if x.name.endswith(name))
             fit = Fit(m, model, "ganado", REACT_STEP, tol, m.frames, game_like=True)
-            data = fcv.serialise(fit.motion(fit.scale))
+            far = max(math.hypot(t[0], t[2]) for t in fit.track(fit.scale))
+            k = min(1.0, REACT_TRAVEL / far) if far > 1.0 else 1.0
+            data = fcv.serialise(fit.motion(fit.scale * k))
             c = fit.check(data)
             entries.append(data)
             table.append(struct.pack(">BBHHH", cls, 0, len(entries) - 1, len(fit.frames) - 1, 0))
-            end = fit.track(fit.scale)[-1]
+            end = fit.track(fit.scale * k)[-1]
             print("react class %2d %-26s %3d game frames, %6d bytes, ends %5.0f, %5.0f mm away; check %.1f/%.1f deg" % (
                 cls, name, len(fit.frames), len(data), end[0], end[2], c[0], c[1]))
     entries[0] = b"RCT1" + struct.pack(">I", len(table)) + b"".join(table)

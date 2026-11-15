@@ -149,6 +149,7 @@ extern "C" void re4_melee_set(int bits);                  // runtime/melee.cpp
 extern "C" void re4_box_strike_set(int on);               // runtime/melee.cpp
 extern "C" void re4_finish_set(int on);                   // runtime/finisher.cpp
 extern "C" void re4_move_set(int on);                     // runtime/locomotion.cpp
+extern "C" void re4_react_set(int on);                    // runtime/react.cpp
 extern "C" void re4_back_adjust_set(int word);           // runtime/wardrobe.cpp
 extern "C" void re4_ashley_gun_set(int on);             // runtime/ashley_gun.cpp
 // Patch 0905 (title.cpp titleWait): 1 = the title starts at its main menu (the app's "Skip intro logos"; on the PC
@@ -165,6 +166,7 @@ void re4_aim_set(int bits)
         re4_box_strike_set((bits >> 12) & 1);  // bit 12 "Box strike" (patch 0916, runtime/melee.cpp)
         re4_finish_set((bits >> 13) & 1);      // bit 13 "Finishers" (patch 0921, runtime/finisher.cpp)
         re4_move_set((bits >> 14) & 1);        // bit 14 "Remake movement" (patch 0923, runtime/locomotion.cpp)
+        re4_react_set((bits >> 15) & 1);       // bit 15 "Remake reactions" (patch 0925, runtime/react.cpp)
         int knife = bits & 0xFFF;
         knife = knife == 0 ? 0 : knife < 50 ? 50 : knife > 300 ? 300 : knife;
         if (gKnifeSpeed.exchange(knife) != knife) {

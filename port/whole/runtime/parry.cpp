@@ -159,11 +159,48 @@ void re4_parry_input(cPlayer* pl)
     }
 }
 
+}  // extern "C"
+
+namespace {
+
+// The chainsaw Ganado whose swing is cutting now (C_SawAtk 0x2F / C_SawCriAtk 0x31 on its saw's hit frames, the
+// sequence's Free 1 that em10CsawHitCk asks), else 0. Found among all the enemies, not by the blow's place: the saw's
+// hit sphere lies up to 1.5 m from its holder (device report 15.11.2026: the parry still turned the saw aside).
+cEm* sawSwinging()
+{
+    for (cEm* m = EmMgr.getActiveWork(); m != 0; m = EmMgr.getNext(m)) {
+        if (villager(m->id) && m->hp > 0 && m->r_no_0 == 1 && (m->r_no_1 == 0x2F || m->r_no_1 == 0x31) &&
+            EM10_WK(m)->Wep_type == 0xC && EM10_WK(m)->pWeapon && (m->Motion.Seq_old.Free & 1)) {
+            return m;
+        }
+    }
+    return 0;
+}
+
+}  // namespace
+
+extern "C" {
+
 // Patch 0900 (EmAtkHitCk2, em_sub.cpp, after an enemy's attack sphere at pos found Leon): 1 = this blow misses.
 int re4_parry_hit(Vec* pos)
 {
     if (!re4_parry_on()) {
         return 0;
+    }
+    // a parried chainsaw (the window open, or the guard of a parry just before): the saw connects and its catch
+    // becomes the clash, every time
+    if ((gWindow > 0 || gGuard > 0 || gSawFrames > 0) && pPL && pPL->r_no_0 == 0 && pG->pl_type == 0) {
+        if (cEm* saw = sawSwinging()) {
+            if (gSawEm != saw) {
+                gSawLife = pG->pl_life;
+                re4_log("parry: the chainsaw's swing parried (window %d, guard %d): its catch becomes the clash",
+                        gWindow, gGuard);
+            }
+            gSawEm = saw;
+            gSawFrames = kSawFrames;
+            gWindow = 0;
+            return 0;
+        }
     }
     if (gGuard > 0) {
         return 1;
@@ -171,16 +208,6 @@ int re4_parry_hit(Vec* pos)
     if (gWindow > 0 && pPL && pPL->r_no_0 == 0) {
         if (pos) {
             noteAttacker(pos);
-        }
-        cEm* saw = gAttacker;
-        if (saw && villager(saw->id) && EM10_WK(saw)->Wep_type == 0xC && saw->r_no_0 == 1 &&
-            (saw->r_no_1 == 0x2F || saw->r_no_1 == 0x31)) {
-            gSawEm = saw;
-            gSawFrames = kSawFrames;
-            gSawLife = pG->pl_life;
-            gWindow = 0;
-            re4_log("parry: the chainsaw's swing parried: it connects, its catch becomes the clash");
-            return 0;
         }
         gWindow = 0;
         gGuard = kGuard;
