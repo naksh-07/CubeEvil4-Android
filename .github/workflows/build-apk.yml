@@ -3,8 +3,10 @@
 # (app id com.ast.cubeevil4.mods), signed with the fixed debug key in .github/ci, so a newer build
 # installs over the older one.
 #
-# Download: the release "mods-latest" of the fork (the APK itself, also from a phone), or the run's
-# artifact (a ZIP). The core's build folders are cached, so later runs rebuild only what changed.
+# Download (wish of DevJunior, 15.11.2026: "nobody may download the APK unless I hand out the links"): the release
+# "mods-latest" is a DRAFT, visible only to the repository's owner (signed in on github.com); he downloads the APK
+# there and shares it himself. No run artifacts (on a public repository any signed-in GitHub user could fetch them);
+# each run deletes the old ones. The core's build folders are cached, so later runs rebuild only what changed.
 name: Build APK
 
 on:
@@ -14,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: build-apk-${{ github.ref }}
@@ -27,6 +30,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
+      - name: Hide the published APKs at once (the old public release, the run artifacts)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh api "repos/$REPO/releases/tags/mods-latest" > /dev/null 2>&1; then
+            gh release delete mods-latest -R "$REPO" --yes --cleanup-tag || true
+          fi
+          for id in $(gh api --paginate "repos/$REPO/actions/artifacts?per_page=100" -q '.artifacts[].id'); do
+            gh api -X DELETE "repos/$REPO/actions/artifacts/$id" || true
+          done
+
       - uses: actions/checkout@v4
 
       - name: Checks without the SDK (menu texts, controller mapping, touch controls)
@@ -109,17 +124,14 @@ jobs:
           cp app/build/outputs/apk/core/debug/*.apk "$GITHUB_WORKSPACE/out/CubeEvil4-Mods-$short.apk"
           ls -la "$GITHUB_WORKSPACE/out"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: CubeEvil4-Mods-apk
-          path: out/*.apk
-          retention-days: 30
-
       - name: Release "mods-latest" (the APK to download)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          for id in $(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" -q '.[] | select(.name | startswith("CubeEvil4 Mods")) | .id'); do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/$id" || true
+          done
           gh release delete mods-latest --yes --cleanup-tag 2> /dev/null || true
-          gh release create mods-latest out/*.apk --prerelease --target "$GITHUB_SHA" \
+          gh release create mods-latest out/*.apk --draft --prerelease --target "$GITHUB_SHA" \
             --title "CubeEvil4 Mods (test build ${GITHUB_REF_NAME}, $(git rev-parse --short HEAD))" \
             --notes "Test build of the branch ${GITHUB_REF_NAME}, commit ${GITHUB_SHA}. Installs next to the official CubeEvil4 (app id com.ast.cubeevil4.mods): import your discs once in this app. New: Controls -> Free movement, Move while aiming."
