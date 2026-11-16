@@ -120,6 +120,8 @@ void* re4_melee_kneel(void* game);
 /* Patch 0904: re4_melee_neck gives 2 for the axe execution of a standing stunned Ganado (it kneels, then the axe
  * strike); this is Leon's routine for it. */
 void* re4_melee_execute(void);
+/* Patch 0927 (em10.cpp C_SawHit; runtime/parry.cpp): 1 = the chainsaw clash's own camera is set this frame. */
+int re4_csaw_clash_cam(void* em);
 /* Patch 0926 (em_dm_val.cpp GetWepDmVal; runtime/ashley_gun.cpp): an enemy Ashley's shot hit takes her pistol's
  * firepower level instead of Leon's. */
 int re4_ashley_power_level(const void* em, unsigned wep, int lv);

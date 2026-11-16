@@ -32,6 +32,11 @@
 #include "game.h"
 #include "em_sub.h"
 #include "em10.h"
+#include "camera.h"
+#include "cam_ctrl.h"
+#include "atari.h"
+#include "math_sub_decl.h"
+#include "rnd.h"
 
 extern cPlayer* pPL;
 extern "C" int re4_parry_on(void);  // runtime/aim_options.cpp
@@ -49,6 +54,10 @@ const int kGrabWindow = 30;  // game frames after a grab in which the knife key 
 
 int gWindow = 0;
 int gGuard = 0;
+// frames since the knife key was last pressed (the chainsaw's window: kSawWindow; device report 16.11.2026: "the
+// window for the clash should be bigger")
+const int kSawWindow = 20;
+int gPressAge = 1000;
 int gSlash = 0;
 int gParries = 0;
 const void* gGrabEm = 0;  // the enemy whose hold started last (patch 0917)
@@ -138,8 +147,12 @@ void re4_parry_input(cPlayer* pl)
     }
     const bool knifeKey = (Key.trg & 0x800) || (Joy[0].trg & 0x40);
     const bool slashKey = pl->r_no_1 == 0xB && (Key.trg & 0x80);
+    if (gPressAge < 1000) {
+        gPressAge++;
+    }
     if (pl->r_no_0 == 0 && (knifeKey || slashKey)) {
         gWindow = kWindow;
+        gPressAge = 0;
     }
     if (gSlash > 0) {
         gSlash--;
@@ -191,7 +204,9 @@ int re4_parry_hit(Vec* pos)
     }
     // a parried chainsaw (the window open, or the guard of a parry just before): the saw connects and its catch
     // becomes the clash, every time
-    if ((gWindow > 0 || gGuard > 0 || gSawFrames > 0) && pPL && pPL->r_no_0 == 0 && pG->pl_type == 0) {
+    // (the saw's window is wider than a blow's: a press up to kSawWindow frames before its hit)
+    if ((gWindow > 0 || gGuard > 0 || gSawFrames > 0 || gPressAge <= kSawWindow) && pPL && pPL->r_no_0 == 0 &&
+        pG->pl_type == 0) {
         if (cEm* saw = sawSwinging()) {
             if (gSawEm != saw) {
                 gSawLife = pG->pl_life;
@@ -201,6 +216,7 @@ int re4_parry_hit(Vec* pos)
             gSawEm = saw;
             gSawFrames = kSawFrames;
             gWindow = 0;
+            gPressAge = 1000;
             return 0;
         }
     }
@@ -236,7 +252,10 @@ namespace {
 // while he mashes, then its push), no blood, no death timer, the metal clash sound instead of the cutting one. The
 // overhead swing (C_SawCriAtk, otherwise the one-shot decapitation C_SawCriHit) goes into the same clash when parried.
 // Without the mod's motions Leon struggles with the game's own 0x101 / 0x102, still without dying.
-const f32 kHold = 60.0f;     // the block's frame he holds while the mash goes on
+// the block's frame he holds while the mash goes on: the knife at his head's height, where the Ganado's saw comes
+// in the game's own catch motion (0xFB, at Leon's neck; 16.11.2026: "the animation is not right": at frame 60 he
+// held it above his head, over the saw)
+const f32 kHold = 95.0f;
 const int kClashSe = 12;     // frames between the metal clash sounds
 cEm* gClashEm;               // the chainsaw Ganado in the clash
 int gClashSe;
@@ -307,7 +326,7 @@ extern "C" {
 int re4_csaw_parry_open(void)
 {
     return re4_parry_on() && pG->pl_type == 0 && pPL &&
-           ((gSawEm && gSawFrames > 0) || (gWindow > 0 && pPL->r_no_0 == 0));
+           ((gSawEm && gSawFrames > 0) || ((gWindow > 0 || gPressAge <= kSawWindow) && pPL->r_no_0 == 0));
 }
 
 // Patch 0924 (em10_R1_C_SawHit, its first frame): Leon's routine for the catch: the clash's when parried, else `orig`
@@ -355,6 +374,49 @@ void re4_csaw_clash_frame(void* p)
         gClashSe = kClashSe;
         SndCall(8, 0x3F, &em->pos, em->id, 0, em);
     }
+}
+
+// Patch 0927 (em10_R1_C_SawHit, in place of its close cut-in camera em10CamMoveCri): 1 = the clash's camera is set.
+// The remake's shot of the clash (DevJunior's reference picture, 16.11.2026: "the camera in the same shot as the
+// remake"): beside and behind Leon's left shoulder at his head's height, both in the picture, Leon in front at the
+// left, the Ganado and his saw at the right; a slight shake with the saw; pulled in front of walls as the game's.
+int re4_csaw_clash_cam(void* p)
+{
+    cEm* em = (cEm*) p;
+    if (!em || em != gClashEm || !pPL) {
+        return 0;
+    }
+    FREE_EM10* w = EM10_WK(em);
+    CAMERA* c = &pG->Camera;
+    Vec a = {950.0f, 1550.0f, -750.0f};  // Leon's frame: +x his left, +z towards the Ganado
+    Vec b = {-180.0f, 1300.0f, 430.0f};
+    PSMTXMultVec(pPL->mat, &a, &a);
+    PSMTXMultVec(pPL->mat, &b, &b);
+    PosToPos(&c->param.Target, &b, &w->Cam.param.Target, 1.0f);
+    PosToPos(&c->param.Campos, &a, &w->Cam.param.Campos, 1.0f);
+    Vec j = {fRand1_1() * 6.0f, fRand1_1() * 6.0f, fRand1_1() * 6.0f};
+    PSVECAdd(&w->Cam.param.Campos, &j, &w->Cam.param.Campos);
+    PSVECAdd(&w->Cam.param.Target, &j, &w->Cam.param.Target);
+    Vec d, hit;
+    PSVECSubtract(&w->Cam.param.Campos, &w->Cam.param.Target, &d);
+    if (PSVECMag(&d) > 10.0f) {
+        VECNormalize(&d, &d);
+        PSVECScale(&d, &d, 250.0f);
+        PSVECAdd(&w->Cam.param.Campos, &d, &w->Cam.param.Campos);
+        if (EatMgr.hitCheck(&w->Cam.param.Target, &w->Cam.param.Campos, &hit, 0, 0x8000, 0)) {
+            w->Cam.param.Campos = hit;
+        }
+        PSVECSubtract(&w->Cam.param.Campos, &d, &w->Cam.param.Campos);
+    }
+    w->Cam.param.Fovy = 55.0f;
+    w->Cam.Up.x = 0.0f;
+    w->Cam.Up.y = 1.0f;
+    w->Cam.Up.z = 0.0f;
+    PSVECSubtract(&w->Cam.param.Campos, &w->Cam.param.Target, &d);
+    w->Cam.Distance = PSVECMag(&d);
+    CameraSetOrientationUp(&w->Cam);
+    CamCtrl.SetExtraCamera(&w->Cam);
+    return 1;
 }
 
 // runtime/melee.cpp: the attacker of the last parried blow while still active and alive, else 0

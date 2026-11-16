@@ -1,0 +1,16 @@
+# Patch 0927 (device report of DevJunior, 16.11.2026: "the camera in the same shot as the remake" in the chainsaw
+# clash). Not a bug of the prototype: a port feature of the mods (patch 0924, runtime/parry.cpp).
+# em10.cpp em10_R1_C_SawHit: while Leon is in the parry's clash, re4_csaw_clash_cam sets the remake's shot (beside
+# and behind his shoulder, both in the picture) instead of the close cut-in camera of the saw's kill
+# (em10CamMoveCri). Declared in re4_whole_prelude.h.
+--- a/src/em10/em10.cpp
++++ b/src/em10/em10.cpp
+@@ -11564,7 +11564,7 @@
+         break;
+     }
+     em->Catch_at_adj = em->pos;
+-    if (w->Be_flg & 0x800) {
++    if ((w->Be_flg & 0x800) && !re4_csaw_clash_cam(em)) { /* port: patch 0927 */
+         em10CamMoveCri(em, em->r_no_3, 1);
+     }
+     w->Be_flg |= 0x2000;

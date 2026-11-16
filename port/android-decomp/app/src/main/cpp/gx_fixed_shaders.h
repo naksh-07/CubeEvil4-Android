@@ -558,10 +558,10 @@ constexpr char kDofMixFs[] =
 // haze: the colour (rgb) and the most it covers (a); shape: where it starts (x, game units), the distance over which
 // it builds up (y), the sky's share of the most (z).
 // (its body: kDofHead + kDofDistance + this)
-// the haze of "Requiem": a cold blue-black (the colour) covering at most 62 %; from 3 m on, two thirds of the most at
-// 3 + 11 m; the sky (no depth) 70 % of the most
-constexpr float kAtmosHaze[4] = {0.085f, 0.110f, 0.150f, 0.62f};
-constexpr float kAtmosShape[4] = {3000.0f, 11000.0f, 0.70f, 0.0f};
+// the haze of "Requiem": a cold blue-grey mist (the colour) covering at most 45 %; from 4 m on, two thirds of the most
+// at 4 + 14 m; the sky (no depth) 60 % of the most (16.11.2026, "very dark": the haze was blue-black, 62 %, from 3 m)
+constexpr float kAtmosHaze[4] = {0.20f, 0.23f, 0.28f, 0.45f};
+constexpr float kAtmosShape[4] = {4000.0f, 14000.0f, 0.60f, 0.0f};
 constexpr char kAtmosFs[] =
     "uniform vec4 haze;\nuniform vec4 shape;\nout vec4 o;\n"
     "void main() {\n"
@@ -617,13 +617,15 @@ constexpr char kColourFs[] =
     "    float grey = 1.0 - clamp((hi - lo) / max(hi, 0.04) * 1.6, 0.0, 1.0);\n"
     "    float w = 0.35 + 0.65 * grey;\n"
     "    g = vec3(l) + (c - vec3(l)) * 1.15;\n"
-    "    g = clamp(g * mix(vec3(1.0), vec3(0.74, 0.95, 1.18), w), 0.0, 1.0);\n"
-    "    g = mix(g, g * g, 0.35);\n"
-    "    g = scurve(clamp((g - 0.03) / 0.97, 0.0, 1.0), 0.55);\n"
+    // (fourth round, 16.11.2026, "the Requiem mode is very dark": the old curve took a 20 % grey down to 6 %; now the
+    // brightness stays where the game had it, a 20 % grey 18 %, the middle tones as they were; the cold cast milder on
+    // red; the corners less dark)
+    "    g = clamp(g * mix(vec3(1.0), vec3(0.84, 0.97, 1.12), w), 0.0, 1.0);\n"
+    "    g = scurve(pow(g, vec3(0.95)), 0.35);\n"
     "    float lg = lum(g);\n"
-    "    g = clamp(g + w * lg * (1.0 - lg) * 4.0 * vec3(-0.035, 0.010, 0.045), 0.0, 1.0);\n"
+    "    g = clamp(g + w * lg * (1.0 - lg) * 4.0 * vec3(-0.025, 0.008, 0.035), 0.0, 1.0);\n"
     "    vec2 d = (vUv - 0.5) * vec2(1.0, 0.8);\n"
-    "    g *= 1.0 - 0.50 * smoothstep(0.28, 0.75, length(d));\n"
+    "    g *= 1.0 - 0.30 * smoothstep(0.35, 0.85, length(d));\n"
     // a fine film grain that moves each picture, most in the middle tones (none in black, none in white)
     "    float h = fract(sin(dot(floor(gl_FragCoord.xy) + seed, vec2(12.9898, 78.233))) * 43758.5453);\n"
     "    float lm = lum(g);\n"
