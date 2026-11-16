@@ -257,6 +257,13 @@ namespace {
 // held it above his head, over the saw)
 const f32 kHold = 95.0f;
 const int kClashSe = 12;     // frames between the metal clash sounds
+// the push that frees him (the mod's 1202, 80 frames): from its frame 12 (the knife still against the saw, a moment
+// before the shove), at 1.3 times its speed, done at its frame 62 (he stands again; the rest is idling). Device video
+// 16.11.2026: "Leon takes long to push the enemy away and recover": he played on through the block's 95 frames left
+// (the push only at its frame 140) while the Ganado was already thrown back.
+const u16 kPushFrom = 12;
+const f32 kPushSpeed = 1.3f;
+const f32 kPushEnd = 62.0f;
 cEm* gClashEm;               // the chainsaw Ganado in the clash
 int gClashSe;
 bool gClashCut;              // the cutting sound stopped
@@ -299,16 +306,21 @@ void plCsawClash(cPlayer* pl)
             pl->r_no_2 = 2;
         }
         break;
-    case 2:
-        if (block) {
-            pl->Motion.Seq_speed = 1.0f;  // on into the push
+    case 2: {
+        void* push = re4_csaw_motion(1);
+        if (push) {
+            MotionSetCore(pl, &pl->Motion, push, 0, 4, 1, kPushFrom);  // the shove at once, with the Ganado's
+            pl->Motion.Seq_speed = kPushSpeed;
+        } else if (block) {
+            pl->Motion.Seq_speed = 1.0f;  // on into the block motion's own push
         } else {
             MotionSetCore(pl, &pl->Motion, PL_ARC_PTR(pl->subArc, 0x102), 0, 5, 1, 0);
         }
         re4_log("parry: Leon broke free of the chainsaw clash");
         pl->r_no_2++;
+    }
     case 3:
-        if (MotionMove(pl, 0)) {
+        if (MotionMove(pl, 0) || (re4_csaw_motion(1) && pl->Motion.Seq_frame >= kPushEnd)) {
             endClash(pl);
         }
         break;
