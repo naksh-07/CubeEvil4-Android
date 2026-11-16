@@ -7,7 +7,7 @@
 // Patch 0925 (em10.cpp Dm_Small, the flinch, where it sets the motion it chose by the hit zone) asks
 // re4_react_motion: the remake's flinch of the same zone takes the motion's place. The game's choices stay where a
 // motion carries the game's own logic: going down on the knees (0x51), the shield carriers, the chainsaw holders
-// (Wep_type 0xC). The game's sequence holds the reaction's events (Free 1 the water splash, 2 "bent over": the kick /
+// (Wep_type 4). The game's sequence holds the reaction's events (Free 1 the water splash, 2 "bent over": the kick /
 // suplex prompt may come, 4 the early end, 0x80 down; and the voice's SE): a sequence made here puts each of its keys
 // at the same share of the remake's motion, so the prompts and the end stay where the game had them.
 // Side-specific flinches (an arm, a leg) are the remake's own left and right: the game's mirroring (Mot_attr 0x40)
@@ -250,7 +250,7 @@ void re4_react_motion(void* p, int type, void** m0, void** m1, int* flag)
         return;
     }
     FREE_EM10* w = EM10_WK(em);
-    if (w->pShield || w->Wep_type == 0xC) {
+    if (w->pShield || w->Wep_type == 4) {  // 4: the chainsaw (em10WeaponInit, flag 0x10000000)
         return;
     }
     const int c = classOf(em, type, *m0);

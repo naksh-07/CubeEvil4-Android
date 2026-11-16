@@ -165,12 +165,14 @@ namespace {
 
 // The chainsaw Ganado whose swing is cutting now (C_SawAtk 0x2F / C_SawCriAtk 0x31 on its saw's hit frames, the
 // sequence's Free 1 that em10CsawHitCk asks), else 0. Found among all the enemies, not by the blow's place: the saw's
-// hit sphere lies up to 1.5 m from its holder (device report 15.11.2026: the parry still turned the saw aside).
+// hit sphere lies up to 1.5 m from its holder (device report 15.11.2026: the parry still turned the saw aside). Only
+// the chainsaw holders reach those two routines (em10.cpp: Wep_type 4); the weapon kind is not asked (device report
+// 16.11.2026: Dr. Salvador, id 0x15 Wep_type 4, still turned aside: the check asked 0xC, not the chainsaw).
 cEm* sawSwinging()
 {
     for (cEm* m = EmMgr.getActiveWork(); m != 0; m = EmMgr.getNext(m)) {
         if (villager(m->id) && m->hp > 0 && m->r_no_0 == 1 && (m->r_no_1 == 0x2F || m->r_no_1 == 0x31) &&
-            EM10_WK(m)->Wep_type == 0xC && EM10_WK(m)->pWeapon && (m->Motion.Seq_old.Free & 1)) {
+            EM10_WK(m)->pWeapon && (m->Motion.Seq_old.Free & 1)) {
             return m;
         }
     }
