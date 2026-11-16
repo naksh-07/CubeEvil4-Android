@@ -336,7 +336,10 @@ struct GlRenderer final : GxCore {
   // Colour and the CRT (0.99.9): their programs, pictures and uniforms; one framebuffer for their passes
   GLuint filterFbo = 0, colourProgram = 0, colourTex = 0;
   int colourTexW = 0, colourTexH = 0;
-  GLint colourModeLoc = -1, colourStrengthLoc = -1;
+  GLint colourModeLoc = -1, colourStrengthLoc = -1, colourSeedLoc = -1;
+  // the "Requiem" atmosphere (AtmospherePass): its program and a framebuffer of the EFB's colour without its depth
+  GLuint atmosProgram = 0, atmosFbo = 0;
+  GLint atmosSize = -1, atmosZ = -1, atmosHaze = -1, atmosShape = -1;
   GLuint crtLineProgram = 0, crtGlowProgram = 0, crtProgram = 0, crtLineTex = 0, crtGlowTex = 0;
   int crtLineW = 0, crtLineH = 0, crtGlowW = 0, crtGlowH = 0;
   GLint crtBleedLoc = -1, crtStepLoc = -1, crtRowsLoc = -1, crtLinesLoc = -1, crtBoxLoc = -1, crtShapeLoc = -1,
@@ -1964,12 +1967,14 @@ struct GlRenderer final : GxCore {
       glUniform1i(glGetUniformLocation(colourProgram, "src"), 0);
       colourModeLoc = glGetUniformLocation(colourProgram, "mode");
       colourStrengthLoc = glGetUniformLocation(colourProgram, "strength");
+      colourSeedLoc = glGetUniformLocation(colourProgram, "seed");
     }
     PassTexture(&colourTex, &colourTexW, &colourTexH, w, h);
     const GLuint from = ShownXfb();
     glUseProgram(colourProgram);
     glUniform1i(colourModeLoc, colourMode);
     glUniform1f(colourStrengthLoc, colourStrength);
+    glUniform1f(colourSeedLoc, static_cast<float>(stats.colourPasses % 97u) * 1.37f);  // the grain moves (mode 3)
     FilterDraw(colourProgram, colourTex, w, h, from);
     colourShown = true;
     stats.colourPasses++;
@@ -2360,6 +2365,69 @@ struct GlRenderer final : GxCore {
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - timedFrom).count(), region[2],
             region[3], bw, bh, bloomLevel);
     }
+  }
+
+  // The "Requiem" atmosphere (GxCore::AtmospherePass; gx_fixed_shaders.h kAtmosFs): after the scene's last 3D draw,
+  // before the bloom, the distance into a cold haze, blended over the EFB's colour (MSAA: the multisampled one; else
+  // through a framebuffer without the depth, which the pass reads).
+  void AtmospherePass() override {
+    int region[4];
+    if (atmosFailed || !havePerspective || !BloomRegion(region))
+      return;
+    Touched();
+    if (!atmosProgram) {
+      std::string log;
+      const std::string fs = std::string(fixed::kDofHead) + fixed::kDofDistance + fixed::kAtmosFs;
+      atmosProgram = Link(fixed::kDofQuadVs, fs, &log);
+      if (!atmosProgram) {
+        GXLOG("atmosphere: shader failed: %s", log.c_str());
+        atmosFailed = true;  // off for good on this driver (the colour grade stays)
+        BindFbo(DrawFbo());
+        return;
+      }
+      glUseProgram(atmosProgram);
+      glUniform1i(glGetUniformLocation(atmosProgram, "depths"), 0);
+      atmosSize = glGetUniformLocation(atmosProgram, "size");
+      atmosZ = glGetUniformLocation(atmosProgram, "zmap");
+      atmosHaze = glGetUniformLocation(atmosProgram, "haze");
+      atmosShape = glGetUniformLocation(atmosProgram, "shape");
+      glGenFramebuffers(1, &atmosFbo);
+    }
+    float zRange = AsFloat(xfReg[0x1C]);
+    if (!(std::fabs(zRange) > 1.0f))
+      zRange = 16777215.0f;
+    const float zFar = AsFloat(xfReg[0x1F]);
+    Resolve(region[0], region[1], region[2], region[3], true);  // the depth (MSAA: resolved)
+    SaveAndPlainState();
+    glDepthMask(GL_FALSE);
+    BindFbo(msaaFbo ? msaaFbo : atmosFbo);
+    if (!msaaFbo)
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, efbColor, 0);
+    glViewport(0, 0, Lo(kEfbWidth), Lo(kEfbHeight));
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(region[0], region[1], region[2], region[3]);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(atmosProgram);
+    glUniform2f(atmosSize, static_cast<float>(Lo(kEfbWidth)), static_cast<float>(Lo(kEfbHeight)));
+    glUniform4f(atmosZ, perspA, perspB, zRange, zFar);
+    glUniform4fv(atmosHaze, 1, fixed::kAtmosHaze);
+    glUniform4fv(atmosShape, 1, fixed::kAtmosShape);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, efbDepth);
+    glBindSampler(0, 0);
+    glBindVertexArray(quadVao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    BindFbo(DrawFbo());
+    current = nullptr;
+    Touched();
+    stats.atmosPasses++;
   }
 
   void BloomRelease() {
@@ -3783,8 +3851,10 @@ void GlRenderer::Release() {
   glDeleteProgram(m.mixProgram);
   const GLuint halfTextures[] = {m.halfTex};
   glDeleteTextures(1, halfTextures);
-  const GLuint halfFbos[] = {m.halfFbo, m.colorFbo};
-  glDeleteFramebuffers(2, halfFbos);
+  const GLuint halfFbos[] = {m.halfFbo, m.colorFbo, m.atmosFbo};
+  glDeleteFramebuffers(3, halfFbos);
+  if (m.atmosProgram)
+    glDeleteProgram(m.atmosProgram);
   const GLuint autofocusTextures[] = {m.blurTex, m.focusTex[0], m.focusTex[1]};
   glDeleteTextures(3, autofocusTextures);
   const GLuint autofocusFbos[] = {m.blurFbo, m.focusFbo[0], m.focusFbo[1]};

@@ -1562,6 +1562,12 @@ void GxCore::Run(const Re4GxChunk &chunk) {
                      ? (m.flaresOn ? m.flareAfter : m.FlareScan(chunk))
                      : 0;
   m.bloomDone = false;
+  // the "Requiem" atmosphere (colour mode 3): at the same place, before the bloom
+  // (the scene's perspective is asked when the pass comes: AtmospherePass)
+  m.atmosAfter = m.colourMode == 3 && !m.atmosFailed && !m.skipDraws && !(chunk.flags & RE4_GX_CHUNK_STILL)
+                     ? (m.bloomAfter ? m.bloomAfter : m.flaresOn ? m.flareAfter : m.FlareScan(chunk))
+                     : 0;
+  m.atmosDone = false;
   std::uint32_t at = 0;
   while (at < chunk.opWords) {
     m.curOpAt = at;
@@ -1572,6 +1578,10 @@ void GxCore::Run(const Re4GxChunk &chunk) {
       at = m.DrawMerged(chunk, at);
     else
       at = m.Op(chunk, at);
+    if (m.atmosAfter && !m.atmosDone && at >= m.atmosAfter) {
+      m.atmosDone = true;
+      m.AtmospherePass();
+    }
     if (m.bloomAfter && !m.bloomDone && at >= m.bloomAfter) {
       m.bloomDone = true;
       m.BloomPass();

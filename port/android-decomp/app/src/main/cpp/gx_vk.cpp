@@ -448,6 +448,7 @@ struct VkRenderer final : GxCore {
   VkPipelineLayout overlayLayout = VK_NULL_HANDLE;
   bool overlayFailed = false;
   Fixed focusFx, blurFx, halfFx, mixFx, dofBackFx;
+  Fixed atmosFx;  // the "Requiem" atmosphere (AtmospherePass)
   VkRenderPass efbColorPass = VK_NULL_HANDLE;
   VkFramebuffer efbColorFb = VK_NULL_HANDLE;
   Fixed fxaaFx, sharpFx, psxFx;
@@ -2464,6 +2465,68 @@ struct VkRenderer final : GxCore {
     vkCmdDraw(cb, 4, 1, 0, 0);
     stats.bloomPasses++;
   }
+  // ---- the "Requiem" atmosphere (as GlRenderer::AtmospherePass): the haze blended over the EFB's colour, the depth
+  // read as the autofocus's mix reads it (MSAA: the resolved image beside the multisampled EFB; else in a pass of the
+  // colour alone) ----
+  void AtmospherePass() override {
+    FlushClear();
+    int region[4];
+    if (atmosFailed || !havePerspective || !BloomRegion(region))
+      return;
+    if (!atmosFx.pipeline) {
+      if (samples <= 1 && !efbColorPass)
+        efbColorPass = MakePass(VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_UNDEFINED, VK_ATTACHMENT_LOAD_OP_LOAD,
+                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+      std::string error;
+      const VkColorComponentFlags rgb = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT;
+      const std::string fs = std::string(fixed::kDofHead) + fixed::kDofDistance + fixed::kAtmosFs;
+      if (!MakeFixed(atmosFx, fixed::kDofQuadVs, fs, samples > 1 ? efbPass : efbColorPass, rgb, false, &error, false,
+                     nullptr, 2)) {
+        GXLOG("atmosphere shader (Vulkan): %s", error.c_str());
+        atmosFailed = true;  // off for good on this driver (the colour grade stays)
+        return;
+      }
+    }
+    float zRange = AsFloat(xfReg[0x1C]);
+    if (!(std::fabs(zRange) > 1.0f))
+      zRange = 16777215.0f;
+    const float zFar = AsFloat(xfReg[0x1F]);
+    const float size[2] = {static_cast<float>(Lo(kEfbWidth)), static_cast<float>(Lo(kEfbHeight))};
+    const float zmap[4] = {perspA, perspB, zRange, zFar};
+    ResolveDepth();
+    Begin();
+    EndPass();
+    VkCommandBuffer cb = F().draw;
+    Transition(cb, efbDepth, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (samples > 1) {
+      BeginEfbPass();
+    } else {
+      Transition(cb, efbColor, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+      if (!efbColorFb)
+        efbColorFb = MakeFb(efbColorPass, {efbColor.view}, efbColor.width, efbColor.height);
+      auto rbi = Make<VkRenderPassBeginInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);
+      rbi.renderPass = efbColorPass;
+      rbi.framebuffer = efbColorFb;
+      rbi.renderArea = {{0, 0}, {efbColor.width, efbColor.height}};
+      vkCmdBeginRenderPass(cb, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+      pass = kOtherPass;
+    }
+    const VkViewport efbVp{0.0f, 0.0f, float(efbColor.width), float(efbColor.height), 0.0f, 1.0f};
+    const VkRect2D sc{{region[0], region[1]}, {static_cast<std::uint32_t>(region[2]), static_cast<std::uint32_t>(region[3])}};
+    vkCmdSetViewport(cb, 0, 1, &efbVp);
+    vkCmdSetScissor(cb, 0, 1, &sc);
+    std::vector<std::uint8_t> pc(atmosFx.constants.bytes, 0);
+    Put(pc, atmosFx, "size", size);
+    Put(pc, atmosFx, "zmap", zmap);
+    Put(pc, atmosFx, "haze", fixed::kAtmosHaze);
+    Put(pc, atmosFx, "shape", fixed::kAtmosShape);
+    BindFixedNamed(atmosFx, {{"depths", efbDepth.view, nearestClamp}}, pc);
+    vkCmdDraw(cb, 4, 1, 0, 0);
+    if (samples <= 1)
+      EndPass();
+    scissorValid = false;
+    stats.atmosPasses++;
+  }
   // ---- the gameplay autofocus (E5, as GlRenderer::Autofocus; the comment there says what it does) ----
   bool MakeAutofocus() {
     std::string error;
@@ -3277,6 +3340,8 @@ struct VkRenderer final : GxCore {
     const std::int32_t mode = colourMode;
     Put(pc, colourFx, "mode", mode);
     Put(pc, colourFx, "strength", colourStrength);
+    const float seed = static_cast<float>(stats.colourPasses % 97u) * 1.37f;  // the grain moves (mode 3)
+    Put(pc, colourFx, "seed", seed);
     Image *src[1] = {ShownImage()};
     FilterPass(colourFx, colourImg, src, 1, pc);
     colourShown = true;
@@ -4527,7 +4592,7 @@ struct VkRenderer final : GxCore {
     for (Fixed *f : {&colourFx, &crtLineFx, &crtGlowFx, &crtShotFx, &crtSwapFx})
       FreeFixed(*f);
     colourShown = crtReady = false;
-    for (Fixed *f : {&fxaaFx, &sharpFx, &psxFx, &flareVisFx, &flareFx, &focusFx, &blurFx, &halfFx, &mixFx, &dofBackFx})
+    for (Fixed *f : {&fxaaFx, &sharpFx, &psxFx, &flareVisFx, &flareFx, &focusFx, &blurFx, &halfFx, &mixFx, &dofBackFx, &atmosFx})
       FreeFixed(*f);
     for (Fixed *f : {&bloomKeyFx, &bloomPickFx, &bloomBlurFx, &bloomAddFx})
       FreeFixed(*f);

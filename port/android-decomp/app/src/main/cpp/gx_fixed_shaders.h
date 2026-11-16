@@ -551,6 +551,26 @@ constexpr char kDofMixFs[] =
     "  o = vec4(b.rgb / b.a, amount * min(1.0, b.a * 4.0));\n"
     "}\n";
 
+// The "Requiem" atmosphere (wish of DevJunior, 15.11.2026: "it should look like Requiem or the remake's graphics, without
+// losing FPS"): after the scene's last 3D draw and before the HUD, the distance falls into a cold, dark haze, as the
+// rainy streets of Resident Evil Requiem and the remake's villages do. One pass at the EFB's resolution, a single depth
+// texel a pixel, blended over the scene by its alpha (nothing near Leon is drawn: discarded). zmap as the autofocus;
+// haze: the colour (rgb) and the most it covers (a); shape: where it starts (x, game units), the distance over which
+// it builds up (y), the sky's share of the most (z).
+// (its body: kDofHead + kDofDistance + this)
+// the haze of "Requiem": a cold blue-black (the colour) covering at most 62 %; from 3 m on, two thirds of the most at
+// 3 + 11 m; the sky (no depth) 70 % of the most
+constexpr float kAtmosHaze[4] = {0.085f, 0.110f, 0.150f, 0.62f};
+constexpr float kAtmosShape[4] = {3000.0f, 11000.0f, 0.70f, 0.0f};
+constexpr char kAtmosFs[] =
+    "uniform vec4 haze;\nuniform vec4 shape;\nout vec4 o;\n"
+    "void main() {\n"
+    "  float d = distanceAt(gl_FragCoord.xy);\n"
+    "  float a = d > 1.0e8 ? haze.a * shape.z : haze.a * (1.0 - exp(-max(d - shape.x, 0.0) / shape.y));\n"
+    "  if (a < 0.004) discard;\n"
+    "  o = vec4(haze.rgb, a);\n"
+    "}\n";
+
 // ---- Colour and CRT (wishes of the project owner, 11.11.2026; the mock-ups of 0.99.9 in numpy, the same maths) ----
 
 // Colour: the display copy as shown so far graded (mode 1 "Warm film": browns and golds stronger, cold colours a
@@ -562,6 +582,7 @@ constexpr char kColourFs[] =
     "uniform sampler2D src;\n"
     "uniform int mode;\n"
     "uniform float strength;\n"
+    "uniform float seed;\n"
     "in vec2 vUv;\nout vec4 o;\n"
     "float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }\n"
     "vec3 scurve(vec3 c, float a) { return c + a * (c * c * (3.0 - 2.0 * c) - c); }\n"
@@ -575,6 +596,17 @@ constexpr char kColourFs[] =
     "    g *= vec3(1.0) + vec3(0.06, 0.0, -0.14) * clamp(l * 1.6, 0.0, 1.0);\n"
     "    g = clamp(scurve(clamp(g, 0.0, 1.0), 0.25), 0.0, 1.0);\n"
     "  } else if (mode == 3) {\n"
+    // (third round, 15.11.2026, "like Requiem or the remake, without losing FPS": the GameCube's soft textures sharpened
+    // as AMD's contrast-adaptive sharpening does, four more texels: strong where the detail is faint, little at hard
+    // edges, so no halos)
+    "    vec2 px = 1.0 / vec2(textureSize(src, 0));\n"
+    "    vec3 n = texture(src, vUv + vec2(0.0, px.y)).rgb, s = texture(src, vUv - vec2(0.0, px.y)).rgb;\n"
+    "    vec3 e = texture(src, vUv + vec2(px.x, 0.0)).rgb, w4 = texture(src, vUv - vec2(px.x, 0.0)).rgb;\n"
+    "    vec3 mn = min(c, min(min(n, s), min(e, w4))), mx = max(c, max(max(n, s), max(e, w4)));\n"
+    "    vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(0.001)), 0.0, 1.0));\n"
+    "    vec3 wt = -amp * 0.16;\n"
+    "    c = clamp((c + wt * (n + s + e + w4)) / (1.0 + 4.0 * wt), 0.0, 1.0);\n"
+    "    l = lum(c);\n"
     // "Requiem" (wish of DevJunior, 15.11.2026, a rainy night street of Resident Evil Requiem as the reference; "it
     // must not take colours away: the characters keep theirs"): no colour is paled, the coloured parts even gain a
     // little; only what is grey already (walls, fog, sky, stone) turns cold blue-grey, most in the middle tones; a
@@ -592,6 +624,10 @@ constexpr char kColourFs[] =
     "    g = clamp(g + w * lg * (1.0 - lg) * 4.0 * vec3(-0.035, 0.010, 0.045), 0.0, 1.0);\n"
     "    vec2 d = (vUv - 0.5) * vec2(1.0, 0.8);\n"
     "    g *= 1.0 - 0.50 * smoothstep(0.28, 0.75, length(d));\n"
+    // a fine film grain that moves each picture, most in the middle tones (none in black, none in white)
+    "    float h = fract(sin(dot(floor(gl_FragCoord.xy) + seed, vec2(12.9898, 78.233))) * 43758.5453);\n"
+    "    float lm = lum(g);\n"
+    "    g = clamp(g + (h - 0.5) * 0.045 * lm * (1.0 - lm) * 4.0, 0.0, 1.0);\n"
     "  } else {\n"
     "    g = vec3(l) + (c - vec3(l)) * 0.40;\n"
     "    g = scurve(clamp((g - 0.03) / 0.97, 0.0, 1.0), 0.45);\n"

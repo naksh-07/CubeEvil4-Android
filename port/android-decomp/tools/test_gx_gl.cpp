@@ -2895,6 +2895,68 @@ std::vector<std::uint8_t> ReadPixel(re4gx::GxRenderer &r, int x, int y) {
   return {rgba[at], rgba[at + 1], rgba[at + 2], rgba[at + 3]};
 }
 
+// The "Requiem" atmosphere (colour mode 3, the mods; GxCore::AtmospherePass): a grey wall 1 m away, one 40 m away,
+// the sky (no depth: the far plane), then the HUD (2D after the scene). Mode 3: the near wall stays, the far one
+// falls into the cold dark haze (darker, blue above red), the sky less than the most; the HUD stays; a menu screen of
+// the game (RE4_GX_CHUNK_STILL) gets none; another colour mode none. ReadXfb reads the picture graded: the walls are
+// compared with each other (the same grey, the same grade).
+void TestAtmosphere(re4gx::GxRenderer &r, const char *tag) {
+  const std::uint8_t kWall[4] = {128, 128, 128, 255};
+  auto scene = [&](bool still) {
+    Builder b;
+    Baseline(b);
+    DisplayCopy(b, true, kBlack);
+    const float n = 100.0f, f = 1000000.0f;
+    b.XfF(0x1020, {1.0f, 0.0f, 1.0f, 0.0f, -n / (f - n), -f * n / (f - n)});
+    b.Xf(0x1026, {0});
+    QuadAt(b, 0, 0, 200, 528, 1000.0f, kWall);
+    QuadAt(b, 200, 0, 440, 528, 40000.0f, kWall);
+    // the HUD: orthographic after the scene
+    b.XfF(0x1020, {1.0f / 320.0f, -1.0f, -2.0f / 528.0f, 1.0f, -1.0f, -1.0f});
+    b.Xf(0x1026, {1});
+    b.Bp(0x40, 0);  // no depth test for the HUD
+    Quad(b, 250, 100, 290, 140, 0, kWall);
+    if (still)
+      b.flags |= RE4_GX_CHUNK_STILL;
+    DisplayCopy(b, false, kBlack);
+    r.Run(b.Chunk());
+  };
+  const int s = r.Scale();
+  auto at = [&](int x, int y) { return ReadPixel(r, x * s, y * s); };
+  char what[200];
+  // (the grade's film grain moves each picture by a few steps)
+  auto close = [](const std::vector<std::uint8_t> &a, const std::vector<std::uint8_t> &c) {
+    for (int k = 0; k < 3; k++)
+      if (std::abs(int(a[k]) - int(c[k])) > 8)
+        return false;
+    return true;
+  };
+  r.SetColour(3, 2);
+  const unsigned before = r.Stats().atmosPasses;
+  scene(false);
+  const auto nearWall = at(100, 300), farWall = at(300, 300), hud = at(270, 120);
+  std::fprintf(stderr, "  atmosphere (%s): near wall %d %d %d, far wall %d %d %d, the HUD %d %d %d\n", tag, nearWall[0],
+               nearWall[1], nearWall[2], farWall[0], farWall[1], farWall[2], hud[0], hud[1], hud[2]);
+  std::snprintf(what, sizeof(what), "atmosphere (%s): one pass, the near wall stays, the far one into the cold haze, "
+                "the HUD stays", tag);
+  Check(r.Stats().atmosPasses == before + 1 && farWall[0] + 20 < nearWall[0] && farWall[1] + 20 < nearWall[1] &&
+            farWall[2] + 20 < nearWall[2] && farWall[2] > farWall[0] && close(hud, nearWall),
+        what);
+  const unsigned beforeStill = r.Stats().atmosPasses;
+  scene(true);
+  std::snprintf(what, sizeof(what), "atmosphere (%s): none on a menu screen of the game", tag);
+  const auto stillNear = at(100, 300);
+  std::fprintf(stderr, "  atmosphere (%s) on a menu screen: near %d %d %d, far %d %d %d\n", tag, stillNear[0],
+               stillNear[1], stillNear[2], at(300, 300)[0], at(300, 300)[1], at(300, 300)[2]);
+  Check(r.Stats().atmosPasses == beforeStill && close(at(300, 300), stillNear), what);
+  r.SetColour(1, 2);
+  scene(false);
+  std::snprintf(what, sizeof(what), "atmosphere (%s): none with another colour", tag);
+  const auto otherNear = at(100, 300);
+  Check(r.Stats().atmosPasses == beforeStill && close(at(300, 300), otherNear), what);
+  r.SetColour(0, 1);
+}
+
 void TestBloom(re4gx::GxRenderer &r, const char *tag) {
   const std::uint8_t kRoom[4] = {40, 40, 40, 255}, kMid[4] = {120, 120, 120, 255};
   auto scene = [&](bool letterbox, bool still) {
@@ -3352,6 +3414,7 @@ void TestOptions(bool poison, bool tiled, bool halfDof = true, int lose = 0) {
   TestCrtColour(r);
   TestBloom(r, r.TiledMsaa() ? (lose ? "GL MSAA on the tiles, everything lost" : "GL MSAA on the tiles")
                              : "GL MSAA");
+  TestAtmosphere(r, r.TiledMsaa() ? "GL MSAA on the tiles" : "GL MSAA");
   TestPsx(r);
   TestFrameSkip(r);
   Check(r.HalfDof() == halfDof, "options: the depth of field's resolution as asked for");
@@ -4899,6 +4962,7 @@ int main() {
     std::string error;
     Require(gr.Init(2, &error), error.c_str());
     TestBloom(gr, "GL 2x");
+    TestAtmosphere(gr, "GL 2x");
     gr.Release();
   }
   TestAutoLevel();
@@ -4919,6 +4983,14 @@ int main() {
       std::string error;
       Require(vr.Init(2, &error), error.c_str());
       TestBloom(vr, "Vulkan 2x");
+      TestAtmosphere(vr, "Vulkan 2x");
+      {
+        // and without MSAA at 1x (the Vulkan renderer's colour-only pass)
+        re4gx::GxRenderer v1(re4gx::GxApi::kVulkan);
+        Require(v1.Init(1, &error), error.c_str());
+        TestAtmosphere(v1, "Vulkan 1x");
+        v1.Release();
+      }
       vr.Release();
     }
   }
@@ -4953,6 +5025,7 @@ int main() {
     TestSharpen(renderer);
     TestCrtColour(renderer);
     TestBloom(renderer, poison ? "GL, forgotten contents magenta" : "GL");
+    TestAtmosphere(renderer, poison ? "GL, forgotten contents magenta" : "GL");
     TestPictureCadence();
     TestPictureHold();
     if (!poison)

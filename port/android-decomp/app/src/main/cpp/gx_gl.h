@@ -43,6 +43,7 @@ struct GxStats {
   unsigned sharpenPasses = 0;    // display copies sharpened (SetSharpen)
   unsigned colourPasses = 0;     // display copies graded (SetColour)
   unsigned crtPasses = 0;        // display copies made into the CRT's lines and glow (SetCrt)
+  unsigned atmosPasses = 0;      // pictures with the "Requiem" haze (colour mode 3)
   unsigned bloomPasses = 0;      // pictures whose scene's bright parts glow (SetBloom)
   unsigned depthSnapshots = 0;   // depth maps taken for the game's GXPeekZ (BP 0x5B, the core's marker)
   unsigned depthDelivered = 0;   // of them handed to the core

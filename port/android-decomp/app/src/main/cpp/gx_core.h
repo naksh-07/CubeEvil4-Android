@@ -628,6 +628,14 @@ struct GxCore {
   // renderer's texels, w 1 (unused: 0).
   void BloomHalos(float out[8][4]) const;
   virtual void BloomPass() = 0;
+  // --- the "Requiem" atmosphere (colour mode 3, the mods; wish of DevJunior, 15.11.2026) ---------------------------
+  // At the bloom's place and before it (the lights glow through the haze): the distance falls into a cold, dark haze
+  // (gx_fixed_shaders.h kAtmosFs), one pass at the EFB's resolution; not on the game's menu screens, nor in movies
+  // and 2D pictures (no 3D draw), nor without the scene's perspective.
+  bool atmosFailed = false, atmosDone = false;
+  std::uint32_t atmosAfter = 0;  // the op offset after the scene's last 3D draw (0: no haze in this chunk)
+  // the haze's colour and most (x, y, z, w) and its shape (start, build-up, the sky's share): fixed::kAtmos*
+  virtual void AtmospherePass() = 0;
   // One op of the chunk at `at` (Run); the next op's place (the end when the op is cut off).
   std::uint32_t Op(const Re4GxChunk &chunk, std::uint32_t at);
   // the GPU side of the ops (Op): the API renderer's
