@@ -1,0 +1,16 @@
+# Patch 0926 (device report of DevJunior, 16.11.2026: "Ashley's hand cannon does the same damage as the handgun").
+# Not a bug of the prototype: a port feature of the mods (runtime/ashley_gun.cpp, Ashley's pistol).
+# em_dm_val.cpp GetWepDmVal: the firepower level is Leon's equipped weapon's (pG->weapon_lv_power). An enemy that
+# Ashley's own shot hit in the last frames takes the level of the pistol she holds (re4_ashley_power_level); her
+# shot carries that pistol's own weapon number, so the damage table and the level table are the pistol's.
+# Declared in re4_whole_prelude.h.
+--- a/src/game/em_dm_val.cpp
++++ b/src/game/em_dm_val.cpp
+@@ -386,6 +386,7 @@
+         break;
+     }
+     lv = pG->weapon_lv_power;
++    lv = (u32) re4_ashley_power_level(pEm, wep_no, (int) lv); /* port: patch 0926 */
+     if (lv > 7) {
+         lv = 7;
+     }

@@ -35,6 +35,12 @@
 //    rotation) points at the target, blended in over kAimIn frames. Aimed, she fires every kFireGap frames:
 //    PlWepHitCheck2 from the muzzle to the target's lock-on point, the weapon number Luis uses (3), her own hit
 //    points set to 0 meanwhile as he does (pl14.cpp cRoutine::shot), and the weapon block's first sound.
+//  - The hold and the damage (device report of DevJunior, 16.11.2026: "fix Ashley's animations with the gun; the hand
+//    cannon does the same damage as the handgun"): she holds the pistol in both hands (aimArm: a two-bone reach of
+//    each arm to a grip in front of her chest at her eyes' height, the elbows bent down, the hands along the aim with
+//    the thumbs up, the left one cupping the right); her shot carries the held pistol's own weapon number (its damage
+//    table, its piercing) and, through patch 0926 (GetWepDmVal), the pistol's own firepower level for the enemies it
+//    hit; she fires at the pistol's own rate (PlShotFrameTbl at its speed level, at least kFireGap frames).
 //  - Ammunition: kMag rounds; one comes back every kRegen frames.
 //  - The pistol in her hand: the handgun's model (em/wep02.drs, entries 6 / 5 as wep02's objects take them) read
 //    once to kGunAddr (Krauser's weapon buffer of cheats.cpp: only his own game uses it, and only Leon's story has
@@ -101,7 +107,17 @@ cSubChar* gAshley = 0;   // she, as cSubChar::move last ran (frame gSeen)
 u32 gSeen = 0;
 cEm* gArmOf = 0;         // whose arm gUpper / gFore / gHand are
 int gUpper = -1, gFore = -1, gHand = -1;
+int gUpperL = -1, gForeL = -1, gHandL = -1;  // her left arm (the two-handed hold; -1: one-handed)
 f32 gArmLen = 0.0f;
+// the enemies her last shots hit, the pistol's firepower level and its weapon number with them (GetWepDmVal, patch
+// 0926: the damage is the enemy's to work out a frame later, with Leon's own weapon's level by then)
+struct HerHit {
+    const cEm* em;
+    u32 frame;
+    u8 wep, lv;
+};
+HerHit gHits[16];
+int gNextHit = 0;
 int gShots = 0;
 
 bool gLoaded = false;
@@ -140,6 +156,24 @@ cItem* givenItem()
         }
     }
     return 0;
+}
+
+// frames between her shots: the pistol's own rate at its speed level (PlShotFrameTbl: the hand cannon slower than the
+// handgun), at least kFireGap
+int fireGap()
+{
+    cItem* it = givenItem();
+    if (!it) {
+        return kFireGap;
+    }
+    const u8 no = WeaponId2WeaponNo(it->id);
+    if (no == 0xFF || no >= 45) {
+        return kFireGap;
+    }
+    int lv = it->getSpeedLevel();
+    lv = lv < 0 ? 0 : lv > 4 ? 4 : lv;
+    const int f = (int) PlShotFrameTbl[no][lv];
+    return f > kFireGap ? f : kFireGap;
 }
 
 // she gives p back: into Leon's case at its old place (the case finds another when that one is taken)
@@ -214,18 +248,9 @@ int partIndex(cModel* m, const cCoord* c)
     return -1;
 }
 
-// Her right arm by her bind pose (once per Ashley)
-void findArm(cEm* a)
+// An arm by her bind pose: the part farthest out to `side` (x, model space) and its chain up to the shoulder
+bool armChain(cEm* a, f32 side, int* up, int* fore, int* hand, int* farthest, f32* reach)
 {
-    gArmOf = a;
-    gUpper = gFore = gHand = -1;
-    f32 side = -1.0f;  // Leon's right is -x (runtime/wardrobe.cpp)
-    if (pG && pG->pl_type == 0 && pPL && pPL->pList) {
-        cParts* h = pPL->getPartsPtr(10);
-        if (h) {
-            side = bindPos(h).x < 0.0f ? -1.0f : 1.0f;
-        }
-    }
     int n = 0, far = -1;
     f32 best = 0.0f;
     for (cParts* p = a->pList; p && n < 200; p = p->pList, n++) {
@@ -235,9 +260,9 @@ void findArm(cEm* a)
             far = n;
         }
     }
+    *farthest = far;
     if (far < 0) {
-        re4_log("ashley: %d parts, no arm found: no pistol", n);
-        return;
+        return false;
     }
     int chain[64];
     int len = 0;
@@ -261,17 +286,44 @@ void findArm(cEm* a)
         }
     }
     if (u < 2) {
-        re4_log("ashley: %d parts, the arm chain from part %d is too short: no pistol", n, far);
+        return false;
+    }
+    *up = chain[u];
+    *fore = chain[u - 1];
+    *hand = chain[u - 2];
+    *reach = best;
+    return true;
+}
+
+// Her arms by her bind pose (once per Ashley): the right one holds the pistol, the left one supports it
+void findArm(cEm* a)
+{
+    gArmOf = a;
+    gUpper = gFore = gHand = -1;
+    gUpperL = gForeL = gHandL = -1;
+    f32 side = -1.0f;  // Leon's right is -x (runtime/wardrobe.cpp)
+    if (pG && pG->pl_type == 0 && pPL && pPL->pList) {
+        cParts* h = pPL->getPartsPtr(10);
+        if (h) {
+            side = bindPos(h).x < 0.0f ? -1.0f : 1.0f;
+        }
+    }
+    int far = -1, farL = -1;
+    f32 reach = 0.0f, reachL = 0.0f;
+    if (!armChain(a, side, &gUpper, &gFore, &gHand, &far, &reach)) {
+        gUpper = gFore = gHand = -1;
+        re4_log("ashley: no right arm found (farthest part %d): no pistol", far);
         return;
     }
-    gUpper = chain[u];
-    gFore = chain[u - 1];
-    gHand = chain[u - 2];
+    if (!armChain(a, -side, &gUpperL, &gForeL, &gHandL, &farL, &reachL)) {
+        gUpperL = gForeL = gHandL = -1;
+    }
     const Vec pu = bindPos(a->getPartsPtr(gUpper));
     const Vec ph = bindPos(a->getPartsPtr(gHand));
     gArmLen = sqrtf((ph.x - pu.x) * (ph.x - pu.x) + (ph.y - pu.y) * (ph.y - pu.y) + (ph.z - pu.z) * (ph.z - pu.z));
-    re4_log("ashley: %d parts; right arm: upper %d (%.0f %.0f %.0f), forearm %d, hand %d (%.0f %.0f %.0f), "
-            "farthest part %d", n, gUpper, pu.x, pu.y, pu.z, gFore, gHand, ph.x, ph.y, ph.z, far);
+    re4_log("ashley: right arm: upper %d (%.0f %.0f %.0f), forearm %d, hand %d (%.0f %.0f %.0f), farthest part %d; "
+            "left arm: upper %d, forearm %d, hand %d (two hands: %s)", gUpper, pu.x, pu.y, pu.z, gFore, gHand, ph.x,
+            ph.y, ph.z, far, gUpperL, gForeL, gHandL, gHandL >= 0 ? "yes" : "no");
 }
 
 bool canShoot(cSubChar* a)
@@ -378,72 +430,236 @@ void turnLocal(cParts* p, const Quaternion& q, f32 w)
     ScaleMatrix(p->l_mat, &p->scale);
 }
 
-void aimArm(cEm* a, const Vec& target)
+// ---- the two-handed hold (wish of DevJunior, 16.11.2026: "fix Ashley's animations when she uses the gun": until
+// then her right arm pointed straight out, alone). Her bind pose has no rotation (cParts::lt_inv_mat), so a part's
+// bind offset is its local translation and "rotation W maps the bone's bind direction onto d" says all.
+
+struct M3 {
+    f32 m[3][3];
+};
+
+Vec v3(f32 x, f32 y, f32 z)
 {
-    cParts* u = a->getPartsPtr(gUpper);
-    cParts* f = a->getPartsPtr(gFore);
-    cParts* h = a->getPartsPtr(gHand);
+    Vec v = {x, y, z};
+    return v;
+}
+Vec sub3(const Vec& a, const Vec& b) { return v3(a.x - b.x, a.y - b.y, a.z - b.z); }
+Vec add3(const Vec& a, const Vec& b) { return v3(a.x + b.x, a.y + b.y, a.z + b.z); }
+Vec mul3(const Vec& a, f32 k) { return v3(a.x * k, a.y * k, a.z * k); }
+f32 dot3(const Vec& a, const Vec& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+Vec cross3(const Vec& a, const Vec& b) { return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }
+f32 len3(const Vec& a) { return sqrtf(dot3(a, a)); }
+Vec unit3(const Vec& a)
+{
+    const f32 l = len3(a);
+    return l > 1e-6f ? mul3(a, 1.0f / l) : v3(0.0f, 0.0f, 1.0f);
+}
+// a part's world rotation (its world matrix's columns made unit: the model's scale is uniform)
+M3 worldRot(const cCoord* c)
+{
+    M3 r;
+    for (int k = 0; k < 3; k++) {
+        const Vec col = unit3(v3(c->mat[0][k], c->mat[1][k], c->mat[2][k]));
+        r.m[0][k] = col.x;
+        r.m[1][k] = col.y;
+        r.m[2][k] = col.z;
+    }
+    return r;
+}
+Vec apply(const M3& r, const Vec& v)
+{
+    return v3(r.m[0][0] * v.x + r.m[0][1] * v.y + r.m[0][2] * v.z, r.m[1][0] * v.x + r.m[1][1] * v.y + r.m[1][2] * v.z,
+              r.m[2][0] * v.x + r.m[2][1] * v.y + r.m[2][2] * v.z);
+}
+Vec applyT(const M3& r, const Vec& v)
+{
+    return v3(r.m[0][0] * v.x + r.m[1][0] * v.y + r.m[2][0] * v.z, r.m[0][1] * v.x + r.m[1][1] * v.y + r.m[2][1] * v.z,
+              r.m[0][2] * v.x + r.m[1][2] * v.y + r.m[2][2] * v.z);
+}
+M3 mulM(const M3& a, const M3& b)
+{
+    M3 r;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            r.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j];
+        }
+    }
+    return r;
+}
+M3 ofQuat(const Quaternion& q)
+{
+    Mtx t;
+    PSMTXQuat(t, &q);
+    M3 r;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            r.m[i][j] = t[i][j];
+        }
+    }
+    return r;
+}
+Quaternion axisAngle(const Vec& axis, f32 ang)
+{
+    const Vec a = unit3(axis);
+    const f32 s = sinf(ang * 0.5f);
+    Quaternion q = {a.x * s, a.y * s, a.z * s, cosf(ang * 0.5f)};
+    return q;
+}
+Quaternion qmul(const Quaternion& a, const Quaternion& b)
+{
+    Quaternion r = {a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                    a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z};
+    return r;
+}
+
+// The elbow of a two-bone chain from the shoulder s to the grip g (bones l1, l2), bent towards `pole`
+Vec elbowOf(const Vec& s, const Vec& g, f32 l1, f32 l2, const Vec& pole)
+{
+    const Vec dv = sub3(g, s);
+    f32 dist = len3(dv);
+    const Vec dir = unit3(dv);
+    if (dist > l1 + l2 - 1.0f) {
+        dist = l1 + l2 - 1.0f;
+    }
+    if (dist < 1.0f) {
+        dist = 1.0f;
+    }
+    const f32 along = (l1 * l1 - l2 * l2 + dist * dist) / (2.0f * dist);
+    const f32 h2 = l1 * l1 - along * along;
+    const f32 h = h2 > 0.0f ? sqrtf(h2) : 0.0f;
+    const Vec p = unit3(sub3(pole, mul3(dir, dot3(pole, dir))));
+    return add3(add3(s, mul3(dir, along)), mul3(p, h));
+}
+
+// One arm onto the grip g: the upper arm to the elbow, the forearm to g, the hand along `aim` with the thumb up (her
+// bind pose is a T with the palms down and the thumbs forward, +z: the pistol in it lies along the fingers with its
+// sights on the thumb's side, so thumb up = the pistol upright, the palm facing in), each blended in by gW from the
+// walk's pose
+void reachArm(cEm* a, int up, int fore, int hand, const Vec& g, const Vec& pole, const Vec& aim)
+{
+    cParts* u = a->getPartsPtr(up);
+    cParts* f = a->getPartsPtr(fore);
+    cParts* h = a->getPartsPtr(hand);
     if (!u || !f || !h || !u->pParent) {
         return;
     }
-    const Vec pu = bindPos(u), ph = bindPos(h);
-    Vec rest = {ph.x - pu.x, ph.y - pu.y, ph.z - pu.z};
-    const f32 rl = sqrtf(rest.x * rest.x + rest.y * rest.y + rest.z * rest.z);
-    if (rl < 1.0f) {
+    const Vec bu = bindPos(u), bf = bindPos(f), bh = bindPos(h);
+    const Vec restUF = sub3(bf, bu), restFH = sub3(bh, bf);
+    const f32 l1 = len3(restUF), l2 = len3(restFH);
+    if (l1 < 1.0f || l2 < 1.0f) {
         return;
     }
-    rest.x /= rl;
-    rest.y /= rl;
-    rest.z /= rl;
-    Vec d = {target.x - u->world.x, target.y - u->world.y, target.z - u->world.z};
-    const f32 dl = sqrtf(d.x * d.x + d.y * d.y + d.z * d.z);
-    if (dl < 1.0f) {
+    const Vec s = u->world;
+    const Vec e = elbowOf(s, g, l1, l2, pole);
+    // the upper arm: in its parent's frame its bind direction onto the elbow
+    const M3 par = worldRot(u->pParent);
+    Quaternion qu, qf, qh;
+    quatFromTo(unit3(restUF), unit3(applyT(par, sub3(e, s))), &qu);
+    const M3 wu = mulM(par, ofQuat(qu));
+    // the forearm: onto the grip (where the elbow put it)
+    const Vec wristAt = add3(e, mul3(unit3(sub3(g, e)), l2));
+    quatFromTo(unit3(restFH), unit3(applyT(wu, sub3(wristAt, e))), &qf);
+    const M3 wf = mulM(wu, ofQuat(qf));
+    // the hand: its bind direction (the forearm's) along the aim, then rolled about it so its thumb faces up
+    quatFromTo(unit3(restFH), unit3(applyT(wf, aim)), &qh);
+    const M3 wh = mulM(wf, ofQuat(qh));
+    const Vec d = unit3(aim);
+    const Vec upW = v3(0.0f, 1.0f, 0.0f);
+    Vec want = sub3(upW, mul3(d, dot3(upW, d)));
+    Vec now = apply(wh, v3(0.0f, 0.0f, 1.0f));
+    now = sub3(now, mul3(d, dot3(now, d)));
+    if (len3(want) > 0.05f && len3(now) > 0.05f) {
+        want = unit3(want);
+        now = unit3(now);
+        const f32 ang = atan2f(dot3(d, cross3(now, want)), dot3(now, want));
+        qh = qmul(qh, axisAngle(restFH, ang));  // about the hand's own bone: about the aim in the world
+    }
+    turnLocal(u, qu, gW);
+    turnLocal(f, qf, gW);
+    turnLocal(h, qh, gW);
+}
+
+// The pistol held in both hands at her eyes' height in front of her chest, pointed at the target; the elbows bent
+// down and out (without a left arm: the right one alone, its elbow bent the same way)
+Vec gGrip = {0.0f, 0.0f, 0.0f};  // where her hands hold the pistol this frame (fire's muzzle)
+Vec gAim = {0.0f, 0.0f, 1.0f};
+
+void aimArm(cEm* a, const Vec& target)
+{
+    cParts* ur = a->getPartsPtr(gUpper);
+    if (!ur || !ur->pParent) {
         return;
     }
-    d.x /= dl;
-    d.y /= dl;
-    d.z /= dl;
-    // into the parent's frame (its world rotation transposed; the model's scale is uniform)
-    const cCoord* par = u->pParent;
-    Vec v = {par->mat[0][0] * d.x + par->mat[1][0] * d.y + par->mat[2][0] * d.z,
-             par->mat[0][1] * d.x + par->mat[1][1] * d.y + par->mat[2][1] * d.z,
-             par->mat[0][2] * d.x + par->mat[1][2] * d.y + par->mat[2][2] * d.z};
-    const f32 vl = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
-    if (vl < 1e-6f) {
-        return;
+    cParts* ul = gUpperL >= 0 ? a->getPartsPtr(gUpperL) : 0;
+    const Vec sr = ur->world;
+    const Vec sl = ul ? ul->world : sr;
+    // her right (from the left shoulder to the right one; one-handed: square to where she faces)
+    Vec right = ul ? sub3(sr, sl) : v3(-cosf(a->ang.y), 0.0f, sinf(a->ang.y));
+    right.y = 0.0f;
+    right = unit3(right);
+    const Vec chest = ul ? mul3(add3(sr, sl), 0.5f) : add3(sr, mul3(right, -150.0f));
+    const Vec d = unit3(sub3(target, add3(chest, v3(0.0f, 120.0f, 0.0f))));
+    // the grip: 0.8 of the arm's reach in front of her chest, a little above the shoulders (the sights at the eyes)
+    const Vec grip = add3(add3(chest, mul3(d, 0.78f * gArmLen)), v3(0.0f, 70.0f, 0.0f));
+    gGrip = grip;
+    gAim = d;
+    const Vec down = v3(0.0f, -1.0f, 0.0f);
+    reachArm(a, gUpper, gFore, gHand, grip, add3(down, mul3(right, 0.7f)), d);
+    if (ul) {
+        // the left hand under and behind the right one, cupping the grip
+        const Vec support = add3(add3(grip, mul3(d, -40.0f)), add3(mul3(right, -35.0f), v3(0.0f, -45.0f, 0.0f)));
+        reachArm(a, gUpperL, gForeL, gHandL, support, add3(down, mul3(right, -0.7f)), d);
     }
-    v.x /= vl;
-    v.y /= vl;
-    v.z /= vl;
-    Quaternion q, none = {0.0f, 0.0f, 0.0f, 1.0f};
-    quatFromTo(rest, v, &q);
-    turnLocal(u, q, gW);
-    turnLocal(f, none, gW);  // the elbow straight
-    turnLocal(h, none, gW);  // the hand in line
 }
 
 void fire(cEm* a, const Vec& tp, cEm* em)
 {
-    cParts* u = a->getPartsPtr(gUpper);
-    Vec d = {tp.x - u->world.x, tp.y - u->world.y, tp.z - u->world.z};
-    const f32 dl = sqrtf(d.x * d.x + d.y * d.y + d.z * d.z);
+    const Vec d = sub3(tp, gGrip);
+    const f32 dl = len3(d);
     if (dl < 1.0f) {
         return;
     }
-    const f32 reach = gArmLen + 150.0f;
-    Vec muzzle = {u->world.x + d.x / dl * reach, u->world.y + d.y / dl * reach, u->world.z + d.z / dl * reach};
+    Vec muzzle = add3(gGrip, mul3(d, 150.0f / dl));  // the barrel in front of her hands
     Vec to = tp;
+    // the pistol she holds: its own weapon number (its damage against each enemy, its piercing) and its firepower
+    // level (DevJunior, 16.11.2026: "the hand cannon does the same damage": until then always Luis's number 3 at
+    // Leon's level)
+    u8 wep = 3, lv = 0;
+    if (cItem* it = givenItem()) {
+        const u8 no = WeaponId2WeaponNo(it->id);
+        if (no != 0xFF) {
+            wep = no;
+        }
+        lv = (u8) it->getPowerLevel();
+    }
+    // the enemies not hit before the shot: those hit by it are hers
+    const cEm* before[64];
+    int nb = 0;
+    const u32 count = EmMgr.getArrayNum();
+    for (u32 i = 0; i < count && i < 256 && nb < 64; i++) {
+        cEm* m = EmMgr.fastAt(i);
+        if (m && m->isAlive() && !(m->dmg.m_Flag & 1)) {
+            before[nb++] = m;
+        }
+    }
     const s16 hp = a->hp;
     a->hp = 0;
-    const u32 hits = PlWepHitCheck2(0, &muzzle, &to, 3, 2, 6000.0f);
+    const u32 hits = PlWepHitCheck2(0, &muzzle, &to, wep, 2, 6000.0f);
     a->hp = hp;
+    for (int k = 0; k < nb; k++) {
+        if ((before[k]->dmg.m_Flag & 1) && before[k]->dmg.m_Wep == wep) {
+            gHits[gNextHit] = HerHit{before[k], pG->Frame_cnt, wep, lv};
+            gNextHit = (gNextHit + 1) % 16;
+        }
+    }
     SndCall(2, 0, &muzzle, 0, 0, 0);
     gAmmo--;
     gShots++;
     if (gShots <= 20 || gShots % 50 == 0) {
         if (em) {
-            re4_log("ashley: shot %d at s%d (id 0x%x, hp %d) from %.1f m, %u hit, %d rounds left", gShots,
-                    slotOf(em), (unsigned) em->id, (int) em->hp, dl / 1000.0f, (unsigned) hits, gAmmo);
+            re4_log("ashley: shot %d at s%d (id 0x%x, hp %d) from %.1f m, weapon %u level %u, %u hit, %d rounds left",
+                    gShots, slotOf(em), (unsigned) em->id, (int) em->hp, dl / 1000.0f, (unsigned) wep, (unsigned) lv,
+                    (unsigned) hits, gAmmo);
         } else {
             re4_log("ashley: shot %d straight ahead, %u hit, %d rounds left", gShots, (unsigned) hits, gAmmo);
         }
@@ -615,6 +831,21 @@ void gunFrame(unsigned)
 
 extern "C" {
 
+// Patch 0926 (em_dm_val.cpp GetWepDmVal, after it takes Leon's firepower level): an enemy her own shot hit in the
+// last frames (weapon `wep`) takes the level of her pistol instead
+int re4_ashley_power_level(const void* em, unsigned wep, int lv)
+{
+    if (!pG || !em) {
+        return lv;
+    }
+    for (HerHit& h : gHits) {
+        if (h.em == em && h.wep == wep && pG->Frame_cnt - h.frame < 30) {
+            return h.lv;
+        }
+    }
+    return lv;
+}
+
 // Patch 0911 (pl_npc.cpp cSubChar::move, before partsWorldCalc; the game thread): her aim and shots.
 void re4_ashley_gun_move(cSubChar* a)
 {
@@ -678,7 +909,7 @@ void re4_ashley_gun_move(cSubChar* a)
     aimArm(a, tp);
     if (gW >= 0.99f && gGap == 0 && gAmmo > 0) {
         fire(a, tp, gTarget);
-        gGap = kFireGap;
+        gGap = fireGap();
     }
 }
 
@@ -782,7 +1013,7 @@ void re4_ashley_gun_player(cPlayer* a)
         gFireAsked = false;
         if (gAmmo > 0) {
             fire(a, tp, gTarget);
-            gGap = kFireGap;
+            gGap = fireGap();
         } else {
             SndCall(0, 7, 0, 0, 0, 0);
         }
