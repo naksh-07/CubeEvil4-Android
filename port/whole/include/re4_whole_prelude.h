@@ -122,6 +122,8 @@ void* re4_melee_kneel(void* game);
 void* re4_melee_execute(void);
 /* Patch 0928 (em10.cpp DownWakeWait; runtime/finisher.cpp): the prompt of a finisher on a Ganado on the floor. */
 void re4_ground_prompt(void* em);
+/* Patch 0928 (em10.cpp Dm_NeckBreak): 1 when the armed finisher is one on the floor (the body does not follow Leon). */
+int re4_finish_on_floor(void);
 /* Patch 0927 (em10.cpp C_SawHit; runtime/parry.cpp): 1 = the chainsaw clash's own camera is set this frame. */
 int re4_csaw_clash_cam(void* em);
 /* Patch 0926 (em_dm_val.cpp GetWepDmVal; runtime/ashley_gun.cpp): an enemy Ashley's shot hit takes her pistol's

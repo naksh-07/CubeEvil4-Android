@@ -90,6 +90,12 @@ int gLastDrawn[4] = {-1, -1, -1, -1};
 const f32 kGroundReach = 1500.0f;  // Leon this near the hips of a Ganado on the floor for the prompt
 const f32 kGroundCone = 1.2f;      // within about 70 degrees of where he faces
 const char* const kKindName[4] = {"standing", "kneeling", "face-down", "face-up"};
+// on the floor (device video 16.11.2026: "enemies with much life should not vanish so soon"): a Ganado with more life
+// than kGroundKillHp is not killed: Leon's blow alone, kGroundDamage of his life, the Ganado stays down (his wake-up
+// held until Leon is done) and gets up after
+const s16 kGroundKillHp = 450;
+const s16 kGroundDamage = 450;
+cEm* gStab;  // the Ganado on the floor Leon's blow hurts without the pair (0 none)
 bool gLive;                // Leon's routine runs: the knife out / the gun hidden to restore
 void* gKick;               // the game's kick on a kneeling enemy (plFinishStart's way back)
 bool gGround;              // the finisher was asked on the floor (re4_ground_prompt): no kick to fall back on
@@ -329,6 +335,7 @@ void restore(cPlayer* pl)
 
 void finish(cPlayer* pl)
 {
+    gStab = 0;
     restore(pl);
     EndPlDamage();
     pl->dmg.set(0, 0xF);
@@ -382,6 +389,12 @@ void plFinish(cPlayer* pl)
         }
         if (!(pl->m_Work1 & 2) && frame >= t.kill) {
             pl->m_Work1 |= 2;
+            if (gStab && gStab == em && em) {
+                const s16 before = em->hp;
+                em->hp = em->hp > kGroundDamage ? (s16) (em->hp - kGroundDamage) : 1;
+                re4_log("finisher: on the floor: the blow takes %d of %d life (the Ganado lives on)",
+                        (int) (before - em->hp), (int) before);
+            }
             if (!(t.flags & 2)) {
                 Vec hand = pl->getPartsPtr(10)->world;
                 bloodAt(em, &hand);
@@ -548,6 +561,24 @@ int lyingKind(cEm* em)
 
 // The prompt's action (Leon pressed it): a finisher of the body's kind drawn, Leon into plFinishStart, which hands
 // the Ganado Dm_NeckBreak; its catch (re4_finish_catch) puts the pair
+// Where the pair would put Leon for the Ganado's body as it lies (its hips, the line to its neck; see the head):
+// the enemy's root `root` / `ang` (the pair's body over his), Leon's place `at` and heading `al`
+void groundPlace(cEm* em, const Finish& t, Vec* root, f32* ang, Vec* at, f32* al)
+{
+    const Vec hip = em->getPartsPtr(0)->world;
+    const Vec neck = em->getPartsPtr(4)->world;
+    *ang = LIMIT_ANGLE(atan2f(neck.x - hip.x, neck.z - hip.z) - t.line);
+    const f32 s = sinf(*ang), c = cosf(*ang);
+    root->x = hip.x - (c * t.hipX + s * t.hipZ);
+    root->y = em->pos.y;
+    root->z = hip.z - (-s * t.hipX + c * t.hipZ);
+    *al = LIMIT_ANGLE(*ang - t.heading);
+    const f32 sl = sinf(*al), cl = cosf(*al);
+    at->x = root->x - (cl * t.x + sl * t.z);
+    at->y = pPL->pos.y;
+    at->z = root->z - (-sl * t.x + cl * t.z);
+}
+
 void groundAction(cEm* em)
 {
     const int kind = lyingKind(em);
@@ -555,7 +586,31 @@ void groundAction(cEm* em)
         return;
     }
     gGround = true;
-    re4_log("finisher: on the floor (%s): %s", kKindName[kind], gFin[gActive].name);
+    const Finish& t = gFin[gActive];
+    if (em->hp > kGroundKillHp) {
+        // a strong Ganado: Leon's blow alone (the pair's place), the Ganado stays in his own pose and lives on
+        Vec root, at;
+        f32 ang, al;
+        groundPlace(em, t, &root, &ang, &at, &al);
+        gStab = em;
+        SetPlDamage(em, plFinish);
+        pPL->dmg.set(0, 0x1E);
+        pPL->Catch_pos_adj.x = at.x - pPL->pos.x;
+        pPL->Catch_pos_adj.y = 0.0f;
+        pPL->Catch_pos_adj.z = at.z - pPL->pos.z;
+        pPL->Catch_dir = wrapAngle(al - pPL->ang.y);
+        pPL->Catch_at_adj = pPL->pos;
+        em->Catch_at_adj = em->pos;
+        FREE_EM10* w = EM10_WK(em);
+        const s16 hold = (s16) (t.leonEnd + 15);
+        if ((s16) w->WakeTimer < hold) {
+            w->WakeTimer = hold;  // he stays down while Leon strikes
+        }
+        re4_log("finisher: on the floor (%s): %s, a blow only (life %d over %d)", kKindName[kind], t.name,
+                (int) em->hp, (int) kGroundKillHp);
+        return;
+    }
+    re4_log("finisher: on the floor (%s): %s", kKindName[kind], t.name);
     SetPlDamage(em, (void (*)(cPlayer*)) plFinishStart);
     pPL->dmg.set(0, 0x1E);
 }
@@ -603,17 +658,15 @@ int re4_finish_catch(void* p)
     if (t.kind >= 2) {
         // on the floor: the Ganado put so that the pair's body lies where his lies (its motion starts this frame,
         // hokan 0), then Leon's place from his (angE = Leon's + heading; the enemy at (x, z) in Leon's frame)
-        const Vec hip = em->getPartsPtr(0)->world;
-        const Vec neck = em->getPartsPtr(4)->world;
-        em->ang.y = LIMIT_ANGLE(atan2f(neck.x - hip.x, neck.z - hip.z) - t.line);
-        const f32 s = sinf(em->ang.y), c = cosf(em->ang.y);
-        em->pos.x = hip.x - (c * t.hipX + s * t.hipZ);
-        em->pos.z = hip.z - (-s * t.hipX + c * t.hipZ);
-        const f32 al = LIMIT_ANGLE(em->ang.y - t.heading);
-        const f32 sl = sinf(al), cl = cosf(al);
-        pPL->Catch_pos_adj.x = em->pos.x - (cl * t.x + sl * t.z) - pPL->pos.x;
+        Vec root, at;
+        f32 ang, al;
+        groundPlace(em, t, &root, &ang, &at, &al);
+        em->ang.y = ang;
+        em->pos.x = root.x;
+        em->pos.z = root.z;
+        pPL->Catch_pos_adj.x = at.x - pPL->pos.x;
         pPL->Catch_pos_adj.y = 0.0f;
-        pPL->Catch_pos_adj.z = em->pos.z - (-sl * t.x + cl * t.z) - pPL->pos.z;
+        pPL->Catch_pos_adj.z = at.z - pPL->pos.z;
         pPL->Catch_dir = wrapAngle(al - pPL->ang.y);
         em->Catch_pos_adj.x = em->Catch_pos_adj.y = em->Catch_pos_adj.z = 0.0f;
         em->Catch_dir = 0.0f;
@@ -649,6 +702,14 @@ void* re4_finish_motion(int kind)
 int re4_finish_armed(void)
 {
     return gActive;
+}
+
+// Patch 0928 (em10.cpp Dm_NeckBreak): 1 when the armed finisher is one on the floor: the Ganado does not follow
+// Leon's steps to his place (EmCatchMotionMove for its first 30 frames dragged the body along, into fences and off
+// the floor: device video 16.11.2026)
+int re4_finish_on_floor(void)
+{
+    return gActive >= 0 && gFin[gActive].kind >= 2 && leon();
 }
 
 // For the tests: the finishers read from `path` ("" none): their count, and each one's kind << 8 | flags

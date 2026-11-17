@@ -161,11 +161,12 @@ def rot_y(a):
     return np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]])
 
 
-def retarget(src, model, mapping, nexts, frames, scale, root_relative=False):
+def retarget(src, model, mapping, nexts, frames, scale, root_relative=False, yaw_offset=0.0):
     """Per frame: {part: local rotation matrix}, the hips' position (model space, mm), the mapped bones' positions
     (for --check) and the source root's (position in metres, heading). root_relative: the model space follows the
     source's root bone (its heading and its place on the floor), which the game moves as its own root motion (joint
-    kinds 1 / 0x40, MotionGetSpeed); otherwise the source's world is the model space."""
+    kinds 1 / 0x40, MotionGetSpeed); otherwise the source's world is the model space. yaw_offset: added to the root's
+    heading (a motion whose root does not face where its body does)."""
     parts = model.parts
     rest_world = {}
     for p in parts:
@@ -206,7 +207,7 @@ def retarget(src, model, mapping, nexts, frames, scale, root_relative=False):
             else:
                 g = par
             G[p.no] = g
-        rp, ry = pos[root], yaw_of(rot[root])
+        rp, ry = pos[root], yaw_of(rot[root]) + yaw_offset
         if root_relative:
             turn = rot_y(ry).T
             floor = np.array([rp[0], 0.0, rp[2]])

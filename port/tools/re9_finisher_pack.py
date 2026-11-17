@@ -117,6 +117,10 @@ PARRY_BACK = 450.0    # mm Leon steps back at most in a parry answer
 # the 2023 game's chainsaw clash (Leon's side; wp5300 the chainsaw): his knife against the saw, then the push
 CSAW = "_chainsaw/animation/ch/chc0/motlist/2nd/chc0_jack_pl_2nd_wp5300.motlist.663"
 CSAW_MOVES = ["1200_knife_parry_F_start", "1202_knife_parry_F_end"]
+# the push's root faces away from its body (root heading 0, feet 146 degrees; the block's root 180, feet 163): turned
+# half round so that Leon faces the Ganado as in the block (device video 16.11.2026: "he comes out with his back to
+# the enemy")
+CSAW_YAW = {"1202_knife_parry_F_end": math.pi}
 
 HANDGUNS = [1, 2, 3, 4, 0x11]  # item.cpp wep_info: the handguns' weapon numbers (em_sub.cpp HandgunCk)
 
@@ -164,7 +168,7 @@ class Fit:
     """One motion fitted to a skeleton, its root kept apart (the root motion)."""
 
     def __init__(self, motion, model, map_name, step, tol, end, no_fingers=False, frames=None, loop=False,
-                 game_like=False):
+                 game_like=False, yaw_offset=0.0):
         body, fingers, nexts = RT.MAPS[map_name]
         mapping = dict(body)
         if not no_fingers:
@@ -175,7 +179,8 @@ class Fit:
         _r, bpos = src.pose(None)
         self.scale = model.parts[0].pos[1] / bpos[src.by_name["Hip"]][1]
         self.frames = frames if frames is not None else list(np.arange(0.0, min(end, motion.frames) + 1e-6, step))
-        self.rows = RT.retarget(src, model, mapping, nexts, self.frames, self.scale, root_relative=True)
+        self.rows = RT.retarget(src, model, mapping, nexts, self.frames, self.scale, root_relative=True,
+                                yaw_offset=yaw_offset)
         self.order = [p for p in sorted(mapping) if mapping[p] in src.by_name and p != 0] + [0]
         self.map_name = map_name
         self.hold_back = False
@@ -346,7 +351,7 @@ def kicks(root, model, tol, out_path, no_fingers, box=None):
     _v, csaw = R.read_motlist(root / CSAW)
     for name in CSAW_MOVES:
         m = next(x for x in csaw if x.name.endswith(name))
-        fit = Fit(m, model, "leon", 2.0, tol, m.frames, no_fingers)
+        fit = Fit(m, model, "leon", 2.0, tol, m.frames, no_fingers, yaw_offset=CSAW_YAW.get(name, 0.0))
         data = fcv.serialise(fit.motion(fit.scale))
         c = fit.check(data)
         entries.append(data)

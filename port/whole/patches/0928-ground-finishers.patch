@@ -2,7 +2,9 @@
 # a port feature of the mods (runtime/finisher.cpp).
 # em10.cpp DownWakeWait (R1 0x1E, a Ganado lying on the floor): every frame re4_ground_prompt may show the "execute"
 # prompt; its action hands the Ganado the finishers' Dm_NeckBreak (patch 0921) with a finisher of a body face down or
-# face up from a mod pack's melee/finish.dat. Declared in re4_whole_prelude.h.
+# face up from a mod pack's melee/finish.dat (a strong Ganado: Leon's blow alone, he lives on).
+# em10.cpp Dm_NeckBreak: with a finisher on the floor the Ganado does not follow Leon's steps (its catch timer 0:
+# EmCatchMotionMove dragged the body along, into fences; device video 16.11.2026). Declared in re4_whole_prelude.h.
 --- a/src/em10/em10.cpp
 +++ b/src/em10/em10.cpp
 @@ -7773,6 +7773,7 @@
@@ -13,3 +15,12 @@
          if (em->l_pl > 6250000.0f && w->pCore && w->Ganado != 1 && w->pCore->ckAtkEnable()) {
              w->pCore->setAtk(1);
          }
+@@ -14576,7 +14577,7 @@
+         SndStop(w->Seid_csaw, 0);
+         em->hp = 0;
+         w->Be_flg &= ~0x20;
+-        w->Timer = 30;
++        w->Timer = re4_finish_on_floor() ? 0 : 30; /* port: patch 0928 */
+         em->r_no_2++;
+     case 1:
+         em->dmg.set(0, 2);
