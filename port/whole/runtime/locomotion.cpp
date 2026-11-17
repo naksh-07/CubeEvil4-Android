@@ -14,6 +14,16 @@
 // sequence maps frames in 10.6 fixed point; at most kTimeMin..kTimeMax) and its root motion scaled by the rest, so the
 // feet slide as little as the game's pace allows. The footstep sounds are the game's own two of that movement, on the
 // frames the remake's feet strike.
+//
+// The transitions (wish of DevJunior, 16.11.2026: "starts, stops and turns as in the remake"; Leon still turns his body
+// to where he goes): move.dat's clips (codes 0x80..0x87 in its table) play between the game's own motions. A frame
+// hook (before the routines) sees the game set a movement's motion and puts the remake's clip first: setting off
+// into a walk or a run from standing, stopping into the stand from a walk or a run; when a clip ends the movement's
+// loop follows (hokan kLoopHokan). With "Free movement" (runtime/free_move.cpp asks re4_move_turn before it turns
+// Leon toward the stick) a stick pointing back (beyond kTurnStart) turns him about with the remake's turn: running,
+// the jog's 180-degree turn, standing, the turn in place; their root turn (joint kind 0x40) turns Leon, free_move
+// leaves his heading alone meanwhile. The clips play at their loop's pace (the walk's or the run's speed and root
+// scale; the turns kTurnSpeed); any routine change of the game cuts them (its own motion replaces the clip).
 #include "types.h"
 #include "global.h"
 #include "main.h"
@@ -46,7 +56,7 @@ const char* const kNames[kMoves] = {"stand", "walk", "run", "back step"};
 // taken out (cPlNeck::init leaves invalid ones alone) and the blend's rate held at zero.
 const int kNeck[kMoves] = {0x3F, 0x39, 0x41, 0};
 const f32 kTimeMin = 0.75f, kTimeMax = 1.35f;
-const unsigned kMaxBytes = 0x40000;
+const unsigned kMaxBytes = 0x80000;  // (with the transitions: 0.16 MB)
 const int kSeqMax = 255;
 
 struct Move {
@@ -55,6 +65,7 @@ struct Move {
     u16 last;       // its last frame (the first pose again)
     u16 foot[2];    // the frames the right and the left foot strike (0xFFFF none)
     f32 scale;      // the scale its root motion has now
+    f32 time;       // its playing speed (1: the remake's own)
     void* orig;     // the game's motion and sequence it stands in for now
     void* origSeq;
     void* neck[2];  // the game's looking variants taken out
@@ -67,6 +78,18 @@ char gLoaded[1600];
 u8* gPlace;
 Move gMove[kMoves];
 int gCount;
+// the transitions' clips: 0 / 1 setting off into / stopping from a walk, 2 / 3 a run, 4 / 5 the run's turn about to the
+// left / right, 6 / 7 the turn about standing (move.dat codes 0x80 + i)
+const int kClips = 8;
+const char* const kClipNames[kClips] = {"walk start", "walk stop", "run start", "run stop", "run turn left",
+                                        "run turn right", "turn left", "turn right"};
+Move gClip[kClips];
+int gPlaying = -1;     // the clip Leon plays (-1 none)
+int gWasMoving = 0;    // the movement he was in (1 walk, 3 run; 0 none): the stop's clip
+const f32 kTurnStart = 2.4f;   // radians the stick points away from him for a turn about (about 140 degrees)
+const f32 kTurnSpeed = 1.35f;  // the turns' speed against the remake's own (its 0.9 / 1.5 s too slow beside the game)
+const int kClipHokan = 5;      // frames a clip blends in
+const int kLoopHokan = 6;      // frames the loop after it blends in
 int gApplied = -1;         // what the table holds: 1 the remake's, 0 the game's, -1 unknown
 
 u32 be32At(const u8* p)
@@ -191,6 +214,10 @@ void load()
     for (Move& m : gMove) {
         m.mot = 0;
     }
+    for (Move& m : gClip) {
+        m.mot = 0;
+    }
+    gPlaying = -1;
     if (gPlace) {
         re4_mod_em_release(gPlace);
         gPlace = 0;
@@ -224,12 +251,21 @@ void load()
     ok = ok && n >= 1 && n <= 32 && 8 + n * 12 <= at[1] - at[0];
     Move found[kMoves];
     memset(found, 0, sizeof(found));
+    static Move clips[kClips];
+    memset(clips, 0, sizeof(clips));
     for (u32 i = 0; ok && i < n; i++) {
         const u8* r = tab + 8 + i * 12;
         const u16 entry = be16At(r + 2), last = be16At(r + 4);
         if (entry == 0 || entry >= count || last < 2 || be16At(base + at[entry]) != last || !base[at[entry] + 2]) {
             ok = false;
             break;
+        }
+        if (r[0] >= 0x80 && r[0] < 0x80 + kClips && last <= kSeqMax) {
+            Move& c = clips[r[0] - 0x80];
+            c.mot = base + at[entry];
+            c.last = last;
+            c.scale = 1.0f;
+            c.time = 1.0f;
         }
         for (int k = 0; k < kMoves; k++) {
             if (kSlots[k] == r[0]) {
@@ -265,6 +301,17 @@ void load()
             re4_log("move: %s: the remake's %s, %u frames", path, kNames[k], (unsigned) gMove[k].last);
         }
     }
+    int nClips = 0;
+    for (int i = 0; i < kClips; i++) {
+        gClip[i].mot = clips[i].mot;
+        gClip[i].last = clips[i].last;
+        gClip[i].scale = 1.0f;
+        gClip[i].time = 1.0f;
+        nClips += gClip[i].mot ? 1 : 0;
+    }
+    if (nClips) {
+        re4_log("move: %s: %d of the remake's transitions (starts, stops, turns)", path, nClips);
+    }
     gApplied = -1;
 }
 
@@ -294,6 +341,7 @@ void fit(int k, void* mot, void* seq)
         scale = pace * (f32) keys / (own * frames);
         scaleRoot(mv, scale);
     }
+    mv.time = time;
     // the footsteps: the game's own two sounds of this movement, in their order
     u8 se[2] = {(u8) (k == 1 ? 3 : 1), (u8) (k == 1 ? 4 : 2)};
     if (seq) {
@@ -320,6 +368,32 @@ void fit(int k, void* mot, void* seq)
     re4_log("move: the remake's %s for weapon %d: the game's pace %.0f a frame, the cycle's %.0f: played at %.2f (%d "
             "frames), its steps scaled %.2f",
             kNames[k], (int) pG->weapon_no, (double) pace, (double) own, (double) time, keys, (double) scale);
+}
+
+// A transition's clip at its loop's pace (the walk's for 0 / 1, the run's for 2..5, kTurnSpeed for the turns): its
+// root motion scaled as the loop's, its sequence made (no events)
+void fitClip(int i)
+{
+    Move& c = gClip[i];
+    if (!c.mot) {
+        return;
+    }
+    const Move* base = i < 2 ? &gMove[1] : i < 6 ? &gMove[2] : 0;
+    f32 time = base && base->mot ? base->time : 1.0f;
+    if (i >= 4) {
+        time *= kTurnSpeed;
+    }
+    scaleRoot(c, base && base->mot ? base->scale : 1.0f);
+    const f32 frames = (f32) c.last;
+    int keys = (int) (frames / time + 0.5f);
+    keys = keys < 2 ? 2 : keys > kSeqMax ? kSeqMax : keys;
+    c.time = time;
+    memset(c.seq, 0, sizeof(c.seq));
+    c.seq[0] = (u16) keys;
+    SEQUENCE_DATA* key = (SEQUENCE_DATA*) (c.seq + 2);
+    for (int k = 0; k < keys; k++) {
+        key[k].Frame = (u16) ((f32) k * frames / (f32) (keys - 1) * 64.0f + 0.5f);
+    }
 }
 
 // The throwables (read.cpp groups them for the other characters: hand, incendiary and flash grenades, the eggs), held in
@@ -377,7 +451,88 @@ void apply(cPlayer* pl, bool fresh)
             mv.neckOut = false;
         }
     }
+    if (want) {
+        for (int i = 0; i < kClips; i++) {
+            fitClip(i);
+        }
+    }
+    gPlaying = -1;
     gApplied = want ? 1 : 0;
+}
+
+bool isClip(const void* m)
+{
+    for (const Move& c : gClip) {
+        if (c.mot && m == (const void*) c.mot) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void play(cPlayer* pl, int i)
+{
+    Move& c = gClip[i];
+    MotionSetCore(pl, &pl->Motion, c.mot, c.seq, kClipHokan, 5, 0);
+    if (pl->pMotionB) {
+        pl->pMotionB->Brate = 0.0f;
+    }
+    gPlaying = i;
+    static int said;
+    if (!(said & (1 << i))) {
+        said |= 1 << i;
+        re4_log("move: the remake's %s (%u frames at %.2f)", kClipNames[i], (unsigned) c.seq[0], (double) c.time);
+    }
+}
+
+// Before the routines: the clips around the game's own movements (see the head)
+void transitions(cPlayer* pl)
+{
+    const void* cur = (const void*) pl->Motion.pMot;
+    const int r1 = pl->r_no_1;
+    if (pl->r_no_0 != 0 || r1 > 4) {
+        gPlaying = -1;
+        gWasMoving = 0;
+        return;
+    }
+    if (gPlaying >= 0) {
+        Move& c = gClip[gPlaying];
+        if (cur != (const void*) c.mot) {
+            gPlaying = -1;  // the game set its own motion: the clip is cut
+        } else {
+            if (pl->Motion.Seq_frame >= (f32) c.seq[0] - 2.0f) {
+                const int k = r1 == 1 ? 1 : r1 == 3 ? 2 : r1 == 2 ? 3 : 0;
+                if (gMove[k].mot) {
+                    MotionSetCore(pl, &pl->Motion, gMove[k].mot, gMove[k].seq, kLoopHokan, 5, 0);
+                }
+                gPlaying = -1;
+                gWasMoving = r1 == 1 || r1 == 3 ? r1 : 0;
+            }
+            return;
+        }
+    }
+    const bool fresh = pl->Motion.Seq_frame < 3.0f;
+    if (cur == (const void*) gMove[1].mot && gMove[1].mot) {
+        if (r1 == 1 && fresh && gWasMoving == 0 && gClip[0].mot) {
+            play(pl, 0);
+        }
+        gWasMoving = 1;
+    } else if (cur == (const void*) gMove[2].mot && gMove[2].mot) {
+        if (r1 == 3 && fresh && gWasMoving == 0 && gClip[2].mot) {
+            play(pl, 2);
+        }
+        gWasMoving = 3;
+    } else if (cur == (const void*) gMove[0].mot && gMove[0].mot) {
+        if (r1 == 0 && fresh && gWasMoving) {
+            const int i = gWasMoving == 3 ? 3 : 1;
+            if (gClip[i].mot) {
+                play(pl, i);
+            }
+        }
+        gWasMoving = 0;
+    } else {
+        gWasMoving = 0;  // another motion (aiming, the back step, an action): no stop's clip after it
+    }
 }
 
 // The switch or the pack changed while Leon walks: the table follows (in the field's plain routines only)
@@ -394,6 +549,15 @@ void watch(unsigned)
                 pPL->pMotionB->Brate = 0.0f;
             }
         }
+        if (isClip((const void*) pPL->Motion.pMot)) {
+            pPL->pMotionB->Brate = 0.0f;
+        }
+    }
+    if (gApplied == 1 && want) {
+        transitions(pPL);
+    } else {
+        gPlaying = -1;
+        gWasMoving = 0;
     }
     if ((want ? 1 : 0) != gApplied && pPL->r_no_0 == 0 && pPL->r_no_1 == 0) {
         apply(pPL, false);
@@ -429,11 +593,51 @@ void re4_move_table(void* p)
     apply(pl, true);
 }
 
+// runtime/free_move.cpp (before it turns Leon toward the stick; `diff` the stick's direction against his heading,
+// radians, positive to his left): 1 = a turn about plays (he keeps his heading, the clip turns him)
+int re4_move_turn(void* p, float diff)
+{
+    cPlayer* pl = (cPlayer*) p;
+    if (!pl || gApplied != 1 || !on() || pl->r_no_0 != 0) {
+        return 0;
+    }
+    const void* cur = (const void*) pl->Motion.pMot;
+    if (gPlaying >= 0) {
+        return gPlaying >= 4 && cur == (const void*) gClip[gPlaying].mot;
+    }
+    if (fabsf(diff) < kTurnStart) {
+        return 0;
+    }
+    const bool left = diff > 0.0f;
+    if (pl->r_no_1 == 3 && gMove[2].mot && cur == (const void*) gMove[2].mot && gClip[left ? 4 : 5].mot) {
+        play(pl, left ? 4 : 5);
+        return 1;
+    }
+    if (pl->r_no_1 == 0 && gClip[left ? 6 : 7].mot &&
+        ((gMove[0].mot && cur == (const void*) gMove[0].mot) || cur == (const void*) gClip[1].mot ||
+         cur == (const void*) gClip[3].mot)) {
+        play(pl, left ? 6 : 7);
+        return 1;
+    }
+    return 0;
+}
+
 // For the tests: the movements the active archive holds
 int re4_move_count(void)
 {
     load();
     return gCount;
+}
+
+// For the tests: the transitions' clips the active archive holds
+int re4_move_clips(void)
+{
+    load();
+    int n = 0;
+    for (const Move& c : gClip) {
+        n += c.mot ? 1 : 0;
+    }
+    return n;
 }
 
 }  // extern "C"

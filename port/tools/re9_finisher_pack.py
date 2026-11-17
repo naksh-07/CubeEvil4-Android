@@ -22,18 +22,22 @@ runs at 60 frames per second, this one at 30: every second frame.
   c3c-*      the shotguns' and machine guns' (shotgun, riot gun, striker, TMP, Chicago Typewriter)
   c4b2-*     the rifles' (rifle, semi-auto rifle)
   c5b-*      the magnums' (Broken Butterfly, Killer7 / Handcannon)
+  ground-*   on a Ganado lying on the floor (runtime/finisher.cpp, patch 0928): the 2023 game's knife decapitations of
+             one face down (1000, 1005) and the RE9 mod's hatchet blows on the ground (1085 / 1095 face down, 1080 /
+             1090 face up)
 
 The archive: a DAT (u32 count, three zero words, u32 offsets, 4-byte tags) whose entry 0 ("FIN") lists the finishers
-(big-endian, 60 bytes each after an 8-byte head "FIN1" + count), then the motions ("FCV") and the enemies' sequences
+(big-endian, 72 bytes each after an 8-byte head "FIN2" + count; "FIN1": 60, without the last three), then the motions ("FCV") and the enemies' sequences
 ("SEQ": one key per frame; Free 1 on the kill, 0x80 once the body is down, for em10.cpp Dm_NeckBreak). A finisher:
 
-  u8 kind (0 a standing stunned enemy, 1 a kneeling one), u8 flags (1 the knife out, 2 the gun fires on the shot frame),
+  u8 kind (0 a standing stunned enemy, 1 a kneeling one, 2 one lying face down, 3 face up), u8 flags (1 the knife out, 2 the gun fires on the shot frame),
   u8 weapons[6] (the game's weapon numbers it plays with, 0-terminated; none: any),
   u16 Leon's motion, the enemy's motion, the enemy's sequence (entries), pad,
   u16 frames: Leon's end, the enemy's end, the shot, the kill, the body down, the cancel (aim or fire ends Leon's),
   f32 the enemy's start in Leon's frame (x, z, mm), Leon's turn from facing it (radians), the enemy's heading from
       Leon's (radians),
-  char name[16].
+  char name[16],
+  f32 the enemy's hips on its first frame in its own frame (x, z, mm) and the line from its hips to its neck (radians).
 
 --kicks OUT/melee/melee.dat also writes the mod's kicks as the melee archive of the pack (runtime/melee.cpp, patch 0904;
 uhd_motion_convert.py's layout): its eight "fatal" kicks of a standing stunned Ganado (the 2023 game's cha0_general
@@ -91,6 +95,13 @@ KNEE = (("knee-a", "1020", dict(contact=44, kill=88, down=136, cancel=140)),
         ("knee-b", "1025", dict(contact=64, kill=100, down=144, cancel=150)),
         ("knee-c", "1030", dict(contact=60, kill=108, down=196, cancel=200)))
 CHC0 = "_chainsaw/animation/ch/chc0/motlist/0th"
+# (name, motion, kind, frames: the first blow from the hand's fastest move and the head's jolt, 60 per second)
+GROUND = (("ground-a", "1000", 2, dict(contact=38, kill=38, down=0, cancel=160)),
+          ("ground-b", "1005", 2, dict(contact=30, kill=30, down=0, cancel=130)),
+          ("ground-c", "1085", 2, dict(contact=40, kill=40, down=0, cancel=160)),
+          ("ground-d", "1095", 2, dict(contact=34, kill=34, down=0, cancel=130)),
+          ("ground-e", "1080", 3, dict(contact=38, kill=38, down=0, cancel=160)),
+          ("ground-f", "1090", 3, dict(contact=36, kill=36, down=0, cancel=130)))
 CHA0 = "_chainsaw/animation/ch/cha0/motlist/cha0_general.motlist.663"
 KICKS_STANDING = ["0900", "0901", "0902", "0903", "0904", "0905", "0906", "0907"]
 KICKS_KNEELING = ["9904", "9905"]
@@ -129,6 +140,13 @@ def finishers():
             out.append(dict(name="%s-%s" % (group, wp), kind=0, flags=2, weapons=weapons, dir="gun_pair_" + group,
                             leon="re9_gun_pair_%s_leon" % group, enemy="re9_gun_pair_%s_enemy" % group,
                             leon_motion=wp, enemy_motion="g%d_" % clip, frames=frames))
+    # on the floor (wish of DevJunior, 16.11.2026: "the finishers on the ground"): the 2023 game's knife decapitations of
+    # a Ganado lying face down and the RE9 mod's hatchet blows on the ground (face down 1085 / 1095, face up 1080 /
+    # 1090); kind 2 face down, 3 face up; the first blow kills
+    for name, no, kind, frames in GROUND:
+        out.append(dict(name=name, kind=kind, flags=1, weapons=[], dir=CHC0, leon="chc0_jack_pl_0th_com",
+                        enemy="chc0_grapple_0th_com", leon_motion="_%s_" % no, enemy_motion="_%s_" % no,
+                        frames=frames))
     return out
 
 
@@ -254,8 +272,9 @@ def fastest_hand(motion):
     return at
 
 
-BOX_KICK = "9904"  # the box strike's own kick when no other pack's is given: RE9's low kick
-BOX_END = 10       # game frames it plays after the hit
+BOX_SLASH = "0600_attack"  # the box strike when no other pack's is given: the remake's slash (cha0_wp5000H; wish of
+BOX_HIT = 6                # DevJunior, 16.11.2026: "the remake's animations for breaking barrels and boxes": the
+BOX_END = 12               # remake breaks them with the knife's slash); its blade's fastest frame the hit (game frame)
 
 
 def box_from(path):
@@ -296,13 +315,15 @@ def kicks(root, model, tol, out_path, no_fingers, box=None):
         entries += list(box_from(box))
         print("box strike from %s: frames %d..%d, the box breaks on %d" % (box, entries[-1][0], entries[-1][2],
                                                                             entries[-1][1]))
-    else:
-        m = next(x for x in mots if "_%s_" % BOX_KICK in x.name)
-        frames = kick_frames(m.frames)[:KICK_HIT + BOX_END + 1]
-        fit = Fit(m, model, "leon", 2.0, tol, m.frames, no_fingers, frames=frames)
-        entries += [fcv.serialise(fit.motion(fit.scale)), bytes([0, KICK_HIT, KICK_HIT + BOX_END]) + bytes(13)]
-        print("box strike: %s, frames 0..%d, the box breaks on %d" % (m.name, KICK_HIT + BOX_END, KICK_HIT))
     _v, knife = R.read_motlist(root / WP5000H)
+    if not box:
+        m = next(x for x in knife if x.name.endswith(BOX_SLASH))
+        peak = fastest_hand(m)
+        frames = kick_frames(min(m.frames, peak + 40), peak, BOX_HIT)[:BOX_HIT + BOX_END + 1]
+        fit = Fit(m, model, "leon", 2.0, tol, m.frames, no_fingers, frames=frames)
+        entries += [fcv.serialise(fit.motion(fit.scale)), bytes([0, BOX_HIT, BOX_HIT + BOX_END]) + bytes(13)]
+        print("box strike: %s (blade fastest on source frame %d), frames 0..%d, the box breaks on %d" % (
+            m.name, peak, BOX_HIT + BOX_END, BOX_HIT))
     for name in KNIFE_COMBO:
         m = next(x for x in knife if x.name.endswith(name))
         peak = fastest_hand(m)
@@ -345,6 +366,12 @@ def kicks(root, model, tol, out_path, no_fingers, box=None):
 # for the whole motion, flags)
 MOVES = [(0, "0160_stand_loop", (150, 300), 0), (2, "0403_walk_F_loop", (60, 70), 1),
          (6, "0520_jog_loop_VerA", (40, 50), 1), (8, "0443_walk_B_loop", (50, 170), 1)]
+# the transitions (wish of DevJunior, 16.11.2026: "starts, stops and turns as in the remake", Leon still turning to
+# where he goes): (code of runtime/locomotion.cpp, the cha0_general motion). 0x80 / 0x81 setting off / stopping from a
+# walk, 0x82 / 0x83 from a run, 0x84 / 0x85 turning about to the left / right while running, 0x86 / 0x87 standing
+CLIPS = [(0x80, "0400_walk_F_start"), (0x81, "0406_walk_F_end"), (0x82, "0510_jog_start_R0"), (0x83, "0540_jog_end"),
+         (0x84, "0532_jog_turn_L180"), (0x85, "0536_jog_turn_R180"), (0x86, "0170_turn_L180"),
+         (0x87, "0171_turn_R180")]
 LOOP_BONES = ["Hip", "Spine_0", "Spine_2", "Neck_0", "Head", "R_UpperArm", "R_Forearm", "L_UpperArm", "L_Forearm",
               "R_Thigh", "R_Shin", "R_Foot", "L_Thigh", "L_Shin", "L_Foot"]
 
@@ -405,6 +432,17 @@ def moves(root, model, tol, out_path):
         dist = np.linalg.norm(np.array(fit.root[-1][0]) - np.array(fit.root[0][0])) * fit.scale
         print("move %-22s slot 0x%x: source %d..%d, %d game frames, %d bytes, %.0f mm a cycle, feet %s; check %.1f/%.1f "
               "deg" % (name, slot, first, first + length, len(fit.frames), len(data), dist, feet, c[0], c[1]))
+    for code, name in CLIPS:
+        m = next(x for x in mots if x.name.endswith(name))
+        fit = Fit(m, model, "leon", 2.0, tol, m.frames, True)
+        data = fcv.serialise(fit.motion(fit.scale))
+        c = fit.check(data)
+        entries.append(data)
+        table.append(struct.pack(">BBHHHHH", code, 0, len(entries) - 1, len(fit.frames) - 1, 0xFFFF, 0xFFFF, 0))
+        end = fit.track(fit.scale)[-1]
+        print("clip %-22s 0x%x: %d game frames, %d bytes, ends %.0f mm ahead, %.0f mm aside, turned %.0f deg; check "
+              "%.1f/%.1f deg" % (name, code, len(fit.frames), len(data), end[2], end[0], math.degrees(end[3]), c[0],
+                                 c[1]))
     entries[0] = b"MOV1" + struct.pack(">I", len(table)) + b"".join(table)
     tags = [b"MOV\x00"] + [b"FCV\x00"] * (len(entries) - 1)
     body = U.build_body(entries, tags)
@@ -568,9 +606,15 @@ def main(argv=None):
         ei = add("FCV", ("E", f["dir"], em.name), edata)
         si = add("SEQ", ("S", f["dir"], em.name), seq)
         weapons = bytes(f["weapons"][:6]).ljust(6, b"\0")
-        table.append(struct.pack(">BB6sHHHH6H4f16s", f["kind"], f["flags"], weapons, li, ei, si, 0,
+        # the enemy's body on its first frame in its own frame: the hips' place and the line from the hips to the
+        # neck (part 4): a Ganado on the floor is put so that the pair's body lies where his does (runtime)
+        hip = ef.world(edata, world, 0, 0)
+        neck = ef.world(edata, world, 0, 4)
+        line_dir = math.atan2(neck[0] - hip[0], neck[2] - hip[2])
+        table.append(struct.pack(">BB6sHHHH6H4f16s3f", f["kind"], f["flags"], weapons, li, ei, si, 0,
                                  len(lf.frames) - 1, ne - 1, g.get("shot", 0), g["kill"], g["down"], g["cancel"],
-                                 float(o[0]), float(o[2]), ang, heading, f["name"].encode()[:15]))
+                                 float(o[0]), float(o[2]), ang, heading, f["name"].encode()[:15],
+                                 float(hip[0]), float(hip[2]), line_dir))
         line = "%-12s Leon %s (%d frames, %d bytes), enemy %s (%d frames, %d bytes); enemy at (%.0f, %.0f) mm, " \
                "turn %.1f, heading %.1f deg (contact on frame %d: moved %.0f, %.0f)" % (
                    f["name"], lm.name, len(lf.frames), len(ldata), em.name, ne, len(edata), o[0], o[2],
@@ -581,7 +625,7 @@ def main(argv=None):
         print(line)
     if not table:
         raise SystemExit("no finisher chosen")
-    entries[0] = ("FIN", b"FIN1" + struct.pack(">I", len(table)) + b"".join(table))
+    entries[0] = ("FIN", b"FIN2" + struct.pack(">I", len(table)) + b"".join(table))
     data = dat(entries)
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)

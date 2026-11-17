@@ -1,0 +1,15 @@
+# Patch 0928 (wish of DevJunior, 16.11.2026: "the finishers on the ground" of the remake). Not a bug of the prototype:
+# a port feature of the mods (runtime/finisher.cpp).
+# em10.cpp DownWakeWait (R1 0x1E, a Ganado lying on the floor): every frame re4_ground_prompt may show the "execute"
+# prompt; its action hands the Ganado the finishers' Dm_NeckBreak (patch 0921) with a finisher of a body face down or
+# face up from a mod pack's melee/finish.dat. Declared in re4_whole_prelude.h.
+--- a/src/em10/em10.cpp
++++ b/src/em10/em10.cpp
+@@ -7773,6 +7773,7 @@
+         w->Be_flg |= 0x1000000;
+         em->setStatus(EM_STATUS_IK_OFF);
+         MotionMove(em, 0);
++        re4_ground_prompt(em); /* port: patch 0928 */
+         if (em->l_pl > 6250000.0f && w->pCore && w->Ganado != 1 && w->pCore->ckAtkEnable()) {
+             w->pCore->setAtk(1);
+         }

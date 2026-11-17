@@ -11,8 +11,14 @@
 //  - On a standing stunned one (em10KickAction): a finisher with the weapon in Leon's hands (handguns c2, shotguns
 //    and machine guns c3c, rifles c4b2, magnums c5b) when its magazine holds a round: he grabs the Ganado and fires
 //    once (the weapon object's own shot: muzzle flash, sound, a round spent).
+//  - On one lying on the floor (wish of DevJunior, 16.11.2026: "the finishers on the ground"; em10.cpp DownWakeWait,
+//    R1 0x1E, patch 0928 asks re4_ground_prompt every frame): the game's "execute" prompt (ACT_EXECUTE) while Leon
+//    stands or walks within kGroundReach of the body's hips, facing it (kGroundCone); a knife decapitation or a
+//    hatchet blow on the ground, of a body face down (kind 2) or face up (kind 3: the hips' forward axis up). The
+//    Ganado is put so that the pair's body lies where his lies (its hips, the line to its neck: the table's FIN2
+//    fields) on the frame its motion starts (hokan 0: no jump), Leon walks to the pair's place in kCatchFrames.
 // runtime/melee.cpp draws them among the other moves (its random mix); HUNK's rule holds as for the neck break: a
-// Ganado with a parasite or a core gets the game's kick.
+// Ganado with a parasite or a core gets the game's kick (on the floor: no prompt).
 //
 // Both play as the game's own neck break does (em10.cpp Dm_NeckBreak, R1 0x15: the enemy dies, its motion plays, at
 // its end the body lies dead): patch 0921 lets re4_finish_catch put Leon at the PC pair's distance in front of the
@@ -39,6 +45,7 @@
 #include "em_sub.h"
 #include "em10.h"
 #include "joy.h"
+#include "act_btn.h"
 
 #include <atomic>
 #include <math.h>
@@ -60,7 +67,7 @@ const f32 kCatchRate = 0.35f;         // the part of what is left he closes in e
 const int kHokan = 4;                 // frames Leon's motion blends in
 
 struct Finish {
-    u8 kind;        // 0 a standing stunned enemy, 1 a kneeling one
+    u8 kind;        // 0 a standing stunned enemy, 1 a kneeling one, 2 one lying face down, 3 face up
     u8 flags;       // 1 the knife out, 2 the gun fires on the shot frame
     u8 weapons[6];  // the game's weapon numbers (pG->weapon_no), 0-terminated; none: any
     void* leon;     // Leon's motion
@@ -68,6 +75,7 @@ struct Finish {
     void* seq;      // the enemy's sequence
     u16 leonEnd, enemyEnd, shot, kill, down, cancel;
     f32 x, z, ang, heading;
+    f32 hipX, hipZ, line;  // on the floor: the enemy's hips on its first frame in its frame, the line to its neck
     char name[17];
 };
 
@@ -78,9 +86,13 @@ unsigned gPlaceSize;
 Finish gFin[kMax];
 int gCount;
 int gActive = -1;          // the finisher the last prompt drew, until Leon's routine ends
-int gLastDrawn[2] = {-1, -1};
+int gLastDrawn[4] = {-1, -1, -1, -1};
+const f32 kGroundReach = 1500.0f;  // Leon this near the hips of a Ganado on the floor for the prompt
+const f32 kGroundCone = 1.2f;      // within about 70 degrees of where he faces
+const char* const kKindName[4] = {"standing", "kneeling", "face-down", "face-up"};
 bool gLive;                // Leon's routine runs: the knife out / the gun hidden to restore
 void* gKick;               // the game's kick on a kneeling enemy (plFinishStart's way back)
+bool gGround;              // the finisher was asked on the floor (re4_ground_prompt): no kick to fall back on
 u32 gSeed = 0x9E3779B9u;
 int gSaid;
 
@@ -179,19 +191,23 @@ void load()
     }
     at[count] = (u32) size;
     const u8* fin = ok ? base + at[0] : 0;
-    const u32 n = ok && at[1] - at[0] >= 8 && memcmp(fin, "FIN1", 4) == 0 ? be32At(fin + 4) : 0;
-    ok = ok && n >= 1 && n <= (u32) kMax && 8 + n * 60 <= at[1] - at[0];
+    // "FIN1": 60 bytes a finisher; "FIN2" (16.11.2026, the finishers on the floor): 72, the body's place after them
+    const bool fin2 = ok && at[1] - at[0] >= 8 && memcmp(fin, "FIN2", 4) == 0;
+    const u32 rec = fin2 ? 72 : 60;
+    const u32 n = ok && at[1] - at[0] >= 8 && (fin2 || memcmp(fin, "FIN1", 4) == 0) ? be32At(fin + 4) : 0;
+    ok = ok && n >= 1 && n <= (u32) kMax && 8 + n * rec <= at[1] - at[0];
     // the table first: the conversion swaps the archive's head
     Finish table[kMax];
     for (u32 i = 0; ok && i < n; i++) {
-        const u8* r = fin + 8 + i * 60;
+        const u8* r = fin + 8 + i * rec;
         Finish& t = table[i];
         memset(&t, 0, sizeof(t));
         t.kind = r[0];
         t.flags = r[1];
         memcpy(t.weapons, r + 2, 6);
         const u16 li = be16At(r + 8), ei = be16At(r + 10), si = be16At(r + 12);
-        if (li == 0 || ei == 0 || si == 0 || li >= count || ei >= count || si >= count || t.kind > 1) {
+        if (li == 0 || ei == 0 || si == 0 || li >= count || ei >= count || si >= count || t.kind > 3 ||
+            (t.kind > 1 && !fin2)) {
             ok = false;
             break;
         }
@@ -210,6 +226,11 @@ void load()
         t.heading = beF32At(r + 40);
         memcpy(t.name, r + 44, 16);
         t.name[16] = 0;
+        if (fin2) {
+            t.hipX = beF32At(r + 60);
+            t.hipZ = beF32At(r + 64);
+            t.line = beF32At(r + 68);
+        }
         // a motion's head: its last frame (big-endian here) and its joints
         ok = be16At(base + at[li]) >= t.leonEnd && base[at[li] + 2] && be16At(base + at[ei]) >= t.enemyEnd &&
              base[at[ei] + 2] && be16At(base + at[si]) == t.enemyEnd + 1u && t.kill <= t.enemyEnd &&
@@ -229,7 +250,7 @@ void load()
     gCount = (int) n;
     for (int i = 0; i < gCount; i++) {
         re4_log("finisher: %s: %s on a %s enemy, %u / %u frames (kill %u%s), the enemy %.0f, %.0f mm in front", path,
-                gFin[i].name, gFin[i].kind ? "kneeling" : "standing", (unsigned) gFin[i].leonEnd,
+                gFin[i].name, kKindName[gFin[i].kind], (unsigned) gFin[i].leonEnd,
                 (unsigned) gFin[i].enemyEnd, (unsigned) gFin[i].kill, gFin[i].flags & 2 ? ", a shot" : "",
                 (double) gFin[i].x, (double) gFin[i].z);
     }
@@ -388,12 +409,21 @@ void plFinishStart(cPlayer* pl)
     cEm* em = pl->pEmCatch;
     if (gActive < 0 || !em) {
         restore(pl);
+        if (!gKick || gGround) {  // on the floor: no kick to fall back on
+            finish(pl);
+            return;
+        }
         Pl_func_tbl[4] = (void (*)(cPlayer*)) gKick;
         Pl_func_tbl[4](pl);
         return;
     }
     FREE_EM10* w = EM10_WK(em);
     if (pl->r_no_2 == 0) {
+        if ((w->pCore || w->pParasite || (w->Be_flg & 0x80)) && (gGround || !gKick)) {
+            gActive = -1;
+            finish(pl);
+            return;
+        }
         if (w->pCore || w->pParasite || (w->Be_flg & 0x80)) {
             say(3, "a Ganado with a parasite or a core: the game's kick (HUNK's rule)");
             gActive = -1;
@@ -407,7 +437,13 @@ void plFinishStart(cPlayer* pl)
         pl->m_Work0 = 10;
     }
     MotionMove(pl, 0);
-    if (pl->m_Work0 && --pl->m_Work0 == 0) {  // the enemy never took it (another routine held it): the kick
+    if (pl->m_Work0 && --pl->m_Work0 == 0) {  // the enemy never took it (another routine held it)
+        if (!gKick || gGround) {  // on the floor: no kick to fall back on
+            re4_log("finisher: the enemy on the floor did not take the finisher");
+            gActive = -1;
+            finish(pl);
+            return;
+        }
         re4_log("finisher: the kneeling enemy did not take the finisher: the game's kick");
         gActive = -1;
         Pl_func_tbl[4] = (void (*)(cPlayer*)) gKick;
@@ -474,7 +510,7 @@ int re4_finish_arm(int kind)
     gLastDrawn[kind] = pick;
     gActive = pick;
     hook();
-    re4_log("finisher: %s drawn for a %s enemy (%d fit, weapon %d)", gFin[pick].name, kind ? "kneeling" : "standing",
+    re4_log("finisher: %s drawn for a %s enemy (%d fit, weapon %d)", gFin[pick].name, kKindName[kind & 3],
             n, (int) pG->weapon_no);
     return 1;
 }
@@ -483,8 +519,76 @@ int re4_finish_arm(int kind)
 void* re4_finish_kneel_routine(void* kick)
 {
     gKick = kick;
+    gGround = false;
     hook();
     return (void*) plFinishStart;
+}
+
+}  // extern "C"
+
+namespace {
+
+f32 wrapAngle(f32 a)
+{
+    while (a > PI) {
+        a -= 2.0f * PI;
+    }
+    while (a < -PI) {
+        a += 2.0f * PI;
+    }
+    return a;
+}
+
+// Face up (3) or down (2): the hips' forward axis (the model's +z in the bind pose) up or down
+int lyingKind(cEm* em)
+{
+    cParts* hip = em->getPartsPtr(0);
+    return hip && hip->mat[1][2] > 0.0f ? 3 : 2;
+}
+
+// The prompt's action (Leon pressed it): a finisher of the body's kind drawn, Leon into plFinishStart, which hands
+// the Ganado Dm_NeckBreak; its catch (re4_finish_catch) puts the pair
+void groundAction(cEm* em)
+{
+    const int kind = lyingKind(em);
+    if (!re4_finish_arm(kind)) {
+        return;
+    }
+    gGround = true;
+    re4_log("finisher: on the floor (%s): %s", kKindName[kind], gFin[gActive].name);
+    SetPlDamage(em, (void (*)(cPlayer*)) plFinishStart);
+    pPL->dmg.set(0, 0x1E);
+}
+
+}  // namespace
+
+extern "C" {
+
+// Patch 0928 (em10.cpp DownWakeWait, every frame a Ganado lies on the floor): the prompt of a finisher on the floor
+void re4_ground_prompt(void* p)
+{
+    cEm* em = (cEm*) p;
+    if (!em || !leon() || em->hp <= 0 || pPL->r_no_0 != 0 || pPL->r_no_1 > 4 || pPL->isKamae()) {
+        return;
+    }
+    FREE_EM10* w = EM10_WK(em);
+    if (w->pCore || w->pParasite || (w->Be_flg & 0x80)) {
+        return;
+    }
+    int c[kMax];
+    if (!candidates(lyingKind(em), c)) {
+        return;
+    }
+    Vec hip = em->getPartsPtr(0)->world;
+    const f32 dx = hip.x - pPL->pos.x, dz = hip.z - pPL->pos.z;
+    if (dx * dx + dz * dz > kGroundReach * kGroundReach || fabsf(em->pos.y - pPL->pos.y) > 600.0f) {
+        return;
+    }
+    if (fabsf(wrapAngle(atan2f(dx, dz) - pPL->ang.y)) > kGroundCone) {
+        return;
+    }
+    hook();
+    ActBtn.set(ACT_EXECUTE, 0xB, (void*) groundAction, em, ACTCTR_WEP_SET_IGNORE, DISP_A_NORMAL, ACT_FUNC_NORMAL, 0);
 }
 
 // Patch 0921 (em10.cpp Dm_NeckBreak): 1 when a finisher is armed: Leon's place and routine set (EmCatchPLSet) and the
@@ -496,6 +600,37 @@ int re4_finish_catch(void* p)
         return 0;
     }
     const Finish& t = gFin[gActive];
+    if (t.kind >= 2) {
+        // on the floor: the Ganado put so that the pair's body lies where his lies (its motion starts this frame,
+        // hokan 0), then Leon's place from his (angE = Leon's + heading; the enemy at (x, z) in Leon's frame)
+        const Vec hip = em->getPartsPtr(0)->world;
+        const Vec neck = em->getPartsPtr(4)->world;
+        em->ang.y = LIMIT_ANGLE(atan2f(neck.x - hip.x, neck.z - hip.z) - t.line);
+        const f32 s = sinf(em->ang.y), c = cosf(em->ang.y);
+        em->pos.x = hip.x - (c * t.hipX + s * t.hipZ);
+        em->pos.z = hip.z - (-s * t.hipX + c * t.hipZ);
+        const f32 al = LIMIT_ANGLE(em->ang.y - t.heading);
+        const f32 sl = sinf(al), cl = cosf(al);
+        pPL->Catch_pos_adj.x = em->pos.x - (cl * t.x + sl * t.z) - pPL->pos.x;
+        pPL->Catch_pos_adj.y = 0.0f;
+        pPL->Catch_pos_adj.z = em->pos.z - (-sl * t.x + cl * t.z) - pPL->pos.z;
+        pPL->Catch_dir = wrapAngle(al - pPL->ang.y);
+        em->Catch_pos_adj.x = em->Catch_pos_adj.y = em->Catch_pos_adj.z = 0.0f;
+        em->Catch_dir = 0.0f;
+        pPL->atari.setPriority(PRI_LV1);
+        em->atari.setPriority(PRI_LV1);
+        em->Catch_at_adj = em->pos;
+        pPL->Catch_at_adj = pPL->pos;
+        em->pEmCatch = pPL;
+        pPL->pEmCatch = em;
+        pPL->subArc = em->subArc;
+        SetPlDamage(em, plFinish);
+        re4_log("finisher: on the floor: the body's line %.0f deg, Leon %.0f mm away, to turn %.0f deg",
+                (double) (em->ang.y * 57.29578f), (double) sqrtf(pPL->Catch_pos_adj.x * pPL->Catch_pos_adj.x +
+                                                                   pPL->Catch_pos_adj.z * pPL->Catch_pos_adj.z),
+                (double) (pPL->Catch_dir * 57.29578f));
+        return 1;
+    }
     EmCatchPLSet(em, t.ang, t.kind ? 1 : 2, t.x, 0.0f, t.z, plFinish);
     // EmCatchPLSet turns the enemy to face Leon; the pair's own heading differs by this much
     em->Catch_dir = LIMIT_ANGLE(em->Catch_dir + t.heading - PI + t.ang);

@@ -73,6 +73,7 @@ extern "C" void re4_quick_slots_input(cPlayer* pl);  // runtime/quick_slots.cpp
 extern "C" int re4_run_held(int held);               // runtime/aim_options.cpp (patch 0156)
 extern "C" void re4_parry_input(cPlayer* pl);         // runtime/parry.cpp
 extern "C" int re4_ashley_gun_input(cPlayer* pl, int freeCam);  // runtime/ashley_gun.cpp (patch 0913)
+extern "C" int re4_move_turn(void* pl, float diff);              // runtime/locomotion.cpp (the remake's turns)
 
 namespace {
 
@@ -262,6 +263,16 @@ void freeMove(cPlayer* pl)
     }
     const f32 target = wrap(gCamYaw - atan2f(sx, sy));
     const f32 diff = wrap(target - pl->ang.y);
+    // a turn about of the remake (runtime/locomotion.cpp): its clip turns him, his heading stays; running he keeps
+    // running, standing he stays until it ends
+    if (re4_move_turn(pl, diff)) {
+        Key.on &= ~(u64) 0xF;
+        Key.trg &= ~(u64) 0xF;
+        if (pl->r_no_1 == 3) {
+            Key.on |= 1;
+        }
+        return;
+    }
     const bool moving = pl->r_no_1 == 1 || pl->r_no_1 == 3;
     const f32 rate = pl->r_no_1 == 3 ? kTurnRun : moving ? kTurnWalk : kTurnStand;
     const f32 step = diff > rate ? rate : diff < -rate ? -rate : diff;
