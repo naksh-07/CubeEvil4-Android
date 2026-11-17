@@ -940,11 +940,11 @@ int breakNear(cEmBox* target)
     return n;
 }
 
-// A crate is kicked, a barrel or a vase slashed (cEmBox types, embox.cpp SetBox: 3 / 5 barrels, 6 / 7 vases (tubo),
-// 0 / 1 / 2 boxes, 4 a nest)
+// Crates and barrels are kicked, vases slashed (cEmBox types, embox.cpp SetBox: 3 / 5 barrels, 6 / 7 vases (tubo),
+// 0 / 1 / 2 boxes, 4 a nest; DevJunior, 17.11.2026: "the kick for boxes and barrels")
 bool kicked(cEmBox* box)
 {
-    return box->type != 3 && box->type != 5 && box->type != 6 && box->type != 7;
+    return box->type != 6 && box->type != 7;
 }
 
 void plBoxStrike(cPlayer* pl)
