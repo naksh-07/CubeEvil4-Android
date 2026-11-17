@@ -43,6 +43,7 @@
 extern "C" void re4_log(const char* fmt, ...);
 extern "C" void re4_add_frame_hook(void (*hook)(unsigned));  // runtime/pad.cpp
 extern "C" const char* re4_mod_move_path(void);              // runtime/dvd.cpp
+extern "C" int re4_free_move_on(void);                       // runtime/aim_options.cpp
 extern cPlayer* pPL;
 
 namespace {
@@ -80,9 +81,18 @@ Move gMove[kMoves];
 int gCount;
 // the transitions' clips: 0 / 1 setting off into / stopping from a walk, 2 / 3 a run, 4 / 5 the run's turn about to the
 // left / right, 6 / 7 the turn about standing (move.dat codes 0x80 + i)
-const int kClips = 8;
-const char* const kClipNames[kClips] = {"walk start", "walk stop", "run start", "run stop", "run turn left",
-                                        "run turn right", "turn left", "turn right"};
+// 8..11 the sprint: its loop, setting off into it from standing, stopping from it, going into it from the jog
+const int kClips = 12;
+const char* const kClipNames[kClips] = {"walk start",   "walk stop",      "run start",  "run stop",
+                                        "run turn left", "run turn right", "turn left",  "turn right",
+                                        "sprint",        "sprint start",   "sprint stop", "sprint from the jog"};
+// The sprint (wish of DevJunior, 17.11.2026: "jog with the stick, really run with the run button, as the remake"):
+// with the remake's movements and Free movement, the stick pushed beyond kJogTilt runs (the game's run routine:
+// the remake's jog), the run key sprints (its dash, kSprintSpeed times the jog's pace, its own start, stop and the
+// way into it from the jog); a light push walks. aim_options.cpp re4_run_held asks re4_move_sprint.
+const f32 kJogTilt = 0.6f;
+const f32 kSprintSpeed = 1.1f;
+bool gSprintKey;  // the run key held (the sprint)
 Move gClip[kClips];
 int gPlaying = -1;     // the clip Leon plays (-1 none)
 int gWasMoving = 0;    // the movement he was in (1 walk, 3 run; 0 none): the stop's clip
@@ -378,10 +388,13 @@ void fitClip(int i)
     if (!c.mot) {
         return;
     }
-    const Move* base = i < 2 ? &gMove[1] : i < 6 ? &gMove[2] : 0;
+    const Move* base = i < 2 ? &gMove[1] : i < 6 || i >= 8 ? &gMove[2] : 0;
     f32 time = base && base->mot ? base->time : 1.0f;
-    if (i >= 4) {
+    if (i >= 4 && i < 8) {
         time *= kTurnSpeed;
+    }
+    if (i == 8 || i == 9 || i == 11) {
+        time *= kSprintSpeed;
     }
     scaleRoot(c, base && base->mot ? base->scale : 1.0f);
     const f32 frames = (f32) c.last;
@@ -495,13 +508,33 @@ void transitions(cPlayer* pl)
         gWasMoving = 0;
         return;
     }
+    if (gPlaying == 8 && cur == (const void*) gClip[8].mot && (r1 != 3 || !gSprintKey)) {
+        // the sprint let go: back to the jog (the run routine), its stop when the game stands him
+        if (r1 == 3 && gMove[2].mot) {
+            MotionSetCore(pl, &pl->Motion, gMove[2].mot, gMove[2].seq, 8, 5, 0);
+            gPlaying = -1;
+            gWasMoving = 3;
+            return;
+        }
+    }
     if (gPlaying >= 0) {
         Move& c = gClip[gPlaying];
         if (cur != (const void*) c.mot) {
             gPlaying = -1;  // the game set its own motion: the clip is cut
+            if (c.mot == gClip[8].mot) {
+                gWasMoving = 4;  // the sprint's stop when the game stands him
+            }
         } else {
+            if (gPlaying == 8) {
+                return;  // the sprint's loop plays round until the key or the run ends (below)
+            }
             if (pl->Motion.Seq_frame >= (f32) c.seq[0] - 2.0f) {
                 const int k = r1 == 1 ? 1 : r1 == 3 ? 2 : r1 == 2 ? 3 : 0;
+                if (r1 == 3 && gSprintKey && gClip[8].mot) {
+                    play(pl, 8);
+                    gWasMoving = 4;
+                    return;
+                }
                 if (gMove[k].mot) {
                     MotionSetCore(pl, &pl->Motion, gMove[k].mot, gMove[k].seq, kLoopHokan, 5, 0);
                 }
@@ -518,13 +551,19 @@ void transitions(cPlayer* pl)
         }
         gWasMoving = 1;
     } else if (cur == (const void*) gMove[2].mot && gMove[2].mot) {
+        if (r1 == 3 && gSprintKey && gClip[8].mot) {
+            // into the sprint: from standing its start, from the jog its way in (or its loop)
+            play(pl, fresh && gWasMoving == 0 && gClip[9].mot ? 9 : gClip[11].mot ? 11 : 8);
+            gWasMoving = 4;
+            return;
+        }
         if (r1 == 3 && fresh && gWasMoving == 0 && gClip[2].mot) {
             play(pl, 2);
         }
         gWasMoving = 3;
     } else if (cur == (const void*) gMove[0].mot && gMove[0].mot) {
         if (r1 == 0 && fresh && gWasMoving) {
-            const int i = gWasMoving == 3 ? 3 : 1;
+            const int i = gWasMoving == 4 ? (gClip[10].mot ? 10 : 3) : gWasMoving == 3 ? 3 : 1;
             if (gClip[i].mot) {
                 play(pl, i);
             }
@@ -594,22 +633,24 @@ void re4_move_table(void* p)
 }
 
 // runtime/free_move.cpp (before it turns Leon toward the stick; `diff` the stick's direction against his heading,
-// radians, positive to his left): 1 = a turn about plays (he keeps his heading, the clip turns him)
-int re4_move_turn(void* p, float diff)
+// radians, positive to his left; `armed`: the stick held firmly back for a few frames, free_move.cpp): 1 = a turn
+// about plays (he keeps his heading, the clip turns him)
+int re4_move_turn(void* p, float diff, int armed)
 {
     cPlayer* pl = (cPlayer*) p;
     if (!pl || gApplied != 1 || !on() || pl->r_no_0 != 0) {
         return 0;
     }
     const void* cur = (const void*) pl->Motion.pMot;
-    if (gPlaying >= 0) {
-        return gPlaying >= 4 && cur == (const void*) gClip[gPlaying].mot;
+    if (gPlaying >= 0 && gPlaying != 8) {
+        return gPlaying >= 4 && gPlaying < 8 && cur == (const void*) gClip[gPlaying].mot;
     }
-    if (fabsf(diff) < kTurnStart) {
+    if (!armed || fabsf(diff) < kTurnStart) {
         return 0;
     }
     const bool left = diff > 0.0f;
-    if (pl->r_no_1 == 3 && gMove[2].mot && cur == (const void*) gMove[2].mot && gClip[left ? 4 : 5].mot) {
+    if (pl->r_no_1 == 3 && gMove[2].mot && gClip[left ? 4 : 5].mot &&
+        (cur == (const void*) gMove[2].mot || (gClip[8].mot && cur == (const void*) gClip[8].mot))) {
         play(pl, left ? 4 : 5);
         return 1;
     }
@@ -627,6 +668,18 @@ int re4_move_count(void)
 {
     load();
     return gCount;
+}
+
+// aim_options.cpp re4_run_held (the game's run checks, patch 0156): -1 without the sprint (the game's / "Always
+// run"'s way), else whether Leon runs: the run key (the sprint) or the stick pushed beyond kJogTilt (the jog)
+int re4_move_sprint(int held)
+{
+    gSprintKey = held != 0;
+    if (gApplied != 1 || !on() || !gClip[8].mot || !re4_free_move_on()) {
+        return -1;
+    }
+    const f32 sx = (f32) Key.stickX / 56.0f, sy = (f32) Key.stickY / 56.0f;
+    return held || sx * sx + sy * sy >= kJogTilt * kJogTilt ? 1 : 0;
 }
 
 // For the tests: the transitions' clips the active archive holds

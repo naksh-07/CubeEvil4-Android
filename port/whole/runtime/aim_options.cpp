@@ -150,6 +150,7 @@ extern "C" void re4_box_strike_set(int on);               // runtime/melee.cpp
 extern "C" void re4_finish_set(int on);                   // runtime/finisher.cpp
 extern "C" void re4_move_set(int on);                     // runtime/locomotion.cpp
 extern "C" void re4_react_set(int on);                    // runtime/react.cpp
+extern "C" int re4_move_sprint(int held);                 // runtime/locomotion.cpp
 extern "C" void re4_back_adjust_set(int word);           // runtime/wardrobe.cpp
 extern "C" void re4_ashley_gun_set(int on);             // runtime/ashley_gun.cpp
 // Patch 0905 (title.cpp titleWait): 1 = the title starts at its main menu (the app's "Skip intro logos"; on the PC
@@ -285,6 +286,11 @@ f32 re4_aim_speed(void)
 // around (run without it, walk while it is held).
 int re4_run_held(int held)
 {
+    // the remake's sprint (runtime/locomotion.cpp): the stick jogs, the run key sprints
+    const int sprint = re4_move_sprint(held);
+    if (sprint >= 0) {
+        return sprint;
+    }
     return gRun.load(std::memory_order_relaxed) ? !held : held != 0;
 }
 

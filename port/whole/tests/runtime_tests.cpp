@@ -1490,6 +1490,7 @@ int re4_finish_probe(int i);
 void re4_finish_reset(void);
 int re4_knife_combo_count(void);
 int re4_box_strike_motion(void);
+int re4_box_kick_motion(void);
 void* re4_csaw_motion(int i);
 int re4_move_count(void);
 int re4_move_clips(void);
@@ -2533,6 +2534,8 @@ static void testFinish()
         const int box = re4_box_strike_motion();
         re4_log("  finishers: %s box strike frames 0x%x", real, box);
         bad |= box < 0 ? 0x20000 : 0;
+        const int kick = re4_box_kick_motion();
+        re4_log("  finishers: %s the boxes' kick frames 0x%x (-1: none in this archive)", real, kick);
         re4_mod_melee_path_set("");
         re4_knife_combo_count();
     }
@@ -2541,9 +2544,9 @@ static void testFinish()
         re4_mod_move_path_set(real);
         const int n = re4_move_count();
         const int clips = re4_move_clips();
-        re4_log("  finishers: %s holds %d movements (expected 4) and %d transitions (expected 8 or none)", real, n,
+        re4_log("  finishers: %s holds %d movements (expected 4) and %d transitions (expected 12 or none)", real, n,
                 clips);
-        bad |= n != 4 || (clips != 8 && clips != 0) ? 0x40000 : 0;
+        bad |= n != 4 || (clips != 12 && clips != 0) ? 0x40000 : 0;
         re4_mod_move_path_set("");
         bad |= re4_move_count() != 0 ? 0x40000 : 0;
     }

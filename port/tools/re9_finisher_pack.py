@@ -299,7 +299,31 @@ def box_from(path):
     return mot, frames[:3] + bytes(13)
 
 
-def kicks(root, model, tol, out_path, no_fingers, box=None):
+# the boxes' kick (entries 26 / 27; wish of DevJunior, 16-17.11.2026: "alternate by the object", "the kick for boxes
+# and barrels done right"): a crate kicked, a barrel or a vase slashed (runtime/melee.cpp). From a motlist the user
+# gives (--box-kick, e.g. the "Kick That Box" mod's cha0_general2: its low kick in place of the 2023 game's stomp);
+# the foot's fastest frame on game frame KICK_BOX_HIT
+KICK_BOX = "0531_attack_lower_VerB"
+KICK_BOX_HIT = 8
+KICK_BOX_END = 16
+
+
+def fastest_foot(motion):
+    """The source frame of a foot's fastest move (the kick)."""
+    src = RT.Source(motion)
+    best, at = -1.0, 0
+    for name in ("R_Foot", "L_Foot"):
+        prev = None
+        for f in range(int(motion.frames) + 1):
+            _r, pos = src.pose(f)
+            p = pos[src.by_name[name]]
+            if prev is not None and np.linalg.norm(p - prev) > best:
+                best, at = float(np.linalg.norm(p - prev)), f
+            prev = p
+    return at
+
+
+def kicks(root, model, tol, out_path, no_fingers, box=None, box_kick=None):
     """The melee archive with the mod's kicks (see --kicks)."""
     _v, mots = R.read_motlist(root / CHA0)
     entries = []
@@ -357,8 +381,21 @@ def kicks(root, model, tol, out_path, no_fingers, box=None):
         entries.append(data)
         print("chainsaw clash %-28s %d game frames, %d bytes; check %.1f/%.1f deg" % (
             name, len(fit.frames), len(data), c[0], c[1]))
+    if box_kick:
+        path, _, name = box_kick.partition(":")
+        _v, km = R.read_motlist(Path(path))
+        m = next(x for x in km if x.name.endswith(name or KICK_BOX))
+        peak = fastest_foot(m)
+        frames = kick_frames(m.frames, peak, KICK_BOX_HIT)[:KICK_BOX_HIT + KICK_BOX_END + 1]
+        fit = Fit(m, model, "leon", 2.0, tol, m.frames, no_fingers, frames=frames)
+        entries += [fcv.serialise(fit.motion(fit.scale)),
+                    bytes([0, KICK_BOX_HIT, KICK_BOX_HIT + KICK_BOX_END]) + bytes(13)]
+        print("the boxes' kick: %s (the foot fastest on source frame %d), frames 0..%d, the box breaks on %d" % (
+            m.name, peak, KICK_BOX_HIT + KICK_BOX_END, KICK_BOX_HIT))
     tags = [b"FCV\x00"] * len(entries)
     tags[17] = b"BXF\x00"  # the box strike's frames: read as bytes
+    if box_kick:
+        tags[27] = b"BXF\x00"
     body = U.build_body(entries, tags)
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -376,7 +413,12 @@ MOVES = [(0, "0160_stand_loop", (150, 300), 0), (2, "0403_walk_F_loop", (60, 70)
 # walk, 0x82 / 0x83 from a run, 0x84 / 0x85 turning about to the left / right while running, 0x86 / 0x87 standing
 CLIPS = [(0x80, "0400_walk_F_start"), (0x81, "0406_walk_F_end"), (0x82, "0510_jog_start_R0"), (0x83, "0540_jog_end"),
          (0x84, "0532_jog_turn_L180"), (0x85, "0536_jog_turn_R180"), (0x86, "0170_turn_L180"),
-         (0x87, "0171_turn_R180")]
+         (0x87, "0171_turn_R180"),
+         # the sprint (wish of DevJunior, 17.11.2026: "jog with the stick, really run with the run button, as the
+         # remake"): its loop (0x88, played round), setting off from standing (0x89), stopping (0x8A), from the jog
+         (0x88, "0720_dash_loop"), (0x89, "0710_dash_start_R0"), (0x8A, "0740_dash_end"),
+         (0x8B, "0718_dash_from_jog_R")]
+CLIP_LOOPS = {0x88}
 LOOP_BONES = ["Hip", "Spine_0", "Spine_2", "Neck_0", "Head", "R_UpperArm", "R_Forearm", "L_UpperArm", "L_Forearm",
               "R_Thigh", "R_Shin", "R_Foot", "L_Thigh", "L_Shin", "L_Foot"]
 
@@ -439,11 +481,11 @@ def moves(root, model, tol, out_path):
               "deg" % (name, slot, first, first + length, len(fit.frames), len(data), dist, feet, c[0], c[1]))
     for code, name in CLIPS:
         m = next(x for x in mots if x.name.endswith(name))
-        fit = Fit(m, model, "leon", 2.0, tol, m.frames, True)
+        fit = Fit(m, model, "leon", 2.0, tol, m.frames, True, loop=code in CLIP_LOOPS)
         data = fcv.serialise(fit.motion(fit.scale))
         c = fit.check(data)
         entries.append(data)
-        table.append(struct.pack(">BBHHHHH", code, 0, len(entries) - 1, len(fit.frames) - 1, 0xFFFF, 0xFFFF, 0))
+        table.append(struct.pack(">BBHHHHH", code, 1 if code in CLIP_LOOPS else 0, len(entries) - 1, len(fit.frames) - 1, 0xFFFF, 0xFFFF, 0))
         end = fit.track(fit.scale)[-1]
         print("clip %-22s 0x%x: %d game frames, %d bytes, ends %.0f mm ahead, %.0f mm aside, turned %.0f deg; check "
               "%.1f/%.1f deg" % (name, code, len(fit.frames), len(data), end[2], end[0], math.degrees(end[3]), c[0],
@@ -536,6 +578,8 @@ def main(argv=None):
     ap.add_argument("--kicks", help="also write the mod's kicks as the pack's melee archive (melee/melee.dat)")
     ap.add_argument("--box-from", help="the box strike's kick from another pack's melee.dat (entries 16 / 17); "
                     "default RE9's low kick")
+    ap.add_argument("--box-kick", help="the boxes' kick (melee.dat entries 26 / 27) from a motlist: PATH[:MOTION], "
+                    "default motion *%s (the 'Kick That Box' mod's cha0_general2)" % KICK_BOX)
     ap.add_argument("--react", help="also write the Ganados' hit reactions of the 2023 game (melee/react.dat)")
     ap.add_argument("--move", help="also write Leon's movements of the 2023 game (melee/move.dat)")
     a = ap.parse_args(argv)
@@ -559,7 +603,7 @@ def main(argv=None):
 
     leon_model, ganado_model = model_of(a.leon), model_of(a.ganado)
     if a.kicks:
-        kicks(root, leon_model, a.tolerance, a.kicks, a.no_fingers, a.box_from)
+        kicks(root, leon_model, a.tolerance, a.kicks, a.no_fingers, a.box_from, a.box_kick)
     if a.react:
         reacts(root, ganado_model, a.tolerance, a.react)
     if a.move:

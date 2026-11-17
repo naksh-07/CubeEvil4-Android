@@ -261,7 +261,10 @@ def read_motlist(path):
         a = _u64(b, pointers + 8 * i)
         if not a or b[a + 4:a + 8] != b"mot ":
             continue
-        m = read_motion(b, a, bones)
+        try:
+            m = read_motion(b, a, bones)
+        except (struct.error, IndexError, UnicodeDecodeError):
+            continue  # a motion the file cuts short (some mods' lists end in an empty one)
         bones = m.bones or bones
         if m.bones is None:
             m.bones = bones

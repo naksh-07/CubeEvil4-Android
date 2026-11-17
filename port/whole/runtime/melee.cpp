@@ -99,6 +99,11 @@ char gLoaded[1600];           // the archive at RE4_MEM1_MELEE_ADDR ("" none; a 
 void* gMod[2][kVariants];     // its motions: on a standing enemy, on a kneeling one
 void* gBoxMot;                // its box strike's motion (entry 16; patch 0916), played from gBoxFrames[0] to [2]
 u8 gBoxFrames[3];             // entry 17 ("BXF"): start, the frame that breaks the box, end
+// the kick for the boxes (entries 26 / 27, "BXF" as 17; wish of DevJunior, 16.11.2026: "it should alternate by the
+// object": the remake's slash for barrels and vases (entry 16), a kick for the crates; a mod's kick, e.g.
+// re9_finisher_pack.py --box-kick from "Kick That Box")
+void* gKickMot;
+u8 gKickFrames[3];
 int gMods[2];                 // how many of each
 int gSaid;                    // what the log told already (bits by kind)
 
@@ -117,6 +122,7 @@ void* gParry[kParry];
 int gParries;
 int gLastParry = -1;
 const int kCsaw = 2;                     // the chainsaw clash (entries 24 / 25; runtime/parry.cpp, patch 0924)
+const int kKick = 2;                     // the boxes' kick and its frames (entries 26 / 27)
 void* gCsaw[kCsaw];
 const int kTap = 8;                      // a press of the knife key at most this long is a tap: the combo's slash
 const int kTapQueue = 20;                // frames a tap waits for the knife's stance (or the slash before it)
@@ -127,6 +133,7 @@ bool gParryNext;                         // the next slash answers a parried blo
 void* gParryMot;                         // the parry answer playing (its hit not yet dealt: gParryHit false)
 bool gParryHit;
 const f32 kParryHitFrame = 7.0f;         // the knife slash's full-damage frames are 7..8 (knife_r3_fire10)
+const f32 kParryTurn = 0.45f;            // radians a frame he turns to the parried attacker (a quarter turn in 4)
 
 // The parry answer's hit (device report 13.11.2026: "after a perfect parry they are no longer stunned"): the knife's
 // hit check is a line along Leon's right forearm on frames 6..10, which the mod's parries (a deflection, pushes) do
@@ -142,6 +149,22 @@ void parryWatch(unsigned)
     if (pl->r_no_0 != 0 || pl->r_no_1 != 0xB || pl->r_no_2 != 2 || (void*) pl->Motion.pMot != gParryMot) {
         gParryMot = 0;
         return;
+    }
+    // he turns to the attacker until the answer's hit (device report 17.11.2026: "the parry should go where the blow
+    // came from: I parry an enemy on my left and it plays to the front"): at most kParryTurn a frame
+    if (!gParryHit) {
+        if (cEm* at = (cEm*) re4_parry_attacker()) {
+            const f32 want = atan2f(at->pos.x - pl->pos.x, at->pos.z - pl->pos.z);
+            f32 d = want - pl->ang.y;
+            while (d > PI) {
+                d -= 2.0f * PI;
+            }
+            while (d < -PI) {
+                d += 2.0f * PI;
+            }
+            d = d > kParryTurn ? kParryTurn : d < -kParryTurn ? -kParryTurn : d;
+            pl->ang.y = LIMIT_ANGLE(pl->ang.y + d);
+        }
     }
     if (gParryHit || pl->Motion.Seq_frame < kParryHitFrame) {
         return;
@@ -170,6 +193,83 @@ void parryWatch(unsigned)
     re4_log("melee: the parry answer hit the attacker (enemy id 0x%x, %.0f away): %u", (unsigned) em->id, (double) len,
             (unsigned) hit);
 }
+// The combo steered and drawn to the enemies (wish of DevJunior, 17.11.2026: "the melee combo controllable in
+// direction, with some magnetism to enemies very close to the body"): until a slash's hit (kSteerUntil) Leon turns
+// to the nearest enemy within kMagnet in front of where the stick (or he) points (kMagnetCone), at most kMagnetTurn a
+// frame, and steps toward him when he stands farther than kMagnetNear (at most kMagnetStep a frame); with none there
+// the stick steers him (kSteerTurn a frame; the stick against his heading, as the knife's stance holds the camera
+// behind him).
+const f32 kSteerUntil = 9.0f;
+const f32 kMagnet = 1800.0f;
+const f32 kMagnetCone = 1.3f;
+const f32 kMagnetTurn = 0.30f;
+const f32 kMagnetNear = 1000.0f;
+const f32 kMagnetStep = 30.0f;
+const f32 kSteerTurn = 0.14f;
+void* gComboMot;                         // the combo's slash playing (steered until its hit)
+
+f32 wrapPi(f32 a)
+{
+    while (a > PI) {
+        a -= 2.0f * PI;
+    }
+    while (a < -PI) {
+        a += 2.0f * PI;
+    }
+    return a;
+}
+
+void comboWatch(unsigned)
+{
+    cPlayer* pl = pPL;
+    if (!gComboMot || !pl) {
+        return;
+    }
+    if (pl->r_no_0 != 0 || pl->r_no_1 != 0xB || pl->r_no_2 != 2 || (void*) pl->Motion.pMot != gComboMot ||
+        pl->Motion.Seq_frame >= kSteerUntil) {
+        gComboMot = 0;
+        return;
+    }
+    const f32 sx = (f32) Key.stickX / 56.0f, sy = (f32) Key.stickY / 56.0f;
+    const bool stick = sx * sx + sy * sy > 0.3f * 0.3f;
+    const f32 aim = stick ? LIMIT_ANGLE(pl->ang.y - atan2f(sx, sy)) : pl->ang.y;
+    cEm* best = 0;
+    f32 bestD = kMagnet * kMagnet;
+    for (cEm* m = EmMgr.getActiveWork(); m; m = EmMgr.getNext(m)) {
+        if (m->id < 0x10 || m->id >= 0x40 || m->hp <= 0 || fabsf(m->pos.y - pl->pos.y) > 1200.0f) {
+            continue;
+        }
+        const f32 dx = m->pos.x - pl->pos.x, dz = m->pos.z - pl->pos.z;
+        const f32 d = dx * dx + dz * dz;
+        if (d < bestD && fabsf(wrapPi(atan2f(dx, dz) - aim)) < kMagnetCone) {
+            bestD = d;
+            best = m;
+        }
+    }
+    f32 turn;
+    if (best) {
+        const f32 dx = best->pos.x - pl->pos.x, dz = best->pos.z - pl->pos.z;
+        turn = wrapPi(atan2f(dx, dz) - pl->ang.y);
+        turn = turn > kMagnetTurn ? kMagnetTurn : turn < -kMagnetTurn ? -kMagnetTurn : turn;
+        const f32 d = sqrtf(bestD);
+        if (d > kMagnetNear) {
+            const f32 step = d - kMagnetNear < kMagnetStep ? d - kMagnetNear : kMagnetStep;
+            pl->pos.x += dx / d * step;
+            pl->pos.z += dz / d * step;
+        }
+        if (!(gSaid & (1 << 15))) {
+            gSaid |= 1 << 15;
+            re4_log("melee: the combo's slash drawn to an enemy (id 0x%x, %.0f away)", (unsigned) best->id, (double) d);
+        }
+    } else if (stick) {
+        turn = wrapPi(aim - pl->ang.y);
+        turn = turn > kSteerTurn ? kSteerTurn : turn < -kSteerTurn ? -kSteerTurn : turn;
+    } else {
+        return;
+    }
+    pl->ang.y = LIMIT_ANGLE(pl->ang.y + turn);
+}
+
 int gComboStep = -1;                     // the last slash of the combo played, and when it started (pad frame)
 unsigned gComboAt;
 unsigned gComboLen;                      // its frames
@@ -201,6 +301,7 @@ void load()
     memset(gMod, 0, sizeof(gMod));
     gMods[0] = gMods[1] = 0;
     gBoxMot = nullptr;
+    gKickMot = nullptr;
     gCombos = 0;
     gComboStep = -1;
     gParries = 0;
@@ -244,7 +345,11 @@ void load()
     }
     const u32 count = size >= 0x20 ? be32At(base) : 0;
     // the moves, the box strike's motion and its frames, the hatchet's combo (entries 18..20, patch 0922), the parries
-    enum { kMoves = 2 * kVariants, kMax = kMoves + 2 + kCombo + kParry + kCsaw };
+    enum {
+        kMoves = 2 * kVariants,
+        kKickAt = kMoves + 2 + kCombo + kParry + kCsaw,
+        kMax = kKickAt + kKick
+    };
     u32 at[kMax], len[kMax];
     bool ok = whole && count >= 1 && count <= kMax && 0x10 + count * 8 <= size;
     for (u32 i = 0; ok && i < count; i++) {
@@ -253,7 +358,7 @@ void load()
         ok = at[i] >= 0x10 + count * 8 && at[i] <= end && end <= size && !(at[i] & 3);
         len[i] = ok ? end - at[i] : 0;
         // a motion: u16 last frame, u8 joints, the table and at least one offset
-        if (ok && len[i] && i != kMoves + 1 && (len[i] < 0x10 || base[at[i] + 2] == 0)) {
+        if (ok && len[i] && i != kMoves + 1 && i != kKickAt + 1 && (len[i] < 0x10 || base[at[i] + 2] == 0)) {
             ok = false;
         }
     }
@@ -282,7 +387,17 @@ void load()
                     (unsigned) fr[0], (unsigned) fr[1], (unsigned) fr[2], last);
         }
     }
-    for (u32 i = kMoves + 2; i < count; i++) {  // the hatchet's combo and the parries: Leon's knife (patch 0922)
+    if (count >= kKickAt + 2 && len[kKickAt] && len[kKickAt + 1] >= 3) {  // the boxes' kick and its frames
+        const u8* fr = base + at[kKickAt + 1];
+        const unsigned last = get16(base + at[kKickAt]);
+        if (fr[0] < fr[1] && fr[1] < fr[2] && fr[2] <= last) {
+            gKickMot = base + at[kKickAt];
+            memcpy(gKickFrames, fr, 3);
+            re4_log("melee: %s entry %d: the boxes' kick, frames %u..%u, the box breaks on %u", path, (int) kKickAt,
+                    (unsigned) fr[0], (unsigned) fr[2], (unsigned) fr[1]);
+        }
+    }
+    for (u32 i = kMoves + 2; i < count && i < (u32) kKickAt; i++) {  // the hatchet's combo, the parries, the clash
         if (!len[i]) {
             continue;
         }
@@ -825,6 +940,13 @@ int breakNear(cEmBox* target)
     return n;
 }
 
+// A crate is kicked, a barrel or a vase slashed (cEmBox types, embox.cpp SetBox: 3 / 5 barrels, 6 / 7 vases (tubo),
+// 0 / 1 / 2 boxes, 4 a nest)
+bool kicked(cEmBox* box)
+{
+    return box->type != 3 && box->type != 5 && box->type != 6 && box->type != 7;
+}
+
 void plBoxStrike(cPlayer* pl)
 {
     cEmBox* box = (cEmBox*) pl->pEmCatch;
@@ -833,7 +955,12 @@ void plBoxStrike(cPlayer* pl)
         setWepTrans(pl, 0);
         gAxeLive = true;
         load();
-        if (gBoxMot && !(gBits.load() & 2)) {  // a mod's kick (wish of DevJunior, 12.11.2026: Jake's low kick)
+        if (gKickMot && !(gBits.load() & 2) && box && kicked(box)) {  // a crate: the mod's kick
+            MotionSetCore(pl, &pl->Motion, gKickMot, 0, 4, 1, gKickFrames[0]);
+            pl->m_Work0 = gKickFrames[1] - gKickFrames[0];
+            pl->m_Work2 = gKickFrames[2] - gKickFrames[0];
+            say(12, "the box strike kicks a crate (the mod's kick)");
+        } else if (gBoxMot && !(gBits.load() & 2)) {  // a mod's strike (the remake's slash; Jake's low kick before)
             MotionSetCore(pl, &pl->Motion, gBoxMot, 0, 4, 1, gBoxFrames[0]);
             pl->m_Work0 = gBoxFrames[1] - gBoxFrames[0];
             pl->m_Work2 = gBoxFrames[2] - gBoxFrames[0];
@@ -958,6 +1085,13 @@ int re4_box_strike_motion(void)
     return gBoxMot ? gBoxFrames[0] << 16 | gBoxFrames[1] << 8 | gBoxFrames[2] : -1;
 }
 
+// For the tests: the boxes' kick (its start, break and end frames), -1 without one
+int re4_box_kick_motion(void)
+{
+    load();
+    return gKickMot ? gKickFrames[0] << 16 | gKickFrames[1] << 8 | gKickFrames[2] : -1;
+}
+
 void re4_box_strike_set(int on)
 {
     on = on ? 1 : 0;
@@ -1075,6 +1209,12 @@ int re4_knife_slash(void* p)
         gComboStep = step;
         gComboAt = now;
         mot = gCombo[step];
+        gComboMot = mot;
+        static bool steer = false;
+        if (!steer) {
+            steer = true;
+            re4_add_frame_hook(comboWatch);
+        }
     }
     if (!mot) {
         return 0;

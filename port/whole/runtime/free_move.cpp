@@ -73,7 +73,7 @@ extern "C" void re4_quick_slots_input(cPlayer* pl);  // runtime/quick_slots.cpp
 extern "C" int re4_run_held(int held);               // runtime/aim_options.cpp (patch 0156)
 extern "C" void re4_parry_input(cPlayer* pl);         // runtime/parry.cpp
 extern "C" int re4_ashley_gun_input(cPlayer* pl, int freeCam);  // runtime/ashley_gun.cpp (patch 0913)
-extern "C" int re4_move_turn(void* pl, float diff);              // runtime/locomotion.cpp (the remake's turns)
+extern "C" int re4_move_turn(void* pl, float diff, int armed);   // runtime/locomotion.cpp (the remake's turns)
 
 namespace {
 
@@ -202,6 +202,13 @@ bool walkRoutine(cPlayer* pl)
         && !pl->stat.check(cPlayer::F_BINOCULAR);
 }
 
+// the remake's turn about (runtime/locomotion.cpp): the stick this far from Leon's heading (radians), this firmly
+// (of its range), this many frames in a row
+const f32 kBackTurn = 2.4f;
+const f32 kBackFirm = 0.7f;
+const int kBackHold = 4;
+int gBackFrames = 0;
+
 void freeMove(cPlayer* pl)
 {
     const f32 dx = pl->pos.x - gLastPos.x;
@@ -259,16 +266,27 @@ void freeMove(cPlayer* pl)
     const f32 sx = axis(Key.stickX, kMainRange);
     const f32 sy = axis(Key.stickY, kMainRange);
     if (sx * sx + sy * sy <= kMoveDead * kMoveDead) {
+        gBackFrames = 0;
         return;  // the stick rests: the D-pad's tank controls as the game
     }
     const f32 target = wrap(gCamYaw - atan2f(sx, sy));
     const f32 diff = wrap(target - pl->ang.y);
     // a turn about of the remake (runtime/locomotion.cpp): its clip turns him, his heading stays; running he keeps
     // running, standing he stays until it ends
-    if (re4_move_turn(pl, diff)) {
+    // (only a stick held firmly back for a few frames: one springing back to the middle passes the other side for a
+    // frame or two; device video 17.11.2026: "he still turns about to go the other way at times")
+    if (fabsf(diff) >= kBackTurn && sx * sx + sy * sy >= kBackFirm * kBackFirm) {
+        if (gBackFrames < 100) {
+            gBackFrames++;
+        }
+    } else {
+        gBackFrames = 0;
+    }
+    // (while the hold is not yet sure he neither turns nor steps back: he keeps on as he was)
+    if (re4_move_turn(pl, diff, gBackFrames >= kBackHold) || (gBackFrames > 0 && gBackFrames < kBackHold)) {
         Key.on &= ~(u64) 0xF;
         Key.trg &= ~(u64) 0xF;
-        if (pl->r_no_1 == 3) {
+        if (pl->r_no_1 == 3 || pl->r_no_1 == 1) {
             Key.on |= 1;
         }
         return;
