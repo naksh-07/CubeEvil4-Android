@@ -961,6 +961,8 @@ void plBoxStrike(cPlayer* pl)
             pl->m_Work2 = gKickFrames[2] - gKickFrames[0];
             say(12, "the box strike kicks a crate (the mod's kick)");
         } else if (gBoxMot && !(gBits.load() & 2)) {  // a mod's strike (the remake's slash; Jake's low kick before)
+            // the knife in his hand for the slash (DevJunior, 17.11.2026: "the slash comes without the knife")
+            pl->Body->setKnife(true);
             MotionSetCore(pl, &pl->Motion, gBoxMot, 0, 4, 1, gBoxFrames[0]);
             pl->m_Work0 = gBoxFrames[1] - gBoxFrames[0];
             pl->m_Work2 = gBoxFrames[2] - gBoxFrames[0];
