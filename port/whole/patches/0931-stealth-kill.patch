@@ -6,9 +6,13 @@
 # em10.cpp em10FindCk: the "very near" (3.5 m) and footstep (5 m) rules of the sight check are left out while
 # re4_stealth_unheard says Leon walks behind him with a stealth kill at hand (running he is heard as before; in front
 # of him he is seen as before). Declared in re4_whole_prelude.h.
+# Nachtrag (device video of DevJunior, 19.11.2026 11:40: walking up behind a villager she still turned and attacked):
+# FREE_EM10 Pl_rot is the angle to the next point of the route towards Leon (RouteCkToPos), which can lie in front of
+# the Ganado while Leon is behind him; the sight rule (Pl_rot under 60 degrees, up to 15 m) is now left out too while
+# re4_stealth_unheard says so, and re4_stealth_unheard measures the angle straight from where he faces to Leon.
 --- a/src/em10/em10.cpp
 +++ b/src/em10/em10.cpp
-@@ -3442,6 +3442,7 @@
+@@ -3458,6 +3458,7 @@
  {
      Em10_R1_move_tbl[em->r_no_1 * 2](em);
      Em10_R1_move_tbl[em->r_no_1 * 2 + 1](em);
@@ -16,7 +20,12 @@
  }
  
  // Branch check of the routines that have none (most Em10_R1_move_tbl entries): empty in the original too.
-@@ -21319,6 +21320,7 @@
+@@ -21374,10 +21375,11 @@
+             break;
+         }
+         if (em->l_pl < r) {
+-            if (w->Pl_rot < 1.0471976f) {
++            if (w->Pl_rot < 1.0471976f && !re4_stealth_unheard(em)) { /* port: patch 0931 */
                  find = 1;
              }
          }
@@ -24,7 +33,7 @@
          if (StaFlagChk(pG, STA_PL_SE_FOOT)) {
              if (em->l_pl < 25000000.0f) {
                  find = 1;
-@@ -21327,6 +21329,7 @@
+@@ -21386,6 +21388,7 @@
          if (em->l_pl < 12250000.0f) {
              find = 1;
          }

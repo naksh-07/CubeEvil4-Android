@@ -96,7 +96,7 @@ const char* const kKindName[5] = {"standing", "kneeling", "face-down", "face-up"
 // (at most kQuietStep a frame) behind him Leon is not heard (re4_stealth_unheard)
 const f32 kStealthReach = 1700.0f;
 const f32 kStealthBehind = 1.92f;  // 110 degrees
-const f32 kQuietStep = 70.0f;      // mm a frame (the walk: about 40, the run: 130)
+const f32 kQuietStep = 110.0f;     // mm a frame (the game's walk: about 40, the run: 130; and not his run routine)
 const f32 kSightCone = 1.0471976f;  // em10FindCk's 60 degrees
 f32 gLeonStep;                     // Leon's step of the last frame (watch)
 Vec gLeonWas;
@@ -824,6 +824,17 @@ void re4_stealth_prompt(void* p)
 {
     cEm* em = (cEm*) p;
     hook();
+    if (em && leon() && em->hp > 0 && em->r_no_0 == 1 && (EM10_WK(em)->Be_flg & 0x100) && behind(em, kStealthReach)) {
+        // diagnostics: a Ganado near behind Leon who has found him (what found him: the lines before in the log)
+        static void* last;
+        static unsigned n;
+        if (last != em && n < 20) {
+            last = em;
+            n++;
+            re4_log("finisher: no stealth kill: Ganado id 0x%x behind %.0f mm has found Leon already (Be_flg 0x%x)",
+                    (unsigned) em->id, (double) sqrtf(em->l_pl), (unsigned) EM10_WK(em)->Be_flg);
+        }
+    }
     if (!stealthReady(em, true) || pPL->r_no_0 != 0 || pPL->r_no_1 > 4 || pPL->isKamae()) {
         return;
     }
@@ -855,13 +866,17 @@ int re4_stealth_unheard(void* p)
     if (!stealthReady(em, false) || !gLeonKnown) {
         return 0;
     }
-    const FREE_EM10* w = EM10_WK(em);
-    const bool quiet = gLeonStep <= kQuietStep, aside = w->Pl_rot >= kSightCone;
+    // (Nachtrag, device video 19.11.2026 11:40: FREE_EM10 Pl_rot is the angle to the next point of his route towards
+    // Leon, which can lie ahead of him with Leon behind: the angle straight from where he faces to Leon; walking,
+    // not running: the remake movement's walk may be faster than the game's)
+    const f32 dx = pPL->pos.x - em->pos.x, dz = pPL->pos.z - em->pos.z;
+    const f32 off = fabsf(wrapAngle(atan2f(dx, dz) - em->ang.y));
+    const bool quiet = pPL->r_no_1 != 3 && gLeonStep <= kQuietStep, aside = off >= kSightCone;
     static unsigned said;
     if ((!quiet || !aside) && em->l_pl < 12250000.0f && said++ % 30 == 0) {
-        re4_log("finisher: Ganado id 0x%x hears Leon near (%s: step %.0f mm, %.0f degrees off his sight)",
-                (unsigned) em->id, quiet ? "in his sight cone" : "too fast", (double) gLeonStep,
-                (double) (w->Pl_rot * 57.29578f));
+        re4_log("finisher: Ganado id 0x%x hears Leon near (%s: step %.0f mm, routine %d, %.0f degrees off his sight)",
+                (unsigned) em->id, quiet ? "in his sight cone" : "too fast", (double) gLeonStep, (int) pPL->r_no_1,
+                (double) (off * 57.29578f));
     }
     return quiet && aside ? 1 : 0;
 }
