@@ -1,0 +1,34 @@
+# Patch 0934 (device report of DevJunior, 19.11.2026: "at times I stand among enemies and have to turn on the spot
+# slowly, it has left me exposed"). Not a bug of the prototype: a port feature of the mods, the 2023 remake's turn
+# acceleration. pl_wep.cpp PlWepLockCtrl: his body's turn at the waist's limit while aiming (both arms, after patch
+# 0151's "Aim speed") is multiplied by re4_aim_turn_boost (runtime/aim_options.cpp): the stick held far to one side
+# for 6 frames speeds it up, to 2.5 times over 12 frames more. The waist's own turn, the pitch and the D-pad's fixed
+# steps stay as they are.
+--- a/src/game/pl_wep.cpp
++++ b/src/game/pl_wep.cpp
+@@ -24,6 +24,7 @@
+ #include "em_sub.h"
+ 
+ extern "C" f32 re4_aim_speed(void); /* port: runtime/aim_options.cpp (patch 0151) */
++extern "C" f32 re4_aim_turn_boost(int stickX); /* port: runtime/aim_options.cpp (patch 0934) */
+ 
+ f32 rangeDist(Vec* pos, cEm* em, f32 range);
+ int lockEmCk(cEm* em, Vec* pos);
+@@ -1003,7 +1004,7 @@
+             if (Joy[0].on & 1) {
+                 pl->ang.y += 0.039269908f;
+             } else {
+-                pl->ang.y -= spd * aim * (f32) Joy[0].stickX * repCtr * PI / 10.0f / 200.0f / 20.0f;
++                pl->ang.y -= spd * aim * re4_aim_turn_boost(Joy[0].stickX) * (f32) Joy[0].stickX * repCtr * PI / 10.0f / 200.0f / 20.0f; /* port: patch 0934 */
+             }
+         }
+         if (pl->m_Fwork0 < -lim * 0.8f) {
+@@ -1011,7 +1012,7 @@
+             if (Joy[0].on & 2) {
+                 pl->ang.y -= 0.039269908f;
+             } else {
+-                pl->ang.y -= spd * aim * (f32) Joy[0].stickX * repCtr * PI / 10.0f / 200.0f / 20.0f;
++                pl->ang.y -= spd * aim * re4_aim_turn_boost(Joy[0].stickX) * (f32) Joy[0].stickX * repCtr * PI / 10.0f / 200.0f / 20.0f; /* port: patch 0934 */
+             }
+         }
+     }

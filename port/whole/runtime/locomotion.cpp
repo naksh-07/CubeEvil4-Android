@@ -119,6 +119,9 @@ int gPlaying = -1;     // the clip Leon plays (-1 none)
 int gWasMoving = 0;    // the movement he was in (1 walk, 3 run; 0 none): the stop's clip
 const f32 kTurnStart = 2.4f;   // radians the stick points away from him for a turn about (about 140 degrees)
 const f32 kTurnSpeed = 1.35f;  // the turns' speed against the remake's own (its 0.9 / 1.5 s too slow beside the game)
+// the turn in place standing (Mods, 19.11.2026, DevJunior: "standing among enemies the turn on the spot is slow, it
+// left me exposed"): faster still
+const f32 kTurnInPlace = 2.1f;
 const int kClipHokan = 5;      // frames a clip blends in
 const int kLoopHokan = 6;      // frames the loop after it blends in
 int gApplied = -1;         // what the table holds: 1 the remake's, 0 the game's, -1 unknown
@@ -472,8 +475,10 @@ void fitClip(int i)
     }
     const Move* base = i < 2 ? &gMove[1] : i < 6 || i >= 8 ? &gMove[2] : 0;
     f32 time = base && base->mot ? base->time : 1.0f;
-    if (i >= 4 && i < 8) {
+    if (i >= 4 && i < 6) {
         time *= kTurnSpeed;
+    } else if (i >= 6 && i < 8) {
+        time *= kTurnInPlace;
     }
     if (i == 8 || i == 9 || i == 11) {
         time *= kSprintSpeed;

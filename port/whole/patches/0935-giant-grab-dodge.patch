@@ -1,0 +1,18 @@
+# Patch 0935 (wish of DevJunior, 19.11.2026: "the ability to dodge when the giant is about to grab you"). Not a bug of
+# the prototype: a port feature of the mods. em2b.cpp em2b_R1_Catch (El Gigante reaching for Leon, R1 0x11): until
+# the hand has caught him (Atk_ck 0), while re4_giant_dodge says so (runtime/parry.cpp: Leon on his feet in reach),
+# the L+R prompt of the giant's own dash escape (ACT_GUARD, em2bDashEscapeAction, as the dash attack shows it):
+# pressed, Leon throws himself aside with the game's own move (plem2bDashEscape: 50 frames untouchable, the hand
+# misses him). Declared in re4_whole_prelude.h.
+--- a/src/em2b/em2b.cpp
++++ b/src/em2b/em2b.cpp
+@@ -2394,6 +2394,9 @@
+         }
+         break;
+     }
++    if (w->Atk_ck == 0 && re4_giant_dodge(em)) { /* port: patch 0935 */
++        ActBtn.set(ACT_GUARD, 0xB, (void*) em2bDashEscapeAction, em, ACTCTR_WEP_SET_IGNORE, DISP_L_R, ACT_FUNC_NORMAL, 0);
++    }
+     if (w->Atk_ck) {
+         em->flag |= 8;
+     }

@@ -34,6 +34,7 @@ extern cPlayer* pPL;
 
 extern "C" void re4_log(const char* fmt, ...);
 extern "C" void re4_add_frame_hook(void (*hook)(unsigned));  // runtime/pad.cpp
+extern "C" unsigned re4_pad_frame(void);                      // runtime/pad.cpp
 
 namespace {
 
@@ -288,6 +289,35 @@ f32 re4_aim_speed(void)
         return (f32) knife / 100.0f;
     }
     return (f32) gSpeed.load(std::memory_order_relaxed) / 100.0f;
+}
+
+// Patch 0934 (pl_wep.cpp PlWepLockCtrl, his body's turn at the waist's limit while aiming): the remake's turn
+// acceleration (Mods, 19.11.2026, DevJunior: "standing among enemies I have to turn on the spot slowly, it left me
+// exposed"): the stick held far to one side (kBoostFrom of its reach) for kBoostWait frames speeds the turn up, to
+// kBoostMax times over kBoostRamp frames more; let go, turned the other way or less far: as before.
+f32 re4_aim_turn_boost(int stickX)
+{
+    const int kBoostFrom = 46;  // of the main stick's 56
+    const int kBoostWait = 6, kBoostRamp = 12;
+    const f32 kBoostMax = 2.5f;
+    static unsigned at = ~0u;
+    static int frames, side;
+    const unsigned now = re4_pad_frame();
+    if (now != at) {
+        at = now;
+        const int s = stickX >= kBoostFrom ? 1 : stickX <= -kBoostFrom ? -1 : 0;
+        frames = s != 0 && s == side ? frames + 1 : s != 0 ? 1 : 0;
+        side = s;
+        if (frames == kBoostWait + kBoostRamp) {
+            re4_log("aim: the turn speeds up (stick held to the %s)", s > 0 ? "right" : "left");
+        }
+    }
+    const int over = frames - kBoostWait;
+    if (over <= 0) {
+        return 1.0f;
+    }
+    const f32 t = over >= kBoostRamp ? 1.0f : (f32) over / (f32) kBoostRamp;
+    return 1.0f + t * (kBoostMax - 1.0f);
 }
 
 // Patch 0156 (player.cpp): the run key as Leon's walk and run routines see it; with "Always run" turned

@@ -131,6 +131,8 @@ void re4_stealth_prompt(void* em);
 int re4_stealth_unheard(void* em);
 /* Patch 0931 (em10SomebodyDamageNowCk): 1 when `hurt` is the stealth kill's Ganado and `watcher` does not see him. */
 int re4_stealth_quiet(void* hurt, void* watcher);
+/* Patch 0935 (em2b.cpp em2b_R1_Catch; runtime/parry.cpp): 1 when Leon may dodge El Gigante's grab (L+R prompt). */
+int re4_giant_dodge(void* em);
 /* Patch 0927 (em10.cpp C_SawHit; runtime/parry.cpp): 1 = the chainsaw clash's own camera is set this frame. */
 int re4_csaw_clash_cam(void* em);
 /* Patch 0926 (em_dm_val.cpp GetWepDmVal; runtime/ashley_gun.cpp): an enemy Ashley's shot hit takes her pistol's

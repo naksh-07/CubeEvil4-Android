@@ -38,6 +38,8 @@
 #include "math_sub_decl.h"
 #include "rnd.h"
 
+#include <math.h>
+
 extern cPlayer* pPL;
 extern "C" int re4_parry_on(void);  // runtime/aim_options.cpp
 extern "C" void re4_log(const char* fmt, ...);
@@ -54,6 +56,8 @@ const int kGrabWindow = 30;  // game frames after a grab in which the knife key 
 
 int gWindow = 0;
 int gGuard = 0;
+const int kBuffer = 15;  // game frames a press during his hit reaction waits for its end (half a second)
+int gBuffered = 0;
 // frames since the knife key was last pressed (the chainsaw's window: kSawWindow; device report 16.11.2026: "the
 // window for the clash should be bigger")
 const int kSawWindow = 20;
@@ -136,7 +140,7 @@ void re4_parry_input(cPlayer* pl)
 {
     re4_knife_tap_input(pl);
     if (!pl || !re4_parry_on() || pG->pl_type == 1) {
-        gWindow = gGuard = gSlash = 0;
+        gWindow = gGuard = gSlash = gBuffered = 0;
         return;
     }
     if (gWindow > 0) {
@@ -153,9 +157,22 @@ void re4_parry_input(cPlayer* pl)
     if (gPressAge < 1000) {
         gPressAge++;
     }
-    if (pl->r_no_0 == 0 && (knifeKey || slashKey)) {
+    // (Mods, 19.11.2026, DevJunior: "when I want to parry after the blows it reacts slowly") a press during his hit
+    // reaction (routine 1) is kept kBuffer frames: the window opens as soon as he is back on his feet, not only on a
+    // new press
+    if (gBuffered > 0) {
+        gBuffered--;
+    }
+    if (pl->r_no_0 == 1 && knifeKey) {
+        gBuffered = kBuffer;
+    }
+    if (pl->r_no_0 == 0 && (knifeKey || slashKey || gBuffered > 0)) {
+        if (!knifeKey && !slashKey) {
+            re4_log("parry: the press during the hit reaction opens the window now");
+        }
         gWindow = kWindow;
         gPressAge = 0;
+        gBuffered = 0;
     }
     if (gSlash > 0) {
         gSlash--;
@@ -200,6 +217,25 @@ cEm* sawSwinging()
 extern "C" {
 
 // Patch 0900 (EmAtkHitCk2, em_sub.cpp, after an enemy's attack sphere at pos found Leon): 1 = this blow misses.
+// Patch 0935 (em2b.cpp em2b_R1_Catch, El Gigante reaching for Leon; wish of DevJunior, 19.11.2026: "dodge when the
+// giant is about to grab you"): 1 while the giant's dash escape prompt (L+R) may show: Leon on his feet (his move
+// routine, not hurt), the player Leon, within kGiantReach of the giant
+int re4_giant_dodge(void* p)
+{
+    const f32 kGiantReach = 7000.0f;
+    cEm* em = (cEm*) p;
+    if (!em || !pPL || pG->pl_type != 0 || pPL->r_no_0 != 0 || pPL->dmg.isDamage() || em->r_no_1 != 0x11 ||
+        em->l_pl > kGiantReach * kGiantReach) {
+        return 0;
+    }
+    static void* said;
+    if (said != em) {
+        said = em;
+        re4_log("parry: El Gigante reaches for Leon: L+R dodges (%.0f mm away)", (double) sqrtf(em->l_pl));
+    }
+    return 1;
+}
+
 int re4_parry_hit(Vec* pos)
 {
     if (!re4_parry_on()) {
