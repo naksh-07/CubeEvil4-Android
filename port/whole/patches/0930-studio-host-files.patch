@@ -1,0 +1,81 @@
+# CubeEvil4 Studio (wish of DevJunior, 18./19.11.2026: modding tools on Android, the game's motion viewer first): the
+# host file calls of game/file.cpp (HDRead..., the debug tools' files on the development PC) also work while the folder
+# <data>/studio exists (runtime/studio_host.cpp, the SN file server on the device). The DVD queue's own PC read
+# (SYS_SN_PC_READ) stays as it is: the disc's files keep coming from the disc. Without that folder nothing changes.
+--- a/src/game/file.cpp
++++ b/src/game/file.cpp
+@@ -8,6 +8,11 @@
+ #include <stdio.h>
+ #include <dolphin/os.h>
+ 
++/* port (patch 0930, CubeEvil4 Studio): the host files also while <data>/studio exists (runtime/studio_host.cpp: the
++ * SN file server on the device; the debug tools' files, the motion viewer's table, models and motions) */
++extern "C" int re4_host_files(void);
++#define HOST_FILES() (SysFlagChk(pG, SYS_SN_PC_READ) || re4_host_files())
++
+ static int usb_fd = -1;
+ static void* usb_buf = (void*) 0x81800000;
+ static int usb_size = 0;
+@@ -35,7 +40,7 @@
+ {
+     int fd;
+ 
+-    if (SysFlagChk(pG, SYS_SN_PC_READ)) {
++    if (HOST_FILES()) {
+         if (mode == 0 || mode == 2) {
+             fd = PCcreat(name, 0);
+             if (fd == -1) {
+@@ -60,7 +65,7 @@
+ {
+     int ret;
+ 
+-    if (SysFlagChk(pG, SYS_SN_PC_READ)) {
++    if (HOST_FILES()) {
+         if (PCclose(hFile) != 0) {
+             ret = -1;
+             return ret;
+@@ -77,7 +82,7 @@
+ {
+     int ret = 0;
+ 
+-    if (SysFlagChk(pG, SYS_SN_PC_READ)) {
++    if (HOST_FILES()) {
+         ret = PCread(hFile, addr, len);
+     }
+     return ret;
+@@ -88,7 +93,7 @@
+ {
+     int ret = 0;
+ 
+-    if (SysFlagChk(pG, SYS_SN_PC_READ)) {
++    if (HOST_FILES()) {
+         ret = PCwrite(hFile, addr, len);
+     }
+     return ret;
+@@ -99,7 +104,7 @@
+ {
+     int ret = -1;
+ 
+-    if (SysFlagChk(pG, SYS_SN_PC_READ)) {
++    if (HOST_FILES()) {
+         ret = PClseek(hFile, offset, mode);
+     }
+     return ret;
+@@ -110,7 +115,7 @@
+ {
+     int fd;
+ 
+-    if (!SysFlagChk(pG, SYS_SN_PC_READ)) {
++    if (!HOST_FILES()) {
+         return 0;
+     }
+     fd = PCopen(name, 0, 0);
+@@ -126,7 +131,7 @@
+ {
+     char buf[64];
+ 
+-    if (!SysFlagChk(pG, SYS_SN_PC_READ)) {
++    if (!HOST_FILES()) {
+         return 0;
+     }
+     sprintf(buf, "SETROOT:%s", name);

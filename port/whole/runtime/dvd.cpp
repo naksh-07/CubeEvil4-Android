@@ -1662,3 +1662,134 @@ void* re4_mod_event_bin(const void* header, int index, const char* name, void* d
 }
 
 }  // extern "C"
+
+// ---- CubeEvil4 Studio (runtime/studio_host.cpp, port/docs/studio-plan.md; Mods, 19.11.2026) -------------------------
+
+namespace {
+
+// The entries of the body at `body` (big-endian, as on the disc): kinds of 4 characters, lengths.
+int studioTable(const unsigned char* body, u32 len, Re4StudioEntry* out, int max)
+{
+    std::vector<std::pair<u32, u32>> ent;
+    bodyEntries(body, len, ent);
+    const u32 n = (u32) ent.size();
+    int count = 0;
+    for (u32 i = 0; i < n && count < max; i++, count++) {
+        Re4StudioEntry& e = out[count];
+        memcpy(e.kind, body + 16 + n * 4 + i * 4, 4);
+        e.kind[4] = 0;
+        e.start = ent[i].first;
+        e.length = ent[i].second;
+    }
+    return count;
+}
+
+}  // namespace
+
+extern "C" {
+
+// The disc's files directly in `dir` (below files/, "em"), as "dir/name", one per line; the count. A file a mod
+// replaces is listed once (its own path is the disc's).
+int re4_studio_disc_files(const char* dir, char* out, int outSize)
+{
+    Disc* d = current();
+    if (!d || !out || outSize < 2) {
+        return 0;
+    }
+    out[0] = 0;
+    const s32 at = lookup(*d, dir);
+    if (at < 0 || !isDir(*d, (u32) at)) {
+        return 0;
+    }
+    int count = 0;
+    size_t len = 0;
+    for (u32 i = (u32) at + 1; i < word(*d, (u32) at, 2);) {
+        if (!isDir(*d, i)) {
+            const int n = snprintf(out + len, (size_t) outSize - len, "%s/%s\n", dir, entryName(*d, i));
+            if (n < 0 || len + (size_t) n >= (size_t) outSize) {
+                break;
+            }
+            len += (size_t) n;
+            count++;
+        }
+        i = isDir(*d, i) ? word(*d, i, 2) : i + 1;
+    }
+    return count;
+}
+
+// The kinds and lengths of the entries of the archive `rel` (a mod's file when a pack replaces it), from its part
+// table and body table only; 0 when it is none (or its body is packed with Yz2).
+int re4_studio_archive_table(const char* rel, Re4StudioEntry* out, int max)
+{
+    Disc* d = current();
+    const s32 i = d ? lookup(*d, rel) : -1;
+    if (i <= 0 || isDir(*d, (u32) i) || !out || max <= 0) {
+        return 0;
+    }
+    char path[2048];
+    filePath(*d, (u32) i, path, sizeof(path));
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        return 0;
+    }
+    unsigned char head[0x440];
+    int count = 0;
+    if (fread(head, 1, sizeof(head), f) == sizeof(head) && be32(head + 0x20) == 0) {
+        const u32 len = be32(head + 0x24), off = be32(head + 0x2C);
+        unsigned char first[16];
+        if (len >= 16 && fseek(f, (long) off, SEEK_SET) == 0 && fread(first, 1, 16, f) == 16) {
+            const u32 n = be32(first);
+            char text[17];
+            memcpy(text, first, 16);
+            text[16] = 0;
+            const bool packed = isxdigit((unsigned char) text[0]) && strchr(text, '\t');
+            if (!packed && n > 0 && n <= 4096 && 16 + n * 8 <= len) {
+                std::vector<unsigned char> table(16 + n * 8);
+                if (fseek(f, (long) off, SEEK_SET) == 0 && fread(table.data(), 1, table.size(), f) == table.size()) {
+                    // the lengths need the body's length behind the last entry: the table alone, with `len`
+                    count = studioTable(table.data(), len, out, max);
+                }
+            }
+        }
+    }
+    fclose(f);
+    return count;
+}
+
+// The archive `rel` converted as the game's read converts it (re4_formats_part_loaded, in a block of the mods' place,
+// copied out and given back), in malloc'd memory; *len the body's length, its entries in `out`. 0 when it is none.
+unsigned char* re4_studio_archive(const char* rel, unsigned* len, Re4StudioEntry* out, int max, int* count)
+{
+    *len = 0;
+    *count = 0;
+    Disc* d = current();
+    const s32 i = d ? lookup(*d, rel) : -1;
+    if (i <= 0 || isDir(*d, (u32) i)) {
+        return 0;
+    }
+    char path[2048];
+    filePath(*d, (u32) i, path, sizeof(path));
+    u32 size = 0, bodyLen = 0;
+    unsigned char* file = readWhole(path, &size);
+    const unsigned char* body = file ? archiveBody(file, size, &bodyLen) : 0;
+    unsigned char* copy = 0;
+    if (body) {
+        *count = studioTable(body, bodyLen, out, max);
+        unsigned char* conv = *count ? placeConverted(rel, body, bodyLen, "the Studio's look at an archive") : 0;
+        if (conv) {
+            copy = (unsigned char*) malloc(bodyLen);
+            if (copy) {
+                memcpy(copy, conv, bodyLen);
+                *len = bodyLen;
+            }
+            re4_mod_em_release(conv);
+        }
+    }
+    free(file);
+    if (!copy) {
+        *count = 0;
+    }
+    return copy;
+}
+
+}  // extern "C"

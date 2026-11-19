@@ -73,5 +73,13 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- CubeEvil4 Studio (Mods, 19.11.2026): its own icon; MainActivity.studioLaunch switches the tools' files on -->
+        <activity-alias android:name=".StudioLauncher" android:targetActivity=".MainActivity" android:exported="true"
+            android:label="CubeEvil4 Studio" android:icon="@drawable/ic_launcher">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
     </application>
 </manifest>

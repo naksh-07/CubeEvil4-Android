@@ -234,6 +234,17 @@ int re4_mod_em_release(const void* p);
 int re4_mod_place_holds(const void* p, unsigned long size);
 unsigned int re4_mod_place_physical(const void* p);
 void* re4_mod_place_at(unsigned int physical, unsigned int* available);
+/* CubeEvil4 Studio (Mods, 19.11.2026; port/docs/studio-plan.md): the debug tools' host files (SN PC file server,
+ * runtime/studio_host.cpp, patch 0930) from <data>/studio and the disc's archives (dvd.cpp). */
+typedef struct Re4StudioEntry {
+    char kind[5];     /* "BIN", "TPL", "FCV", "SEQ" ... (as on the disc, zero-padded) */
+    unsigned start;   /* in the body; 0 for an empty entry */
+    unsigned length;
+} Re4StudioEntry;
+int re4_studio_disc_files(const char* dir, char* out, int outSize);
+int re4_studio_archive_table(const char* rel, Re4StudioEntry* out, int max);
+unsigned char* re4_studio_archive(const char* rel, unsigned* len, Re4StudioEntry* out, int max, int* count);
+int re4_host_files(void);
 extern unsigned int re4_game_top;
 #define RE4_MEM1_PRIM_EXTRA_HALF 0x00200000u
 void* re4_prim_extra(int half, unsigned size);

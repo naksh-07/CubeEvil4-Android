@@ -47,9 +47,27 @@ public final class MainActivity extends Activity implements ImportManager.Listen
   private boolean folderPermissionAsked, folderBusy;
   private static boolean folderNoted;  // the note of a folder that cannot be used: once a start
   private static final int REQUEST_TREE = 40, REQUEST_STORAGE = 41;
+  /**
+   * CubeEvil4 Studio (Mods, 19.11.2026; port/docs/studio-plan.md): its launcher icon (the alias .StudioLauncher)
+   * makes the folder game/studio, which switches the debug tools' host files on (runtime/studio_host.cpp, patch 0930):
+   * the motion viewer of the debug menu then shows the disc's models and motions. The folder stays (its files are the
+   * user's); the game's own icon starts the game as before.
+   */
+  private void studioLaunch() {
+    android.content.ComponentName from = getIntent().getComponent();
+    if (from == null || !from.getClassName().endsWith(".StudioLauncher")) return;
+    java.io.File studio = new java.io.File(new java.io.File(AppStorage.base(this), "game"), "studio");
+    boolean made = studio.isDirectory() || studio.mkdirs();
+    android.util.Log.i("RE4Studio", "studio folder " + studio + (made ? ": ready" : ": cannot be made"));
+    android.widget.Toast.makeText(this, made
+        ? "Studio on: start the game, hold SELECT for the debug menu, then MOTION VIEWER"
+        : "Studio: the folder game/studio cannot be made", android.widget.Toast.LENGTH_LONG).show();
+  }
+
   @Override public void onCreate(Bundle state) {
     super.onCreate(state); startupShown=state!=null&&state.getBoolean("startupShown",false); imports = ((Re4Application)getApplication()).imports;
     if (getIntent().getBooleanExtra(SHOW_LAUNCHER, false)) startupShown = true;
+    studioLaunch();
     core = getResources().getBoolean(R.bool.core_mode);
     LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
     int p = dp(20); body.setPadding(p, core ? dp(12) : p, p, core ? dp(12) : p);

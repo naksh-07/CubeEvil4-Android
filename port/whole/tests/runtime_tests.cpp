@@ -620,6 +620,105 @@ static void testEventSkins()
     report("event skins", ok);
 }
 
+// CubeEvil4 Studio S1 (runtime/studio_host.cpp, patch 0930): the SN file server on the device. Off without the folder;
+// with it the viewer's table made from the disc's em/ archives, entries and motions of an archive, real files read and
+// written below the folder (any case), the PC's path forms.
+extern "C" {
+int PCopen(const char* path, int flags, int mode);
+int PCcreat(const char* path, int mode);
+int PCclose(int fd);
+int PCread(int fd, void* buf, int size);
+int PCwrite(int fd, const void* buf, int size);
+int PClseek(int fd, int offset, int whence);
+}
+static void testStudio()
+{
+    bool ok = true;
+    char tmpl[] = "/tmp/re4-studio-test-XXXXXX";
+    const char* root = mkdtemp(tmpl);
+    CHECK(root != 0);
+    if (!root) {
+        report("studio", false);
+        return;
+    }
+    std::string base = root;
+    // an archive of 5 entries: BIN, TPL, BIN, FCV, DUM (the last one's bytes stay as they are)
+    const char* kinds[5] = {"BIN", "TPL", "BIN", "FCV", "DUM"};
+    const unsigned at[5] = {0x40, 0x60, 0x80, 0xA0, 0xC0};
+    std::vector<unsigned char> arc(0x440 + 0xE0, 0);
+    auto put = [&](size_t a, unsigned v) { arc[a] = v >> 24; arc[a + 1] = v >> 16; arc[a + 2] = v >> 8; arc[a + 3] = v; };
+    put(0x20, 0), put(0x24, 0xE0), put(0x2C, 0x440), put(0x40, 0xFFFFFFFFu);
+    unsigned char* b = &arc[0x440];
+    b[3] = 5;
+    for (int i = 0; i < 5; i++) {
+        b[16 + i * 4 + 2] = (unsigned char) (at[i] >> 8), b[16 + i * 4 + 3] = (unsigned char) at[i];
+        memcpy(b + 16 + 20 + i * 4, kinds[i], 3);
+    }
+    for (int i = 0; i < 0x20; i++) {
+        b[0xC0 + i] = (unsigned char) (0x41 + i);
+    }
+    std::vector<FstEntry> fst = {
+        {true, "em", 0, 3},
+        {false, "pl08.drs", 0x1000, (unsigned) arc.size()},
+    };
+    std::vector<unsigned char> f0 = buildFst(fst);
+    unsigned char boot[0x40] = "G4BE08";
+    CHECK(makeDirs(base + "/disc1/sys") && makeDirs(base + "/disc1/files/em"));
+    CHECK(writeFile(base + "/disc1/sys/fst.bin", f0.data(), f0.size()));
+    CHECK(writeFile(base + "/disc1/sys/boot.bin", boot, sizeof(boot)));
+    CHECK(writeFile(base + "/disc1/files/em/pl08.drs", arc.data(), arc.size()));
+    char saved[1024];
+    snprintf(saved, sizeof(saved), "%s", re4_data_dir());
+    re4_set_data_dir(root);
+    // off without the folder
+    CHECK(re4_host_files() == 0);
+    CHECK(PCopen("Room/Em/mot_tbl.txt", 0, 0) == -1);
+    CHECK(makeDirs(base + "/studio"));
+    CHECK(re4_host_files() == 1);
+    // the table: a set per BIN with the next palette (BIN 2: the last one before it), the archive's motions
+    int fd = PCopen("Room/Em/mot_tbl.txt", 0, 0);
+    CHECK(fd > 0);
+    char table[8192] = {0};
+    const int n = fd > 0 ? PCread(fd, table, sizeof(table) - 1) : 0;
+    CHECK(n > 0 && PCclose(fd) == 0);
+    std::string t(table, n > 0 ? n : 0);
+    CHECK(t.find("_SET {\r\npl08_000 {\r\n\tpl08_000b, pl08_000t, pl08_m\r\n}\r\n") != std::string::npos);
+    CHECK(t.find("pl08_002b {\r\n\t@/em/pl08.drs/e002\r\n}") != std::string::npos);
+    CHECK(t.find("pl08_002t {\r\n\t@/em/pl08.drs/e001\r\n}") != std::string::npos);
+    CHECK(t.find("pl08_m {\r\n\t@/em/pl08.drs/m###\r\n}") != std::string::npos);
+    CHECK(t.find("wep_none {") != std::string::npos && t.find("pl_none") == std::string::npos);
+    CHECK(t.find("_ONTO {\r\n}\r\n") != std::string::npos);
+    FILE* copy = fopen((base + "/studio/mot_tbl.generated.txt").c_str(), "rb");
+    CHECK(copy != 0);
+    if (copy) {
+        fclose(copy);
+    }
+    // an entry (as the PC's absolute path), seek and read
+    fd = PCopen("d:\\bio4\\@/em/pl08.drs/e004", 0, 0);
+    CHECK(fd > 0);
+    unsigned char got[0x40];
+    CHECK(PClseek(fd, 0, 2) == 0x20 && PClseek(fd, 4, 0) == 4);
+    CHECK(PCread(fd, got, sizeof(got)) == 0x1C && got[0] == 0x45);
+    CHECK(PCclose(fd) == 0 && PCclose(fd) == -1);
+    // the first motion; no second one, no entry 9
+    fd = PCopen("@/em/pl08.drs/m000", 0, 0);
+    CHECK(fd > 0 && PClseek(fd, 0, 2) == 0x20);
+    PCclose(fd);
+    CHECK(PCopen("@/em/pl08.drs/m001", 0, 0) == -1);
+    CHECK(PCopen("@/em/pl08.drs/e009", 0, 0) == -1);
+    CHECK(PCopen("@/em/none.drs/e000", 0, 0) == -1);
+    // a real file: written (folders made), read back by another case, its own table wins over the made one
+    fd = PCcreat("d:\\bio4\\Room\\Em\\mot_tbl.txt", 0);
+    CHECK(fd > 0 && PCwrite(fd, "_SET {\r\n}\r\n", 11) == 11 && PCclose(fd) == 0);
+    fd = PCopen("ROOM/em/MOT_TBL.TXT", 0, 0);
+    CHECK(fd > 0 && PClseek(fd, 0, 2) == 11);
+    PCclose(fd);
+    CHECK(PCopen("SETROOT:d:\\bio4", 0, 0) == 0);
+    re4_set_data_dir(saved);
+    CHECK(system(("rm -rf '" + base + "'").c_str()) == 0);
+    report("studio", ok);
+}
+
 // The release from each disc header (port/docs/retail-eu-plan.md): debug build, European and US
 // release, a header without the table's place (the test above), another game.
 extern "C" void re4_core_debug_menu(void);    // runtime/core_api.cpp
@@ -3310,6 +3409,7 @@ int re4_runtime_tests()
     testCheatList();
     testModPlace();
     testEventSkins();
+    testStudio();
     testPotato();
     testHandcannon();
     testGyroBoat();
