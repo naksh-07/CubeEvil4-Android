@@ -181,7 +181,9 @@ android {
             versionNameSuffix '-studio'
             minSdk 24
             ndk { abiFilters 'armeabi-v7a', 'arm64-v8a' }
-            externalNativeBuild { cmake { arguments '-DRE4_CORE_MODE=ON'; targets 're4studio' } }
+            // (RE4_STUDIO_APP: a CMake configuration of its own; with core's arguments both shared one build folder, which
+            // Gradle refuses: core's merge would read the Studio's libraries)
+            externalNativeBuild { cmake { arguments '-DRE4_CORE_MODE=ON', '-DRE4_STUDIO_APP=ON'; targets 're4studio' } }
             buildConfigField 'boolean', 'STUDIO_APP', 'true'
         }
     }

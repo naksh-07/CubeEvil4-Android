@@ -78,6 +78,7 @@ target_compile_options(re4_platform PRIVATE -Wall -Wextra -Werror -fno-fast-math
 # and packaged from app/src/core/jniLibs.
 option(RE4_CORE_MODE "core mode: the original game core runs the game" OFF)
 option(RE4_EMULATOR_SHELL "a test build of the shell for an x86_64 emulator, without a core" OFF)
+option(RE4_STUDIO_APP "CubeEvil4 Studio's own APK (the flavour studio builds only re4studio)" OFF)
 set(RE4_CORE_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../whole/runtime")
 if(ANDROID)
     if(RE4_CORE_MODE)
