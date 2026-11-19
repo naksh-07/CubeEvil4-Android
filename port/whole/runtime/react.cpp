@@ -187,6 +187,21 @@ int classOf(cEm* em, int type, void* m0)
     }
 }
 
+// The game's sequence knocks the Ganado down: a key with "down" (Free 0x80; em10.drs 0x38, 0x3A, 0x3C ... from the fall)
+bool fallsDown(const u16* game)
+{
+    if (!game || game[0] < 1 || game[0] > 1024) {
+        return false;
+    }
+    const SEQUENCE_DATA* in = (const SEQUENCE_DATA*) (game + 2);
+    for (int j = 0; j < game[0]; j++) {
+        if (in[j].Free & 0x80) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // The remake's motion `last` frames long with the game's sequence's events (`game`, 0 none) at the same shares of it
 u16* sequence(const void* em, const u16* game, int last)
 {
@@ -255,6 +270,17 @@ void re4_react_motion(void* p, int type, void** m0, void** m1, int* flag)
     }
     const int c = classOf(em, type, *m0);
     if (c < 0 || !gNum[c]) {
+        return;
+    }
+    // (Mods, 19.11.2026) a hit that knocks the Ganado down stays the game's: its sequence says "down" (Free 0x80) from
+    // the fall on, and Dm_Small then puts him into DownWakeWait (lying, IK off). With the remake's flinch in its place
+    // he stood while the game took him for lying (DevJunior's report: hands gone wrong on a hit, bodies left on the
+    // floor with the legs up after a blow on the ground, not fading)
+    if (fallsDown((const u16*) *m1)) {
+        if (!(gSaid & (1 << (16 + c)))) {
+            gSaid |= 1 << (16 + c);
+            re4_log("react: hit type %d: the game's own (a fall)", type);
+        }
         return;
     }
     gSeed = gSeed * 1664525u + 1013904223u;

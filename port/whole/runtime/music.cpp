@@ -39,6 +39,9 @@ const f32 kFar = 20000.0f;
 const int kBattleIn = 15;     // frames (half a second)
 const int kBattleOut = 240;   // frames (eight seconds)
 const f32 kGain = 0.85f;
+// (Mods, 19.11.2026) a short break of the conditions keeps the track: the prompts of the kicks and finishers, a menu
+// opened a moment (DevJunior's log: the battle track off and on again every few seconds during a fight)
+const int kHold = 60;         // frames (two seconds)
 
 std::atomic<int> gDuck(256);
 int gRoom = -1;
@@ -46,6 +49,7 @@ bool gHostile;
 bool gBattle;
 int gNearFrames, gCalmFrames;
 int gTrack = -1;
+int gBlocked;
 
 bool threat(const cEm* m)
 {
@@ -97,8 +101,12 @@ void frame(unsigned)
         return;
     }
     int want = -1;
-    if (pG && pPL && pG->pl_type == 0 && !StaFlagChk(pG, STA_EVENT) && !StaFlagChk(pG, STA_MOVIE_ON) &&
-        !StaFlagChk(pG, STA_DIEDEMO) && !StaFlagChk(pG, STA_SUSPEND)) {
+    const bool hard = !pG || !pPL || pG->pl_type != 0 || StaFlagChk(pG, STA_MOVIE_ON) || StaFlagChk(pG, STA_DIEDEMO);
+    const bool soft = !hard && (StaFlagChk(pG, STA_EVENT) || StaFlagChk(pG, STA_SUSPEND));
+    gBlocked = hard || soft ? gBlocked + 1 : 0;
+    if (soft && gTrack >= 0 && gBlocked < kHold) {
+        want = gTrack;  // a moment's break: the track plays on
+    } else if (!hard && !soft) {
         if (pG->room_id != gRoom) {
             gRoom = pG->room_id;
             gHostile = false;
