@@ -105,6 +105,14 @@ GROUND = (("ground-a", "1000", 2, dict(contact=38, kill=38, down=0, cancel=160))
           ("ground-d", "1095", 2, dict(contact=34, kill=34, down=0, cancel=130)),
           ("ground-e", "1080", 3, dict(contact=38, kill=38, down=0, cancel=160)),
           ("ground-f", "1090", 3, dict(contact=36, kill=36, down=0, cancel=130)))
+# the stealth kills from behind (wish of DevJunior, 19.11.2026: "Leon's stealth kills", on a Ganado who has not seen
+# him): the 2023 game's knife stealth kill (1101) and the RE9 mod's hatchet ones (1110, 1120, 1125; 1115 drops the body
+# at once); kind 4; source frames (60 per second) of the blow (the hand's fastest move near it), the body on the floor
+# (the hips below 35 % of their height) and Leon's cancel
+STEALTH = (("stealth-a", "1101", dict(contact=57, kill=60, down=150, cancel=285)),
+           ("stealth-b", "1110", dict(contact=160, kill=160, down=311, cancel=285)),
+           ("stealth-c", "1120", dict(contact=140, kill=140, down=209, cancel=285)),
+           ("stealth-d", "1125", dict(contact=115, kill=115, down=170, cancel=228)))
 CHA0 = "_chainsaw/animation/ch/cha0/motlist/cha0_general.motlist.663"
 KICKS_STANDING = ["0900", "0901", "0902", "0903", "0904", "0905", "0906", "0907"]
 KICKS_KNEELING = ["9904", "9905"]
@@ -155,6 +163,10 @@ def finishers():
     # 1090); kind 2 face down, 3 face up; the first blow kills
     for name, no, kind, frames in GROUND:
         out.append(dict(name=name, kind=kind, flags=1, weapons=[], dir=CHC0, leon="chc0_jack_pl_0th_com",
+                        enemy="chc0_grapple_0th_com", leon_motion="_%s_" % no, enemy_motion="_%s_" % no,
+                        frames=frames))
+    for name, no, frames in STEALTH:
+        out.append(dict(name=name, kind=4, flags=1, weapons=[], dir=CHC0, leon="chc0_jack_pl_0th_com",
                         enemy="chc0_grapple_0th_com", leon_motion="_%s_" % no, enemy_motion="_%s_" % no,
                         frames=frames))
     return out

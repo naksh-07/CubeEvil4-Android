@@ -2696,12 +2696,12 @@ static void testFinish()
         const int want = getenv("RE4_TEST_FINISH_COUNT") ? atoi(getenv("RE4_TEST_FINISH_COUNT")) : 1;
         re4_log("  finishers: %s holds %d (expected %d)", real, n, want);
         bad |= n != want ? 0x10000 : 0;
-        int floor[4] = {0, 0, 0, 0};
+        int floor[8] = {0, 0, 0, 0, 0, 0, 0, 0};
         for (int i = 0; i < n; i++) {
-            floor[(re4_finish_probe(i) >> 8) & 3]++;
+            floor[(re4_finish_probe(i) >> 8) & 7]++;
         }
-        re4_log("  finishers: %d standing, %d kneeling, %d on the floor face down, %d face up", floor[0], floor[1],
-                floor[2], floor[3]);
+        re4_log("  finishers: %d standing, %d kneeling, %d on the floor face down, %d face up, %d stealth kills",
+                floor[0], floor[1], floor[2], floor[3], floor[4]);
         re4_mod_finish_path_set("");
         re4_finish_reset();
     }

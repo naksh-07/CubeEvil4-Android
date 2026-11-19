@@ -60,14 +60,15 @@ extern cPlayer* pPL;
 
 namespace {
 
-const unsigned kMaxBytes = 0x200000;  // the archive at most (11 finishers: 0.7 MB)
+const unsigned kMaxBytes = 0x300000;  // the archive at most (24 finishers with the stealth kills: 2.3 MB)
 const int kMax = 32;                  // finishers at most
 const int kCatchFrames = 8;           // frames in which Leon closes the catch's gap (EmCatchMotionMove)
 const f32 kCatchRate = 0.35f;         // the part of what is left he closes in each of them
 const int kHokan = 4;                 // frames Leon's motion blends in
 
 struct Finish {
-    u8 kind;        // 0 a standing stunned enemy, 1 a kneeling one, 2 one lying face down, 3 face up
+    u8 kind;        // 0 a standing stunned enemy, 1 a kneeling one, 2 one lying face down, 3 face up, 4 an unaware
+                    // one from behind (the stealth kill)
     u8 flags;       // 1 the knife out, 2 the gun fires on the shot frame
     u8 weapons[6];  // the game's weapon numbers (pG->weapon_no), 0-terminated; none: any
     void* leon;     // Leon's motion
@@ -86,10 +87,19 @@ unsigned gPlaceSize;
 Finish gFin[kMax];
 int gCount;
 int gActive = -1;          // the finisher the last prompt drew, until Leon's routine ends
-int gLastDrawn[4] = {-1, -1, -1, -1};
+int gLastDrawn[5] = {-1, -1, -1, -1, -1};
 const f32 kGroundReach = 1500.0f;  // Leon this near the hips of a Ganado on the floor for the prompt
 const f32 kGroundCone = 1.2f;      // within about 70 degrees of where he faces
-const char* const kKindName[4] = {"standing", "kneeling", "face-down", "face-up"};
+const char* const kKindName[5] = {"standing", "kneeling", "face-down", "face-up", "unaware"};
+// the stealth kill (wish of DevJunior, 19.11.2026, his choice: from behind, on a Ganado who has not seen Leon): Leon
+// within kStealthReach of him, more than kStealthBehind from where he faces, Leon facing him (kGroundCone); walking
+// (at most kQuietStep a frame) behind him Leon is not heard (re4_stealth_unheard)
+const f32 kStealthReach = 1700.0f;
+const f32 kStealthBehind = 1.92f;  // 110 degrees
+const f32 kQuietStep = 70.0f;      // mm a frame (the walk: about 40, the run: 130)
+f32 gLeonStep;                     // Leon's step of the last frame (watch)
+Vec gLeonWas;
+bool gLeonKnown;
 // on the floor (device video 16.11.2026: "enemies with much life should not vanish so soon"): a Ganado with more life
 // than kGroundKillHp is not killed: Leon's blow alone, kGroundDamage of his life, the Ganado stays down (his wake-up
 // held until Leon is done) and gets up after
@@ -212,8 +222,8 @@ void load()
         t.flags = r[1];
         memcpy(t.weapons, r + 2, 6);
         const u16 li = be16At(r + 8), ei = be16At(r + 10), si = be16At(r + 12);
-        if (li == 0 || ei == 0 || si == 0 || li >= count || ei >= count || si >= count || t.kind > 3 ||
-            (t.kind > 1 && !fin2)) {
+        if (li == 0 || ei == 0 || si == 0 || li >= count || ei >= count || si >= count ||
+            t.kind > 4 || (t.kind > 1 && !fin2)) {
             ok = false;
             break;
         }
@@ -468,6 +478,14 @@ void plFinishStart(cPlayer* pl)
 // A grab or a hit that cut the finisher short: the knife away and the gun back
 void watch(unsigned)
 {
+    if (pPL && pG && pG->pl_type == 0) {
+        const f32 dx = pPL->pos.x - gLeonWas.x, dz = pPL->pos.z - gLeonWas.z;
+        gLeonStep = gLeonKnown ? sqrtf(dx * dx + dz * dz) : 0.0f;
+        gLeonWas = pPL->pos;
+        gLeonKnown = true;
+    } else {
+        gLeonKnown = false;
+    }
     if (gLive && pPL &&
         (pPL->r_no_0 != 4 || (Pl_func_tbl[4] != plFinish && Pl_func_tbl[4] != plFinishStart))) {
         re4_log("finisher: cut short (routine %d): knife away, gun shown", (int) pPL->r_no_0);
@@ -523,7 +541,7 @@ int re4_finish_arm(int kind)
     gLastDrawn[kind] = pick;
     gActive = pick;
     hook();
-    re4_log("finisher: %s drawn for a %s enemy (%d fit, weapon %d)", gFin[pick].name, kKindName[kind & 3],
+    re4_log("finisher: %s drawn for a %s enemy (%d fit, weapon %d)", gFin[pick].name, kKindName[kind],
             n, (int) pG->weapon_no);
     return 1;
 }
@@ -655,7 +673,7 @@ int re4_finish_catch(void* p)
         return 0;
     }
     const Finish& t = gFin[gActive];
-    if (t.kind >= 2) {
+    if (t.kind == 2 || t.kind == 3) {
         // on the floor: the Ganado put so that the pair's body lies where his lies (its motion starts this frame,
         // hokan 0), then Leon's place from his (angE = Leon's + heading; the enemy at (x, z) in Leon's frame)
         Vec root, at;
@@ -684,6 +702,7 @@ int re4_finish_catch(void* p)
                 (double) (pPL->Catch_dir * 57.29578f));
         return 1;
     }
+    // type 1: Leon steps to his place, the enemy stays (kneeling; the stealth kill: the unaware Ganado is not moved)
     EmCatchPLSet(em, t.ang, t.kind ? 1 : 2, t.x, 0.0f, t.z, plFinish);
     // EmCatchPLSet turns the enemy to face Leon; the pair's own heading differs by this much
     em->Catch_dir = LIMIT_ANGLE(em->Catch_dir + t.heading - PI + t.ang);
@@ -709,7 +728,7 @@ int re4_finish_armed(void)
 // the floor: device video 16.11.2026)
 int re4_finish_on_floor(void)
 {
-    return gActive >= 0 && gFin[gActive].kind >= 2 && leon();
+    return gActive >= 0 && (gFin[gActive].kind == 2 || gFin[gActive].kind == 3) && leon();
 }
 
 // For the tests: the finishers read from `path` ("" none): their count, and each one's kind << 8 | flags
@@ -739,6 +758,85 @@ void re4_finish_reset(void)
     gActive = -1;
     gLive = false;
     gLastDrawn[0] = gLastDrawn[1] = -1;
+}
+
+}  // extern "C"
+
+namespace {
+
+// The stealth kill's prompt (Leon pressed it): a stealth finisher drawn, Leon into plFinishStart, which hands the
+// Ganado Dm_NeckBreak (the kill at once; its catch puts Leon behind him, the Ganado stays where he stands)
+void stealthAction(cEm* em)
+{
+    if (!re4_finish_arm(4)) {
+        return;
+    }
+    gGround = true;  // no kick to fall back on
+    re4_log("finisher: stealth kill (%s) on the Ganado id 0x%x", gFin[gActive].name, (unsigned) em->id);
+    SetPlDamage(em, (void (*)(cPlayer*)) plFinishStart);
+    pPL->dmg.set(0, 0x1E);
+}
+
+// Leon behind the Ganado and near: the angle from where the Ganado faces to Leon over kStealthBehind
+bool behind(cEm* em, f32 reach)
+{
+    const f32 dx = pPL->pos.x - em->pos.x, dz = pPL->pos.z - em->pos.z;
+    if (dx * dx + dz * dz > reach * reach || fabsf(em->pos.y - pPL->pos.y) > 600.0f) {
+        return false;
+    }
+    return fabsf(wrapAngle(atan2f(dx, dz) - em->ang.y)) > kStealthBehind;
+}
+
+bool stealthReady(cEm* em)
+{
+    if (!em || !leon() || em->hp <= 0 || em->r_no_0 != 1 || em->id == 0x18) {
+        return false;
+    }
+    FREE_EM10* w = EM10_WK(em);
+    if ((w->Be_flg & 0x100) || w->pCore || w->pParasite || (w->Be_flg & 0x80)) {
+        return false;  // he has found Leon (the sight check stops), or HUNK's rule
+    }
+    int c[kMax];
+    return candidates(4, c) > 0;
+}
+
+}  // namespace
+
+extern "C" {
+
+// Patch 0931 (em10.cpp em10_R0_Move, every frame of a Ganado's normal life): the stealth kill's prompt
+void re4_stealth_prompt(void* p)
+{
+    cEm* em = (cEm*) p;
+    hook();
+    if (!stealthReady(em) || pPL->r_no_0 != 0 || pPL->r_no_1 > 4 || pPL->isKamae()) {
+        return;
+    }
+    if (!behind(em, kStealthReach)) {
+        return;
+    }
+    const f32 dx = em->pos.x - pPL->pos.x, dz = em->pos.z - pPL->pos.z;
+    if (fabsf(wrapAngle(atan2f(dx, dz) - pPL->ang.y)) > kGroundCone) {
+        return;
+    }
+    if (!(gSaid & (1 << 8))) {
+        gSaid |= 1 << 8;
+        re4_log("finisher: stealth kill offered (Ganado id 0x%x, %.0f mm)", (unsigned) em->id,
+                (double) sqrtf(dx * dx + dz * dz));
+    }
+    ActBtn.set(ACT_EXECUTE, 0xB, (void*) stealthAction, em, ACTCTR_WEP_SET_IGNORE, DISP_A_NORMAL, ACT_FUNC_NORMAL, 0);
+}
+
+// Patch 0931 (em10.cpp em10FindCk): 1 when Leon walks behind a Ganado who has not found him and a stealth kill is
+// there for him: the sight check's "very near" (3.5 m) and footstep (5 m) rules let him come; running he is heard
+int re4_stealth_unheard(void* p)
+{
+    cEm* em = (cEm*) p;
+    hook();
+    if (!stealthReady(em) || !gLeonKnown || gLeonStep > kQuietStep) {
+        return 0;
+    }
+    return behind(em, 5000.0f) ? 1 : 0;
 }
 
 }  // extern "C"

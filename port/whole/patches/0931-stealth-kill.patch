@@ -1,0 +1,34 @@
+# Patch 0931 (wish of DevJunior, 19.11.2026: Leon's stealth kills; his choice: from behind, on a Ganado who has not
+# seen Leon). Not a bug of the prototype: a port feature of the mods (runtime/finisher.cpp, a mod pack's melee/finish.dat
+# with stealth finishers, kind 4).
+# em10.cpp em10_R0_Move: after the routine of the Ganado's normal life, re4_stealth_prompt may show the "execute"
+# prompt behind him; its action hands him the finishers' Dm_NeckBreak (patch 0921) with a stealth finisher.
+# em10.cpp em10FindCk: the "very near" (3.5 m) and footstep (5 m) rules of the sight check are left out while
+# re4_stealth_unheard says Leon walks behind him with a stealth kill at hand (running he is heard as before; in front
+# of him he is seen as before). Declared in re4_whole_prelude.h.
+--- a/src/em10/em10.cpp
++++ b/src/em10/em10.cpp
+@@ -3442,6 +3442,7 @@
+ {
+     Em10_R1_move_tbl[em->r_no_1 * 2](em);
+     Em10_R1_move_tbl[em->r_no_1 * 2 + 1](em);
++    re4_stealth_prompt(em); /* port: patch 0931 */
+ }
+ 
+ // Branch check of the routines that have none (most Em10_R1_move_tbl entries): empty in the original too.
+@@ -21319,6 +21320,7 @@
+                 find = 1;
+             }
+         }
++        if (!re4_stealth_unheard(em)) { /* port: patch 0931 */
+         if (StaFlagChk(pG, STA_PL_SE_FOOT)) {
+             if (em->l_pl < 25000000.0f) {
+                 find = 1;
+@@ -21327,6 +21329,7 @@
+         if (em->l_pl < 12250000.0f) {
+             find = 1;
+         }
++        } /* port: patch 0931 */
+         if (a != 0) {
+             if (fabsf(em->pos.y - pPL->pos.y) > 2000.0f) {
+                 find = 0;

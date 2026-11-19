@@ -124,6 +124,11 @@ void* re4_melee_execute(void);
 void re4_ground_prompt(void* em);
 /* Patch 0928 (em10.cpp Dm_NeckBreak): 1 when the armed finisher is one on the floor (the body does not follow Leon). */
 int re4_finish_on_floor(void);
+/* Patch 0931 (em10.cpp em10_R0_Move, em10FindCk; runtime/finisher.cpp): the stealth kill's prompt behind a Ganado who
+ * has not found Leon, and 1 when Leon, walking behind him, is not heard (the near and footstep rules of the sight check
+ * left out). */
+void re4_stealth_prompt(void* em);
+int re4_stealth_unheard(void* em);
 /* Patch 0927 (em10.cpp C_SawHit; runtime/parry.cpp): 1 = the chainsaw clash's own camera is set this frame. */
 int re4_csaw_clash_cam(void* em);
 /* Patch 0926 (em_dm_val.cpp GetWepDmVal; runtime/ashley_gun.cpp): an enemy Ashley's shot hit takes her pistol's
