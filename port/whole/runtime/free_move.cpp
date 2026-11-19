@@ -346,6 +346,18 @@ void reloadInput(cPlayer* pl)
     const u32 both = 0x20 | 0x200;  // R, B
     const bool together = re4_aim_move_on() && (Joy[0].trg & both) == both;
     const bool asked = gReloadAsked.exchange(false);
+    // (Mods, 19.11.2026, DevJunior: "aiming, the button you put in the remake layout does not reload") aiming, the
+    // quick reload is the game's own reload from the aim (cPlayer::keyReload: R held and B pressed): B for this frame
+    // in the game's pad word only (not the run key), and he aims again after it as the game does
+    if (asked && pl->r_no_0 == 0 && pl->r_no_1 == 6 && pl->r_no_2 == 1 && (Joy[0].on & 0x20) && pl->Wep
+        && pl->Wep->m_pWep && pl->Wep->m_pWep->reloadable()) {
+        Joy[0].on |= 0x200;
+        Joy[0].trg |= 0x200;
+        gEatA = 6;
+        eatA();
+        re4_log("reload: the quick reload while aiming (the game's reload from the aim)");
+        return;
+    }
     if ((!together && !asked) || !walkRoutine(pl) || !pl->Wep || !pl->Wep->m_pWep || !pl->Wep->m_pWep->reloadable()) {
         return;
     }
@@ -808,14 +820,16 @@ int re4_legs_overlay(void* pl, void* mot, void* seq, int start, float speed, flo
     return pl && mot && overlay((cPlayer*) pl, mot, seq, start, speed, at, legW, sway, shift, upper != 0) ? 1 : 0;
 }
 
-// Patch 0909 (the shotgun, rifle and machine gun reload steps, the game thread): 1 when a reload without aiming
-// may end now, kQuickEnd frames after the weapon is full (ItemMgr.reloadable() 0: the weapon object loads the rounds
+// Patches 0909 / 0933 (the reload steps of the long guns and the handguns, the game thread): 1 when a reload without
+// aiming (started so, or the aim key let go since) may end now, kQuickEnd frames after the weapon is full (ItemMgr.reloadable() 0: the weapon object loads the rounds
 // on its motion's frame); the rest of the reload motion brings the gun back up to aim (DevJunior, 11.11.2026: "with
 // the long guns, it still aims for an instant at the end"). Aiming, or infinite ammo (reloadable stays 1): 0.
 int re4_reload_quick_end(void)
 {
     static int loaded;
-    if (PlReloadDirect != 1 || joyKamae() != 0 || ItemMgr.reloadable() != 0) {
+    // (Mods, 19.11.2026: also a reload started from the aim once the aim key is let go: device video, the pistol
+    // came back up to aim after it)
+    if (joyKamae() != 0 || ItemMgr.reloadable() != 0) {
         loaded = 0;
         return 0;
     }

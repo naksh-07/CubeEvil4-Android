@@ -10,6 +10,9 @@
 # FREE_EM10 Pl_rot is the angle to the next point of the route towards Leon (RouteCkToPos), which can lie in front of
 # the Ganado while Leon is behind him; the sight rule (Pl_rot under 60 degrees, up to 15 m) is now left out too while
 # re4_stealth_unheard says so, and re4_stealth_unheard measures the angle straight from where he faces to Leon.
+# Nachtrag 2 (device report of DevJunior, 19.11.2026 12:39: "after a stealth kill the alarms go off"): in
+# em10SomebodyDamageNowCk the others notice the stealth kill's Ganado dying only by sight (60 degrees, 10 m), not by
+# the game's "anyone within 3 m" (re4_stealth_quiet).
 --- a/src/em10/em10.cpp
 +++ b/src/em10/em10.cpp
 @@ -3458,6 +3458,7 @@
@@ -41,3 +44,13 @@
          if (a != 0) {
              if (fabsf(em->pos.y - pPL->pos.y) > 2000.0f) {
                  find = 0;
+@@ -21581,6 +21584,9 @@
+         if (e == em) {
+             continue;
+         }
++        if (re4_stealth_quiet(e, em)) { /* port: patch 0931 */
++            continue;
++        }
+         if (!e->checkStatus(EM_STATUS_ACTIVE)) {
+             continue;
+         }

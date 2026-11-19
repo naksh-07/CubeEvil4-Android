@@ -99,6 +99,12 @@ const f32 kStealthBehind = 1.92f;  // 110 degrees
 const f32 kQuietStep = 110.0f;     // mm a frame (the game's walk: about 40, the run: 130; and not his run routine)
 const f32 kSightCone = 1.0471976f;  // em10FindCk's 60 degrees
 f32 gLeonStep;                     // Leon's step of the last frame (watch)
+// the stealth kill's Ganado (Mods, 19.11.2026, DevJunior: "after a stealth kill the alarms go off"): the others
+// notice him dying only by sight (re4_stealth_quiet), for kVictimFrames game frames
+cEm* gVictim;
+int gVictimFrames;
+const int kVictimFrames = 600;
+const f32 kNoticeFar = 10000.0f;  // em10SomebodyDamageNowCk's sight rule: 10 m, 60 degrees
 Vec gLeonWas;
 bool gLeonKnown;
 // on the floor (device video 16.11.2026: "enemies with much life should not vanish so soon"): a Ganado with more life
@@ -484,6 +490,9 @@ void watch(unsigned)
         gLeonStep = gLeonKnown ? sqrtf(dx * dx + dz * dz) : 0.0f;
         gLeonWas = pPL->pos;
         gLeonKnown = true;
+        if (gVictimFrames > 0 && --gVictimFrames == 0) {
+            gVictim = 0;
+        }
     } else {
         gLeonKnown = false;
     }
@@ -773,6 +782,8 @@ void stealthAction(cEm* em)
         return;
     }
     gGround = true;  // no kick to fall back on
+    gVictim = em;
+    gVictimFrames = kVictimFrames;
     re4_log("finisher: stealth kill (%s) on the Ganado id 0x%x", gFin[gActive].name, (unsigned) em->id);
     SetPlDamage(em, (void (*)(cPlayer*)) plFinishStart);
     pPL->dmg.set(0, 0x1E);
@@ -818,6 +829,35 @@ bool stealthReady(cEm* em, bool kill)
 }  // namespace
 
 extern "C" {
+
+// Patch 0931 (em10.cpp em10SomebodyDamageNowCk): 1 when `hurt` is the stealth kill's Ganado and `watcher` does not
+// see him (outside his 60 degrees or beyond 10 m): the game's other rule, anyone within 3 m, is left out for him
+int re4_stealth_quiet(void* hurt, void* watcher)
+{
+    cEm* e = (cEm*) hurt;
+    cEm* w = (cEm*) watcher;
+    if (!e || !w || e != gVictim) {
+        return 0;
+    }
+    const f32 dx = e->pos.x - w->pos.x, dz = e->pos.z - w->pos.z;
+    const bool sees = dx * dx + dz * dz < kNoticeFar * kNoticeFar
+        && fabsf(wrapAngle(atan2f(dx, dz) - w->ang.y)) < kSightCone;
+    if (sees) {
+        static void* said;
+        if (said != w) {
+            said = w;
+            re4_log("finisher: Ganado id 0x%x saw the stealth kill (%.0f mm away)", (unsigned) w->id,
+                    (double) sqrtf(dx * dx + dz * dz));
+        }
+    }
+    return sees ? 0 : 1;
+}
+
+// runtime/music.cpp: the stealth kill's Ganado (no battle for him)
+int re4_stealth_victim(void* character)
+{
+    return character && character == (void*) gVictim ? 1 : 0;
+}
 
 // Patch 0931 (em10.cpp em10_R0_Move, every frame of a Ganado's normal life): the stealth kill's prompt
 void re4_stealth_prompt(void* p)

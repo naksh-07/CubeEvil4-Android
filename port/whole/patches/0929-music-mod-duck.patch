@@ -1,7 +1,11 @@
 # A music mod (wish of DevJunior, 19.11.2026: "change the battle and exploration songs, closer to the remake"): while
 # a pack's track plays (runtime/mod_music.cpp, chosen by runtime/music.cpp) the game's music sequences give way by
-# re4_music_duck() (256 = as before, 0 = silent), after the volume of patch 0153. Sound effect sequences (type 2) and
-# the streams (the rooms' ambience) stay as they are. Without a music pack the factor stays 256.
+# re4_music_duck() (256 = as before, 0 = silent), after the volume of patch 0153. Sound effect sequences (type 2) stay
+# as they are. Without a music pack the factor stays 256.
+# Nachtrag (device report of DevJunior, 19.11.2026 12:39: "the music mod at times does not silence the game's music, and
+# the ambient sounds overlap too"): snd_str4.cpp Snd_str_work_calc_ax_vol, the streams: the music streams (str_type
+# not 2) give way as the sequences, the ambience streams (type 2) by half under the mod's battle track
+# (re4_music_duck_stream).
 --- a/src/game/snd_seq3.cpp
 +++ b/src/game/snd_seq3.cpp
 @@ -2,6 +2,7 @@
@@ -21,5 +25,25 @@
 +        seq->out_vol = (s16) (seq->out_vol * re4_music_duck() / 256);
 +    }
      seq->ax_vol = Snd_vol_syn_to_ax((s16) (seq->out_vol >> 8));
+ }
+ 
+--- a/src/game/snd_str4.cpp
++++ b/src/game/snd_str4.cpp
+@@ -2,6 +2,7 @@
+ // recovery, plus the setters the game uses from snd.cpp SndStrReq.
+ #include "snd_drv.h"
+ extern "C" int re4_sound_volume(int music); /* port: runtime/sound_volume.cpp (patch 0153) */
++extern "C" int re4_music_duck_stream(int ambience); /* port: runtime/music.cpp (patch 0929) */
+ 
+ // Clears the 4 stream works (numbered).
+ void Snd_str_work_clear(void)
+@@ -73,6 +74,9 @@
+     str->out_vol = str->out_vol / 127 * (str->now_vol >> 8);
+     /* port (patch 0153): the app menu's music volume (type 2: sound effects volume) */
+     str->out_vol = (s16) (str->out_vol * re4_sound_volume(str->str_type != 2) / 100);
++    /* port (patch 0929): the music streams give way to a music mod as the sequences, the ambience (type 2) by half
++       under its battle track (0..256, runtime/music.cpp) */
++    str->out_vol = (s16) (str->out_vol * re4_music_duck_stream(str->str_type == 2) / 256);
+     str->ax_vol = Snd_vol_syn_to_ax((s16) (str->out_vol >> 8));
  }
  
