@@ -470,11 +470,15 @@ public final class StudioActivity extends Activity {
   private static final String[][] CHARACTERS = {
       {"pl00", "Leon"}, {"pl08", "Leon (jacket)"}, {"pl09", "Leon (armour)"}, {"pl10", "Leon (outfit)"},
       {"pl01", "Ashley"}, {"pl05", "Ashley (armour)"}, {"pl11", "Ashley (outfit)"}, {"pl0b", "Ada"},
-      {"pl0c", "Ada (Separate Ways)"}, {"pl06", "HUNK"}, {"pl0a", "Krauser"}, {"pl0d", "Wesker"}};
+      {"pl0c", "Ada (2nd outfit)"}, {"pl06", "HUNK"}, {"pl0a", "Krauser"}, {"pl0d", "Wesker"}};
+  // PC archives the discs do not have, and the disc's archives they go into (uhd_skin_convert.py: Separate Ways' Ada,
+  // pl16, over Ada's pl0b; DevJunior's "Ada remake by kreed", 19.11.2026)
+  private static final String[][] PC_ONLY = {{"pl16", "pl0b", "pl0c"}};
   private java.io.File convertDir;          // cache/convert: udas/, packs/, out/
   private String modName = "";
-  private final List<String[]> skins = new ArrayList<>();  // stem, udas path, disc rel ("" none), disc file name
+  private final List<String[]> skins = new ArrayList<>();  // PC stem, udas path, disc rel ("" none), disc file, disc stem
   private final java.util.Map<String, String> results = new java.util.HashMap<>();  // stem -> converted file
+  private final List<String[]> udasFiles = new ArrayList<>();  // the mod's skins: PC stem, unpacked .udas
   private final StringBuilder convertLog = new StringBuilder();
   private int convertTex = 128;
   private volatile boolean busy;
@@ -512,14 +516,17 @@ public final class StudioActivity extends Activity {
         content.addView(note("Larger textures look sharper but need more of the game's memory: try 128 first."));
       }
       for (String[] k : skins) {
-        String done = results.get(k[0]);
-        String detail = k[2].isEmpty() ? "not on your discs: import them in CubeEvil4 first"
+        String done = results.get(k[4]);
+        String detail = k[2].isEmpty()
+            ? (files.lastError.isEmpty() ? k[4] + " is not on your discs: import them in CubeEvil4 first"
+                : "the discs cannot be read: " + files.lastError)
             : done != null ? "converted ✓ · tap to view" : "tap to convert into " + k[3];
-        Button b = card(k[0] + " · " + character(k[0]), detail);
+        String head = (k[0].equals(k[4]) ? k[0] : k[0] + " → " + k[4]) + " · " + character(k[4]);
+        Button b = card(head, detail);
         b.setEnabled(!busy && !k[2].isEmpty());
         b.setOnClickListener(v -> {
-          if (results.containsKey(k[0])) preview(k[0], k[3]);
-          else convert(java.util.Collections.singletonList(k), k[0]);
+          if (results.containsKey(k[4])) preview(k[4], k[3]);
+          else convert(java.util.Collections.singletonList(k), k[4]);
         });
         content.addView(b, item());
       }
@@ -606,6 +613,7 @@ public final class StudioActivity extends Activity {
       packs.mkdirs();
       new java.io.File(convertDir, "out").mkdirs();
       skins.clear();
+      udasFiles.clear();
       results.clear();
       convertLog.setLength(0);
       modName = "";
@@ -651,28 +659,50 @@ public final class StudioActivity extends Activity {
         if (!why.isEmpty()) log(f.getName() + ": " + why);
         f.delete();
       }
+      udasFiles.clear();
       java.io.File[] found = udas.listFiles();
       if (found != null) {
         java.util.Arrays.sort(found);
         for (java.io.File f : found) {
-          String stem = f.getName().toLowerCase(Locale.ROOT).replace(".udas", "");
-          String rel = "", file = "";
-          for (String disc : new String[] {"disc1", "disc2"}) {
-            for (String ext : new String[] {".drs", ".das"}) {
-              String r = disc + "/files/em/" + stem + ext;
-              if (rel.isEmpty() && files.size(r) >= 0) {
-                rel = r;
-                file = stem + ext;
-              }
-            }
-          }
-          skins.add(new String[] {stem, f.getAbsolutePath(), rel, file});
+          udasFiles.add(new String[] {f.getName().toLowerCase(Locale.ROOT).replace(".udas", ""), f.getAbsolutePath()});
         }
       }
+      listSkins();
       String[] packNames = packs.list();
       log(skins.size() + " skins, " + (packNames == null ? 0 : packNames.length) + " texture packs");
       if (skins.isEmpty()) log("No em/plXX.udas in what was picked: this converts UHD skins of the PC release.");
     });
+  }
+
+  // each PC skin against the disc archives it goes into (several for PC_ONLY); again when the discs could not be read
+  private void listSkins() {
+    files.lastError = "";
+    List<String[]> out = new ArrayList<>();
+    for (String[] u : udasFiles) {
+      List<String> targets = new ArrayList<>();
+      targets.add(u[0]);
+      for (String[] alt : PC_ONLY) {
+        if (alt[0].equals(u[0])) {
+          targets.clear();
+          for (int t = 1; t < alt.length; t++) targets.add(alt[t]);
+        }
+      }
+      for (String target : targets) {
+        String rel = "", file = "";
+        for (String disc : new String[] {"disc1", "disc2"}) {
+          for (String ext : new String[] {".drs", ".das"}) {
+            String r = disc + "/files/em/" + target + ext;
+            if (rel.isEmpty() && files.size(r) >= 0) {
+              rel = r;
+              file = target + ext;
+            }
+          }
+        }
+        out.add(new String[] {u[0], u[1], rel, file, target});
+      }
+    }
+    skins.clear();
+    skins.addAll(out);
   }
 
   private static java.io.File destination(String name, java.io.File udas, java.io.File packs) {
@@ -700,7 +730,7 @@ public final class StudioActivity extends Activity {
         java.io.File disc = new java.io.File(convertDir, "disc_" + k[3]);
         String why = files.copy(k[2], disc);
         if (!why.isEmpty()) {
-          log(k[0] + ": the disc's " + k[3] + " cannot be read: " + why);
+          log(k[0] + " → " + k[3] + ": the disc's file cannot be read: " + why);
           continue;
         }
         java.io.File dest = new java.io.File(out, k[3]);
@@ -708,13 +738,13 @@ public final class StudioActivity extends Activity {
             convertTex, dest.getAbsolutePath());
         disc.delete();
         boolean ok = r.startsWith("ok\n");
-        log("── " + k[0] + " · " + character(k[0]) + (ok ? ": converted" : ": failed"));
+        log("── " + k[0] + " → " + k[3] + " · " + character(k[4]) + (ok ? ": converted" : ": failed"));
         log(r.substring(r.indexOf('\n') + 1).trim());
-        if (ok) results.put(k[0], dest.getAbsolutePath());
+        if (ok) results.put(k[4], dest.getAbsolutePath());
       }
       if (preview != null && results.containsKey(preview)) {
         String file = null;
-        for (String[] k : which) if (k[0].equals(preview)) file = k[3];
+        for (String[] k : which) if (k[4].equals(preview)) file = k[3];
         final String f = file;
         main.post(() -> preview(preview, f));
       }
@@ -1023,6 +1053,11 @@ public final class StudioActivity extends Activity {
     super.onResume();
     view.onResume();
     lastNanos = 0;
+    // back from the game app's StudioWakeActivity (StudioFiles.wake): its files now
+    if (files != null && !files.lastError.isEmpty() && !busy) {
+      if (!udasFiles.isEmpty()) listSkins();
+      showTab(tab);
+    }
   }
 
   @Override protected void onPause() {

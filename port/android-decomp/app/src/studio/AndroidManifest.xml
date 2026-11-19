@@ -20,6 +20,7 @@
         <activity android:name=".TextureImportActivity" tools:node="remove" />
         <provider android:name=".ReportProvider" tools:node="remove" />
         <provider android:name=".StudioDataProvider" tools:node="remove" />
+        <activity android:name=".StudioWakeActivity" tools:node="remove" />
         <activity android:name=".StudioActivity" android:exported="true" tools:replace="android:exported">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

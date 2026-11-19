@@ -88,5 +88,10 @@
              (DevJunior's device, 19.11.2026) -->
         <provider android:name=".StudioDataProvider" android:authorities="${applicationId}.studiodata"
             android:exported="true" android:process=":studiodata" />
+        <!-- opened by CubeEvil4 Studio to start that process where the system keeps it from starting in the background
+             (Xiaomi, DevJunior's device 19.11.2026); it closes at once -->
+        <activity android:name=".StudioWakeActivity" android:exported="true" android:process=":studiodata"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"
+            android:noHistory="true" android:taskAffinity="" />
     </application>
 </manifest>
