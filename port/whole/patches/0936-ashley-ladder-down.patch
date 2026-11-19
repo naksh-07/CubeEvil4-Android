@@ -1,0 +1,23 @@
+# Patch 0936 (wish of DevJunior, 19.11.2026: "que Ashley pueda bajar escaleras sola"). Not a bug of the prototype: a
+# port feature of the mods (with the app's "Remake movement"). game/pl_npc.cpp cSubChar::moveCore (Ashley's normal
+# frames): after analyze, before her routine, re4_ashley_ladder_down (runtime/ashley_ladder.cpp): waiting at the top
+# for Leon's catch or standing there while he is below, she walks to a ladder going down near her and takes it with
+# the game's own climb (routine 0xC as ladder2Check sets it up); with the switch off it does nothing.
+--- a/src/game/pl_npc.cpp
++++ b/src/game/pl_npc.cpp
+@@ -206,6 +206,7 @@
+ // aiming player, 4 crouch (kagamu), 6 pants, 7 down, 8 fence, 9 fall, 0xA action, 0xC ladder, 0xE
+ // back, 0xF aux, 0x10 hide, 0x11 stoop, 0x12 fall wait, 0x13 ladder wait, 0x14 window wait. The
+ // player dying in a plain state puts her in dijection (routine 6).
++extern "C" void re4_ashley_ladder_down(cSubChar* a); /* port (patch 0936): runtime/ashley_ladder.cpp */
+ void cSubChar::moveCore()
+ {
+     static void (cSubChar::*funcTbl[])() = {
+@@ -233,6 +234,7 @@
+     };
+ 
+     analyze();
++    re4_ashley_ladder_down(this); /* port (patch 0936, mods): Ashley climbs down ladders on her own */
+     (this->*funcTbl[r_no_1])();
+     if ((s16) pG->pl_life <= 0) {
+         switch (r_no_1) {

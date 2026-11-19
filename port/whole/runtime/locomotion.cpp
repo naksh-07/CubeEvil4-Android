@@ -938,6 +938,9 @@ void re4_move_table(void* p)
 // runtime/free_move.cpp (before it turns Leon toward the stick; `diff` the stick's direction against his heading,
 // radians, positive to his left; `armed`: the stick held firmly back for a few frames, free_move.cpp): 1 = a turn
 // about plays (he keeps his heading, the clip turns him)
+// The app's "Remake movement" (runtime/ashley_ladder.cpp: Ashley's own way down ladders goes with it)
+int re4_move_on(void) { return on() ? 1 : 0; }
+
 int re4_move_turn(void* p, float diff, int armed)
 {
     cPlayer* pl = (cPlayer*) p;
