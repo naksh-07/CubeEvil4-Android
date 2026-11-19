@@ -386,6 +386,8 @@
     <string name="ingame_vibration_controller">Controller</string>
     <string name="ingame_vibration_help">Where you feel the vibration. Auto: in a controller with its own motors (Android 12 and later), otherwise in this device. Device: always in this device. Controller: only in the controller. The game\'s own Vibration option can still switch it off.</string>
     <string name="ingame_controller_default">Default Layout</string>
+    <string name="ingame_controller_remake">RE4 Remake (2023) Layout</string>
+    <string name="ingame_controller_remake_help">Control type A-1 of the 2023 remake: A action, R1 run (back + R1 quick turn), L3 jog, L2 aim, R2 fire, X reload, L1 knife and parry, R2 with the knife slash, R3 Ashley, Y inventory, B map, START options, SELECT this menu.</string>
     <string name="ingame_controller_help">Choose an action, then press its key. An action of two keys (fire, reload, slash) asks for the key to hold first. A key taken from another action gives that one your old key. The game\'s menus and prompts keep the GameCube buttons.</string>
     <string name="ingame_controller_alternate_note">Alternate Controls are on: they keep their own layout; this one applies once they are off.</string>
     <string name="ingame_act_menu">App Menu (held: debug menu)</string>

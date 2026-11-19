@@ -366,6 +366,8 @@
     <string name="ingame_vibration_controller">手柄</string>
     <string name="ingame_vibration_help">在哪里感受到振动。自动：在有自带马达的手柄中（Android 12 及以上），否则在本设备中。设备：始终在本设备中。手柄：只在手柄中。游戏自己的“振动”选项仍可将其关闭。</string>
     <string name="ingame_controller_default">默认配置</string>
+    <string name="ingame_controller_remake">RE4 重制版（2023）按键布局</string>
+    <string name="ingame_controller_remake_help">2023 年重制版的 A-1 操作类型：A 动作，R1 奔跑（后 + R1 快速转身），L3 慢跑，L2 瞄准，R2 射击，X 装弹，L1 小刀与弹反，持刀时 R2 挥砍，R3 阿什莉，Y 物品栏，B 地图，START 选项，SELECT 本菜单。</string>
     <string name="ingame_controller_help">选择一个动作，然后按下它的按键。由两个按键组成的动作（开火、装弹、挥刀）会先询问要按住的按键。如果按键取自另一个动作，那个动作会得到你原来的按键。游戏的菜单和提示仍使用 GameCube 按键。</string>
     <string name="ingame_controller_alternate_note">替代操作已开启：它保留自己的配置；关闭后此配置才会生效。</string>
     <string name="ingame_act_menu">应用菜单（按住：调试菜单）</string>

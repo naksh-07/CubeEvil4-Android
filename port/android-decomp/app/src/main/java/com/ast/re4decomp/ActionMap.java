@@ -160,6 +160,39 @@ public final class ActionMap {
     return m;
   }
 
+  /**
+   * The controller as the remake's (Resident Evil 4, 2023) control type A-1 (wish of DevJunior, 18.11.2026): A
+   * action, R1 run (the sprint; back + R1 the quick turn, as there), L3 the jog (the remake's "press the left stick"),
+   * L2 aim, L2 + R2 fire, L2 + X reload, X the quick reload (the remake reloads with X without aiming too), L1 the knife
+   * (ready knife and parry), L1 + R2 slash, R3 Ashley (command partner), Y inventory, START options, SELECT the app's
+   * menu (its hold the debug menu, as before). The remake's map on SELECT (View) goes to B, the remake's crouch, which
+   * the game has none of. The keyboard: its default (null).
+   */
+  public static ActionMap remake(int kind) {
+    if (kind != KIND_CONTROLLER) return null;
+    ActionMap m = new ActionMap(kind);
+    int a = CoreInput.KEYCODE_BUTTON_A, x = CoreInput.KEYCODE_BUTTON_X, l1 = CoreInput.KEYCODE_BUTTON_L1,
+        l2 = CoreInput.KEYCODE_BUTTON_L2, r2 = CoreInput.KEYCODE_BUTTON_R2;
+    m.keys[ACTION] = new int[] {a};
+    m.keys[RUN] = new int[] {CoreInput.KEYCODE_BUTTON_R1};
+    m.keys[JOG] = new int[] {CoreInput.KEYCODE_BUTTON_THUMBL};
+    m.keys[AIM] = new int[] {l2};
+    m.keys[FIRE] = new int[] {l2, r2};
+    m.keys[RELOAD] = new int[] {l2, x};
+    m.keys[QUICK_RELOAD] = new int[] {x};
+    m.keys[KNIFE] = new int[] {l1};
+    m.keys[SLASH] = new int[] {l1, r2};
+    m.keys[ASHLEY] = new int[] {CoreInput.KEYCODE_BUTTON_THUMBR};
+    m.keys[INVENTORY] = new int[] {CoreInput.KEYCODE_BUTTON_Y};
+    m.keys[MAP] = new int[] {CoreInput.KEYCODE_BUTTON_B};
+    m.keys[OPTIONS] = new int[] {CoreInput.KEYCODE_BUTTON_START};
+    m.keys[APP_MENU] = new int[] {CoreInput.KEYCODE_BUTTON_SELECT};
+    return m;
+  }
+
+  /** Whether this is the remake's layout (remake). */
+  public boolean isRemake() { return equals(remake(kind)); }
+
   /** The keys of `action`: one, two (held, pressed) or none. */
   public int[] keys(int action) { return keys[action].clone(); }
 

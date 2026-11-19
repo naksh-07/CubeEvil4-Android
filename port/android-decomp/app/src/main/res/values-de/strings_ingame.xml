@@ -368,6 +368,8 @@
     <string name="ingame_vibration_controller">Controller</string>
     <string name="ingame_vibration_help">Wo du die Vibration spürst. Auto: in einem Controller mit eigenen Motoren (ab Android 12), sonst in diesem Gerät. Gerät: immer in diesem Gerät. Controller: nur im Controller. Die Spieloption „Vibration“ kann sie weiterhin ausschalten.</string>
     <string name="ingame_controller_default">Standardbelegung</string>
+    <string name="ingame_controller_remake">Belegung von RE4 Remake (2023)</string>
+    <string name="ingame_controller_remake_help">Steuerungstyp A-1 des Remakes von 2023: A Aktion, R1 rennen (zurück + R1 schnelle Wende), L3 joggen, L2 zielen, R2 schießen, X nachladen, L1 Messer und Parieren, R2 mit dem Messer zustechen, R3 Ashley, Y Inventar, B Karte, START Optionen, SELECT dieses Menü.</string>
     <string name="ingame_controller_help">Wähle eine Aktion, dann drücke ihre Taste. Eine Aktion aus zwei Tasten (Feuern, Nachladen, Messerhieb) fragt zuerst nach der Taste zum Halten. Nimmst du einer anderen Aktion die Taste, bekommt sie deine alte. Menüs und Hinweise des Spiels zeigen weiter die GameCube-Tasten.</string>
     <string name="ingame_controller_alternate_note">Die alternative Steuerung ist an: sie behält ihre eigene Belegung; diese gilt, sobald sie aus ist.</string>
     <string name="ingame_act_menu">App-Menü (gehalten: Debug-Menü)</string>

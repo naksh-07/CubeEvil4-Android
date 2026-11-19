@@ -372,6 +372,8 @@
     <string name="ingame_vibration_controller">Controle</string>
     <string name="ingame_vibration_help">Onde você sente a vibração. Auto: em um controle com motores próprios (Android 12 ou posterior); senão, neste aparelho. Aparelho: sempre neste aparelho. Controle: só no controle. A opção Vibração do próprio jogo ainda pode desligá-la.</string>
     <string name="ingame_controller_default">Configuração padrão</string>
+    <string name="ingame_controller_remake">Configuração de RE4 Remake (2023)</string>
+    <string name="ingame_controller_remake_help">Tipo de controle A-1 do remake de 2023: A ação, R1 correr (trás + R1 giro rápido), L3 trotar, L2 mirar, R2 atirar, X recarregar, L1 faca e aparar, R2 com a faca golpe, R3 Ashley, Y inventário, B mapa, START opções, SELECT este menu.</string>
     <string name="ingame_controller_help">Escolha uma ação e pressione a tecla dela. Uma ação de duas teclas (atirar, recarregar, golpe de faca) pede primeiro a tecla a segurar. Se você tirar a tecla de outra ação, ela recebe a sua antiga. Os menus e avisos do jogo mantêm os botões do GameCube.</string>
     <string name="ingame_controller_alternate_note">Os controles alternativos estão ativados: mantêm a sua própria configuração; esta vale quando estiverem desativados.</string>
     <string name="ingame_act_menu">Menu do app (segurado: menu debug)</string>

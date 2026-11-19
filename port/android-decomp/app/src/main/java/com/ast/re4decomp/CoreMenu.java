@@ -1437,6 +1437,15 @@ final class CoreMenu extends Dialog {
       captureAction = -1; main.removeCallbacks(captureTimeout);
       host.mappingChanged(ActionMap.defaults(mapKind)); showPage(CONTROLLER, false);
     });
+    // the remake's control type A-1 (wish of DevJunior, 18.11.2026), the controller only
+    final ActionMap remake = ActionMap.remake(mapKind);
+    if (remake != null) {
+      cellAction(buttonsRow(body), s(R.string.ingame_controller_remake) + (m.equals(remake) ? " \u2713" : ""), v -> {
+        captureAction = -1; main.removeCallbacks(captureTimeout);
+        host.mappingChanged(remake); showPage(CONTROLLER, false);
+      });
+      help(R.string.ingame_controller_remake_help);
+    }
     help(R.string.ingame_controller_help);
   }
 

@@ -373,6 +373,8 @@
     <string name="ingame_vibration_controller">Manette</string>
     <string name="ingame_vibration_help">Où vous sentez la vibration. Auto\u00A0: dans une manette qui a ses propres moteurs (Android 12 et ultérieur), sinon dans cet appareil. Appareil\u00A0: toujours dans cet appareil. Manette\u00A0: seulement dans la manette. L’option Vibration du jeu peut toujours la désactiver.</string>
     <string name="ingame_controller_default">Disposition par défaut</string>
+    <string name="ingame_controller_remake">Disposition de RE4 Remake (2023)</string>
+    <string name="ingame_controller_remake_help">Type de commandes A-1 du remake de 2023 : A action, R1 courir (arrière + R1 demi-tour rapide), L3 trottiner, L2 viser, R2 tirer, X recharger, L1 couteau et parade, R2 avec le couteau entaille, R3 Ashley, Y inventaire, B carte, START options, SELECT ce menu.</string>
     <string name="ingame_controller_help">Choisissez une action, puis appuyez sur sa touche. Une action à deux touches (tirer, recharger, coup de couteau) demande d’abord la touche à maintenir. Une touche prise à une autre action donne à celle-ci votre ancienne touche. Les menus et indications du jeu gardent les boutons GameCube.</string>
     <string name="ingame_controller_alternate_note">Les commandes alternatives sont activées\u00A0: elles gardent leur propre disposition\u00A0; celle-ci s\'applique dès qu\'elles sont désactivées.</string>
     <string name="ingame_act_menu">Menu de l’app (maintenu : menu debug)</string>

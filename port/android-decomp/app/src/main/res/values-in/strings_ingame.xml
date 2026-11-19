@@ -364,6 +364,8 @@
     <string name="ingame_vibration_controller">Controller</string>
     <string name="ingame_vibration_help">Di mana getaran terasa. Otomatis: di controller yang punya motor sendiri (Android 12 dan setelahnya), jika tidak di perangkat ini. Perangkat: selalu di perangkat ini. Controller: hanya di controller. Opsi Getaran milik game sendiri tetap bisa mematikannya.</string>
     <string name="ingame_controller_default">Tata Letak Bawaan</string>
+    <string name="ingame_controller_remake">Tata letak RE4 Remake (2023)</string>
+    <string name="ingame_controller_remake_help">Tipe kontrol A-1 dari remake 2023: A aksi, R1 lari (mundur + R1 putar cepat), L3 jogging, L2 bidik, R2 tembak, X isi ulang, L1 pisau dan tangkis, R2 dengan pisau tebas, R3 Ashley, Y inventaris, B peta, START opsi, SELECT menu ini.</string>
     <string name="ingame_controller_help">Pilih aksi, lalu tekan tombolnya. Aksi dengan dua tombol (tembak, isi ulang, tebas) meminta tombol yang ditahan dulu. Jika tombol diambil dari aksi lain, aksi itu mendapat tombol lama Anda. Menu dan petunjuk game tetap memakai tombol GameCube.</string>
     <string name="ingame_controller_alternate_note">Kontrol Alternatif aktif: kontrol itu memakai tata letaknya sendiri; tata letak ini berlaku setelah dinonaktifkan.</string>
     <string name="ingame_act_menu">Menu Aplikasi (tahan: menu debug)</string>

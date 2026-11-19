@@ -45,6 +45,17 @@ public final class ActionMapTests {
     check(press(c, L1) == 0 && c.singleOn(L1) == ActionMap.QUICK_RELOAD);  // the quick reload: an app action
     check(ActionMap.defaults(ActionMap.KIND_KEYBOARD).singleOn(ActionMap.KEY_R) == ActionMap.QUICK_RELOAD);
     check(c.singleOn(L3) == ActionMap.JOG && press(c, L3) == 0);  // the jog: an app action (18.11.2026)
+    // the remake's control type A-1 (18.11.2026)
+    ActionMap rm = ActionMap.remake(ActionMap.KIND_CONTROLLER);
+    final int GA = CoreInput.GC_A, GB = CoreInput.GC_B, GR = CoreInput.GC_R, GL = CoreInput.GC_L;
+    final int R3 = CoreInput.KEYCODE_BUTTON_THUMBR;
+    check(rm.isRemake() && !rm.isDefault() && ActionMap.remake(ActionMap.KIND_KEYBOARD) == null);
+    check(press(rm, A) == GA && press(rm, R1) == GB && press(rm, L2) == GR && press(rm, L2, R2) == (GR | GA));
+    check(press(rm, L2, X) == (GR | GB) && press(rm, X) == 0 && rm.singleOn(X) == ActionMap.QUICK_RELOAD);
+    check(press(rm, L1) == GL && press(rm, L1, R2) == (GL | GA) && press(rm, R2) == 0);
+    check(press(rm, R3) == CoreInput.GC_X && press(rm, Y) == CoreInput.GC_Y && press(rm, B) == CoreInput.GC_Z);
+    check(rm.singleOn(L3) == ActionMap.JOG && rm.singleOn(CoreInput.KEYCODE_BUTTON_SELECT) == ActionMap.APP_MENU);
+    check(ActionMap.decode(ActionMap.KIND_CONTROLLER, rm.encode()).isRemake());
     check(ActionMap.defaults(ActionMap.KIND_KEYBOARD).singleOn(ActionMap.KEY_CTRL_LEFT) == ActionMap.JOG);
     check(!ActionMap.available(ActionMap.KIND_CONTROLLER, ActionMap.MOVE_FORWARD));
     check(c.assign(ActionMap.MAP, new int[] {CoreInput.KEYCODE_DPAD_LEFT}) == null);  // the D-pad stays the D-pad
