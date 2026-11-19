@@ -1,0 +1,28 @@
+# Patch 0932 (device video of DevJunior, 19.11.2026: "improve the auto aim: at times the reticle goes above the
+# enemies"). Not a bug of the prototype: the app's "Auto aim" (the game's lock-on, CFG_LOCK_ON, after patches 0174 and
+# 0918). pl_wep.cpp PlSetLockPitch (the aim's start) measures the pitch from Leon's chest (re4_lock_aim_origin,
+# runtime/lock_on.cpp; patch 0174: from the gun hand, which at the aim's start still hangs at his hip: 1.5 m away a
+# Ganado's chest lay 13 degrees up from there). PlWepAutoTrack (the lock's frames) asks re4_lock_track_pitch for the
+# pitch step: with the gun up it follows its own laser (cObjWep::getMarkerPos) to the lock point, and it moves the
+# aim's centre (cPlWep::pitch) with it: the game left that at the start pitch, and once the lock's frames ran out
+# PlWepLockRand's sway pulled the aim back up there. Declared in re4_whole_prelude.h.
+--- a/src/game/pl_wep.cpp
++++ b/src/game/pl_wep.cpp
+@@ -1122,7 +1122,7 @@
+             pl->ang.y = LIMIT_ANGLE(pl->ang.y);
+         }
+     }
+-    e = atan2(tgt.y - hand->y, dist) / (PI / 4.0f) - m3r;
++    e = atan2(tgt.y - hand->y, dist) / (PI / 4.0f) - m3r; e = re4_lock_track_pitch(pl, &tgt, e); /* port: patch 0932 */
+     if (e > 0.05f) {
+         e = 0.05f;
+     }
+@@ -1187,7 +1187,7 @@
+                lock point (lockParts & 7 with lockOfs), atan2 over the distance, / (PI/4); the sway's centre
+                (pitch) m3r * PI/2 as PlWepLockRand converts it */
+             Vec tgt;
+-            Vec* hand = &pl->getPartsPtr(10)->world;
++            Vec* hand = (Vec*) re4_lock_aim_origin(pl); /* port (patch 0932): from his chest */
+ 
+             PSMTXMultVec(pl->m_pEm->getPartsPtr(pl->m_pEm->lockParts & 7)->mat, &pl->m_pEm->lockOfs, &tgt);
+             p = atan2(tgt.y - hand->y, GetDistance3(hand, &tgt)) / (PI / 4.0f);

@@ -163,6 +163,10 @@ int re4_grab_escape(void* em);
  * app's "Auto aim" (a Vec* position, the cEm* locked now; 0 none) and the lock's frames. */
 void* re4_lock_search(void* pos, void* now);
 int re4_lock_frames(int game);
+/* Patch 0932 (pl_wep.cpp PlSetLockPitch, PlWepAutoTrack; runtime/lock_on.cpp): the auto aim's start measured from
+ * Leon's chest (a Vec*), its pitch step following the gun's laser to the lock point (the game's step passed in). */
+void* re4_lock_aim_origin(void* player);
+float re4_lock_track_pitch(void* player, void* target, float game);
 /* Patch 0919 (pl_class.cpp cPlayer::moveEyeNormal; runtime/blink.cpp): the eyelid part's angle, scaled by a skin's
  * head (its model byte 0x29, tenths) while the player's file is a mod's. */
 float re4_blink_angle(float set);

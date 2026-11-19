@@ -76,6 +76,7 @@ extern "C" void re4_parry_input(cPlayer* pl);         // runtime/parry.cpp
 extern "C" int re4_ashley_gun_input(cPlayer* pl, int freeCam);  // runtime/ashley_gun.cpp (patch 0913)
 extern "C" int re4_move_turn(void* pl, float diff, int armed);   // runtime/locomotion.cpp (the remake's turns)
 extern "C" int re4_move_heavy_legs(void* pl);  // runtime/locomotion.cpp (the remake's legs under a big weapon)
+extern "C" int re4_quick_slots_on(void);       // runtime/aim_options.cpp
 
 namespace {
 
@@ -369,6 +370,57 @@ void reloadInput(cPlayer* pl)
         gEatA = 6;
         eatA();
     }
+}
+
+// Cancelling a reload (wish of DevJunior, 19.11.2026: "the cancel of actions ... the reload"), as in the 2023 remake.
+// In the weapon routine's reload step (any weapon, aimed or not), after kCancelFrom frames, a new press of
+//  - the run key, the knife key, or a D-pad quick slot (runtime/quick_slots.cpp, which then changes the weapon)
+//    ends it at once; before the weapon object loaded the rounds (ItemMgr.reloadable() still 1) the magazine stays
+//    as it was and the rounds stay in the case (cObjWep::interrupt would load them: the weapon object leaves its
+//    reload mode first);
+//  - the aim key, once the rounds are in: the rest of the motion gives way to the aim at once.
+// He goes to his footwork (the game's own interrupt, cPlayer::interrupt: the gun shown, the knife put away, its sound
+// stopped), from where the held keys take him on (run, knife, aim) as from standing. Not crouching (the footwork would
+// stand him up), not in an event.
+const int kCancelFrom = 3;
+int gReloadAge = 0;
+
+void reloadCancel(cPlayer* pl)
+{
+    if (pl->r_no_0 != 0 || pl->r_no_1 != 6 || pl->r_no_2 != 4) {
+        gReloadAge = 0;
+        return;
+    }
+    if (gReloadAge < 1000) {
+        gReloadAge++;
+    }
+    if (gReloadAge <= kCancelFrom || !pl->Wep || !pl->Wep->m_pWep || pl->stat.check(cPlayer::F_CROUCH)
+        || pl->stat.check(cPlayer::F_EVENT) || StaFlagChk(pG, STA_EVENT)) {
+        return;
+    }
+    const bool loaded = ItemMgr.reloadable() == 0;
+    const bool run = (Key.trg & 0x40000000) != 0;
+    const bool knife = (Key.trg & 0x800) != 0 || (Joy[0].trg & 0x40) != 0;
+    const bool slot = re4_quick_slots_on() && (Joy[0].trg & 0xF) != 0;
+    const bool aim = loaded && (Key.trg & 0x10) != 0;
+    if (!run && !knife && !slot && !aim) {
+        return;
+    }
+    cObjWep* gun = pl->Wep->m_pWep;
+    if (!loaded && gun->getStat() == cObjWep::S_RELOAD) {
+        gun->setStat(cObjWep::S_STAY);  // no rounds: interrupt would finish the reload
+    }
+    pl->interrupt();
+    pl->m_Hokan = 6;
+    pl->m_Frame = 0;
+    pl->r_no_0 = 0;
+    pl->r_no_1 = 0;
+    pl->r_no_2 = 0;
+    pl->r_no_3 = 1;  // pl_R1_Footwork: its motion blended in over m_Hokan frames
+    re4_log("reload: cancelled by %s after %d frames, %s",
+            run ? "running" : knife ? "the knife" : slot ? "a quick slot" : "aiming", gReloadAge,
+            loaded ? "the rounds were in" : "no rounds loaded");
+    gReloadAge = 0;
 }
 
 // His walk and run as the game moves him (root motion): the way of the last frame in the walk / run routines.
@@ -802,6 +854,7 @@ void re4_player_input(cPlayer* pl)
     gLegRun = false;
     // Ashley's own chapter: her pistol aimed (her keys out of the game's first)
     const int ashleyAims = re4_ashley_gun_input(pl, re4_free_move_on() && gCamValid && pl == gLastPl);
+    reloadCancel(pl);           // before the quick slots take the D-pad's bits
     re4_quick_slots_input(pl);  // first: the D-pad's bits out of the keys when it equips weapons
     re4_parry_input(pl);
     reloadInput(pl);  // before the camera: a reload started now keeps the free camera

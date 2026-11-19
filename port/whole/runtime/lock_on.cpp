@@ -19,10 +19,13 @@
 #include "em.h"
 #include "player.h"
 #include "math_sub.h"
+#include "pl_wep.h"
+#include "main.h"
 
 #include <math.h>
 
 extern cPlayer* pPL;
+extern "C" void re4_log(const char* fmt, ...);
 int lockEmCk(cEm* pEm, Vec* pPos);  // game/pl_wep.cpp
 
 namespace {
@@ -32,6 +35,7 @@ const f32 kTurn = 1.5f;
 const f32 kBehind = 1.75f;    // 100 degrees
 const f32 kDown = 700.0f;     // 70 cm
 const int kFrames = 20;
+const f32 kPiF = 3.14159265f;
 
 bool enemy(int id)
 {
@@ -107,6 +111,65 @@ void* re4_lock_search(void* at, void* now)
 int re4_lock_frames(int game)
 {
     return game > kFrames ? game : kFrames;
+}
+
+// Patch 0932 (pl_wep.cpp PlSetLockPitch, the auto aim's start, patch 0174): the point the start pitch is measured
+// from, Leon's chest (his lock part, as a Ganado's is its own) instead of his gun hand: at the aim's start the hand
+// still hangs at his hip, and 1.5 m away a Ganado's chest lay 13 degrees up from there (DevJunior, 19.11.2026: "the
+// reticle at times goes above the enemies").
+void* re4_lock_aim_origin(void* player)
+{
+    cPlayer* pl = (cPlayer*) player;
+    return &pl->getPartsPtr(pl->lockParts)->world;
+}
+
+// Patch 0932 (PlWepAutoTrack, the auto aim following its target): the pitch step (blend units, the caller clamps it
+// to +-0.05 as before). Aiming a gun (the set state, the laser up) it follows the laser itself: the weapon's marker
+// line (cObjWep::getMarkerPos) against the line from its muzzle to the lock point, half of the difference a frame
+// (blend 1 = 45 degrees, as the game's step and patch 0174 count it; measured on the gun itself the count does not
+// matter much). Else (the gun coming up, the knife) from his chest. The aim's centre (cPlWep::pitch) goes with it:
+// the game left it at the start pitch, and once the lock's frames ran out PlWepLockRand's sway pulled the aim back
+// there.
+float re4_lock_track_pitch(void* player, void* target, float game)
+{
+    cPlayer* pl = (cPlayer*) player;
+    const Vec* tgt = (const Vec*) target;
+    if (!pl || !tgt || pl != pPL || !pl->Wep) {
+        return game;
+    }
+    const f32 now = m3r;
+    f32 e;
+    cObjWep* gun = pl->Wep->m_pWep;
+    const bool laser = gun && pl->r_no_0 == 0 && pl->r_no_1 == 6 && pl->r_no_2 == 1 && pl->r_no_3 != 0
+        && pG->weapon_no != 9 && pG->weapon_no != 10;
+    if (laser) {
+        Vec lpos;
+        Vec lcross;
+        gun->getMarkerPos(&lpos, &lcross);
+        const f32 ax = lcross.x - lpos.x, ay = lcross.y - lpos.y, az = lcross.z - lpos.z;
+        const f32 tx = tgt->x - lpos.x, ty = tgt->y - lpos.y, tz = tgt->z - lpos.z;
+        const f32 aFlat = sqrtf(ax * ax + az * az), tFlat = sqrtf(tx * tx + tz * tz);
+        if (aFlat < 1.0f || tFlat < 100.0f) {
+            return 0.0f;  // straight up or down, or the target at the muzzle: hold
+        }
+        const f32 err = atan2f(ty, tFlat) - atan2f(ay, aFlat);
+        e = err * (4.0f / kPiF) * 0.5f;
+    } else {
+        Vec& from = pl->getPartsPtr(pl->lockParts)->world;
+        const f32 dx = tgt->x - from.x, dy = tgt->y - from.y, dz = tgt->z - from.z;
+        e = atan2f(dy, sqrtf(dx * dx + dz * dz)) * (4.0f / kPiF) - now;
+    }
+    e = e > 0.05f ? 0.05f : e < -0.05f ? -0.05f : e;
+    f32 next = now + e;
+    next = next > 1.0f ? 1.0f : next < -1.0f ? -1.0f : next;
+    pl->Wep->pitch = next * (kPiF / 2.0f);
+    static bool said = false;
+    if (!said && laser) {
+        said = true;
+        re4_log("aim: the auto aim follows its laser to the lock point (pitch now %.1f degrees, step %.3f; the "
+                "game's step %.3f)", (double) (now * 45.0f), (double) e, (double) game);
+    }
+    return e;
 }
 
 }  // extern "C"

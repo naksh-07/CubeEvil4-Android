@@ -1,0 +1,46 @@
+# Patch 0933 (device report of DevJunior, 19.11.2026: "with the handguns he still stops for a moment after reloading
+# as if to aim, and that leaves you exposed for a frame"). Patch 0909 for the handguns: the mods' reload without
+# aiming (runtime/free_move.cpp: the prototype's direct reload, PlReloadDirect 1) ended at PlReloadEndTbl's frame,
+# after the reload motion had brought the pistol back up to aim, and then blended into his footwork over 15 frames
+# (wepDown). pl_handgun.cpp wep02_r2_reload (all the handguns' modules) now ends it 4 frames after the weapon is full
+# (re4_reload_quick_end, as the long guns): his footwork blended in over 6 frames (crouching: the crouch), the weapon
+# object put down as wepDown does. Aiming, or the reload started from aiming (PlReloadDirect 0): unchanged. A port
+# feature of the mods, not a fix of the prototype.
+--- a/src/wep/pl_handgun.cpp
++++ b/src/wep/pl_handgun.cpp
+@@ -457,6 +457,7 @@
+ // with stat bit6); with a level aim (|m3r| <= 0.1) the motion may also run to its last
+ // frame and return to set step 0. Steps 2/3 blend the aim idle back in over 8 frames (m_Work0
+ // counts) and return to set step 0.
++extern "C" int re4_reload_quick_end(void); /* port (patch 0933): runtime/free_move.cpp */
+ static void wep02_r2_reload(cPlayer* pl)
+ {
+     u8 step = pl->r_no_3;
+@@ -485,6 +486,27 @@
+         obj->r_no_1 = 0;
+         break;
+     case 1:
++        if (re4_reload_quick_end()) {
++            /* port (patch 0933): a reload without aiming ends once the rounds are in, the gun not raised to aim */
++            if (pl->stat.check(cPlayer::F_CROUCH)) {
++                pl->r_no_0 = 0;
++                pl->r_no_2 = 0;
++                pl->r_no_1 = 0x11;
++                pl->r_no_3 = 0;
++            } else {
++                pl->m_Hokan = 6;
++                pl->m_Frame = 0;
++                pl->r_no_0 = 0;
++                pl->r_no_1 = 0;
++                pl->r_no_2 = 0;
++                pl->r_no_3 = 1;
++            }
++            obj = WEP_OBJ(pl);
++            obj->r_no_0 = 3;
++            obj->r_no_1 = 0;
++            WEP_ATARI(pl)->offOba();
++            break;
++        }
+         if (m3r < -0.1f || m3r > 0.1f) {
+             if (pl->Motion.Mot_frame >= PlReloadEndTbl[pG->weapon_no][pG->weapon_lv_reload]) {
+                 if (joyKamae()) {

@@ -1015,6 +1015,56 @@ void axeWatch(unsigned)
     }
 }
 
+// Cancelling the combo's slash (wish of DevJunior, 19.11.2026: "the cancel of actions ... the melee blow of the
+// combo"): once its hit is over (the knife's hits run on frames 6..10, knife_r3_fire10) the rest of the swing gives
+// way, as in the 2023 remake:
+//  - a tap waiting (re4_knife_tap_input) starts the combo's next slash at once instead of after the swing's end;
+//  - aiming (a new press of the aim key) or running (of the run key) puts the knife away at once (the knife's down
+//    state: with the aim key held it goes straight into the gun's stance, knife_r3_down00);
+//  - the main stick pushed, a little later (kCancelMove), the same: he walks off.
+const f32 kCancelFrom = 11.0f;
+const f32 kCancelMove = 14.0f;
+
+bool comboSlash(cPlayer* pl)
+{
+    if (pl->r_no_0 != 0 || pl->r_no_1 != 0xB || pl->r_no_2 != 2 || pl->r_no_3 != 1) {
+        return false;
+    }
+    for (int i = 0; i < gCombos; i++) {
+        if ((void*) pl->Motion.pMot == gCombo[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool comboCancel(cPlayer* pl)
+{
+    if (!comboSlash(pl) || pl->Motion.Seq_frame < kCancelFrom) {
+        return false;
+    }
+    if (gTapQueued > 0) {
+        pl->r_no_2 = 2;  // the next slash (knife_r3_fire00 -> re4_knife_slash)
+        pl->r_no_3 = 0;
+        gTapSlash = true;
+        gTapQueued = 0;
+        say(20, "the combo's next slash cancels the rest of the swing");
+        return true;
+    }
+    const f32 sx = (f32) Key.stickX / 56.0f, sy = (f32) Key.stickY / 56.0f;
+    const bool aim = (Key.trg & 0x10) != 0;
+    const bool run = (Key.trg & 0x40000000) != 0;
+    const bool walk = sx * sx + sy * sy > 0.5f * 0.5f && pl->Motion.Seq_frame >= kCancelMove;
+    if (!aim && !run && !walk) {
+        return false;
+    }
+    pl->r_no_2 = 3;  // the knife away (knife_r2_down)
+    pl->r_no_3 = 0;
+    re4_log("melee: the combo's slash cancelled at frame %.0f (%s)", (double) pl->Motion.Seq_frame,
+            aim ? "aim" : run ? "run" : "stick");
+    return true;
+}
+
 }  // namespace
 
 extern "C" {
@@ -1288,6 +1338,9 @@ void re4_knife_tap_input(void* p)
             gTapQueued = kTapQueue;
         }
         gHeld = 0;
+    }
+    if (comboCancel(pl)) {
+        return;
     }
     if (gTapQueued <= 0) {
         return;

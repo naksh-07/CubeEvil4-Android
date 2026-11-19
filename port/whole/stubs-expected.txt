@@ -46,13 +46,6 @@ function OSStartStopwatch
 function OSStopStopwatch
 
 # SN PC host I/O (development console only)
-function PCclose
-function PCcreat
-function PCinit
-function PClseek
-function PCopen
-function PCread
-function PCwrite
 
 # PPC performance counters
 function PPCMfpmc1
