@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CubeEvil4 Studio's own APK (the flavour "studio", Mods 19.11.2026): its launcher is the Studio; the game's
+     activities, its import and its data provider stay out. The game apps it reads (StudioFiles) must be visible to it
+     (Android 11 and later: package visibility). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <queries>
+        <package android:name="com.ast.cubeevil4.mods" />
+        <package android:name="com.ast.cubeevil4" />
+    </queries>
+    <application android:label="CubeEvil4 Studio" android:isGame="false" android:appCategory="productivity"
+        tools:replace="android:label,android:isGame,android:appCategory">
+        <meta-data android:name="androidx.car.app.launchable" tools:node="remove" />
+        <activity android:name=".MainActivity" tools:node="remove" />
+        <activity android:name=".StartupActivity" tools:node="remove" />
+        <activity android:name=".RoomCheckActivity" tools:node="remove" />
+        <activity android:name=".CoreActivity" tools:node="remove" />
+        <activity android:name=".ControllerActivity" tools:node="remove" />
+        <activity android:name=".LauncherRestartActivity" tools:node="remove" />
+        <activity android:name=".TextureImportActivity" tools:node="remove" />
+        <provider android:name=".ReportProvider" tools:node="remove" />
+        <provider android:name=".StudioDataProvider" tools:node="remove" />
+        <activity android:name=".StudioActivity" android:exported="true" tools:replace="android:exported">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

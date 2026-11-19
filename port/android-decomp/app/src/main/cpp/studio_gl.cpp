@@ -28,6 +28,7 @@ in vec2 vUv;
 uniform sampler2D image;
 uniform int textured;
 uniform int alphaTest;
+uniform int highlight;
 uniform vec3 light;
 out vec4 color;
 void main() {
@@ -37,6 +38,8 @@ void main() {
   float d = max(dot(n, light), 0.0);
   float rim = pow(1.0 - abs(n.z), 2.0) * 0.12;
   color = vec4(base.rgb * (0.38 + 0.72 * d) + rim, 1.0);
+  // the piece the list points at: tinted in the Studio's accent
+  if (highlight != 0) color.rgb = mix(color.rgb, vec3(0.88, 0.64, 0.23), 0.5);
 }
 )";
 
@@ -254,12 +257,14 @@ void GlView::draw(const Viewer &viewer, int width, int height, const Camera &cam
                  GL_STREAM_DRAW);
     glActiveTexture(GL_TEXTURE0);
     const GLint texturedAt = glGetUniformLocation(meshProgram_, "textured"),
-                alphaAt = glGetUniformLocation(meshProgram_, "alphaTest");
+                alphaAt = glGetUniformLocation(meshProgram_, "alphaTest"),
+                highlightAt = glGetUniformLocation(meshProgram_, "highlight");
     for (const auto &d : viewer.draws()) {
       const bool tex = options.textured && d.texture >= 0 && std::size_t(d.texture) < textures_.size() &&
                        textures_[std::size_t(d.texture)];
       glUniform1i(texturedAt, tex ? 1 : 0);
       glUniform1i(alphaAt, d.alphaTest ? 1 : 0);
+      glUniform1i(highlightAt, d.piece == viewer.highlight() ? 1 : 0);
       if (tex) glBindTexture(GL_TEXTURE_2D, textures_[std::size_t(d.texture)]);
       if ((d.first + d.count) * 3 <= viewer.positions().size() / 3)
         glDrawArrays(GL_TRIANGLES, GLint(d.first * 3), GLsizei(d.count * 3));

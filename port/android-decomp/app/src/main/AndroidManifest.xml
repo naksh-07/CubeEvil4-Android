@@ -73,16 +73,13 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- CubeEvil4 Studio (Mods, 19.11.2026): its own screen and icon, without the game running (StudioActivity) -->
+        <!-- CubeEvil4 Studio (Mods, 19.11.2026): its screen; its icon only in its own APK (src/studio, the flavour "studio") -->
         <activity android:name=".StudioActivity" android:exported="false" android:screenOrientation="sensorLandscape"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode" />
-        <activity-alias android:name=".StudioLauncher" android:targetActivity=".StudioActivity" android:exported="true"
-            android:label="CubeEvil4 Studio" android:icon="@drawable/ic_launcher">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
+        <!-- the game's discs and mod packs for CubeEvil4 Studio's own APK (the flavour "studio"), read only, for apps
+             signed with the same key (StudioDataProvider checks the caller) -->
+        <provider android:name=".StudioDataProvider" android:authorities="${applicationId}.studiodata"
+            android:exported="true" />
     </application>
 </manifest>

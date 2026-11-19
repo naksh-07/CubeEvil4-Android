@@ -23,9 +23,7 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import javax.microedition.khronos.egl.EGLConfig;
@@ -60,9 +58,10 @@ public final class StudioActivity extends Activity {
   private long lastNanos;
   private boolean seeking;
 
-  private File game;
-  private String archivePath;      // the archive whose models are listed (null: the archives)
+  private StudioFiles files;
+  private String archivePath;      // the archive whose models are listed, below game/ (null: the archives)
   private String archiveName = "";
+  private int highlighted = -1;    // the piece tinted in the view (its place in StudioBridge.parts())
   private String source = "disc1"; // disc1, disc2, mods
   private String kind = "all";     // all, pl, em, wep, other
   private boolean modelLoaded;
@@ -71,7 +70,7 @@ public final class StudioActivity extends Activity {
     super.onCreate(state);
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     StudioBridge.load();
-    game = new File(AppStorage.base(this), "game");
+    files = StudioFiles.open(this);
     LinearLayout root = new LinearLayout(this);
     root.setOrientation(LinearLayout.HORIZONTAL);
     root.setBackgroundColor(BG);
@@ -281,6 +280,11 @@ public final class StudioActivity extends Activity {
     tab = index;
     for (int i = 0; i < tabs.size(); i++) style(tabs.get(i), i == index);
     content.removeAllViews();
+    if (files == null) {
+      content.addView(note("CubeEvil4 Studio reads the discs and mod packs of CubeEvil4 Mods (or CubeEvil4). Install it, "
+          + "import your discs there, then open the Studio again."));
+      return;
+    }
     if (index == 0) showModels();
     else if (index == 1) showAnimations();
     else if (index == 2) showConvert();
@@ -306,18 +310,16 @@ public final class StudioActivity extends Activity {
       HorizontalScrollView hs = new HorizontalScrollView(this);
       hs.addView(kinds);
       content.addView(hs);
-      List<File> files = archives();
-      if (files.isEmpty()) {
+      List<String[]> found = archives();
+      if (found.isEmpty()) {
         content.addView(note(source.equals("mods") ? "No mod pack holds models (em/*.drs)."
-            : "No archives here: import your discs in the launcher first."));
+            : "No archives here: import your discs in CubeEvil4 first."));
       }
-      for (File f : files) {
-        String n = f.getName();
-        File packDir = f.getParentFile() != null ? f.getParentFile().getParentFile() : null;
-        if (packDir != null && packDir.getName().equals("files")) packDir = packDir.getParentFile();
-        String parent = source.equals("mods") && packDir != null ? packDir.getName() + " · " : "";
-        Button b = card(parent + n, String.format(Locale.ROOT, "%.1f MB", f.length() / 1048576.0));
-        b.setOnClickListener(v -> openArchive(f));
+      for (String[] f : found) {
+        // f: rel, file name, pack name ("" none), size
+        String parent = f[2].isEmpty() ? "" : f[2] + " · ";
+        Button b = card(parent + f[1], String.format(Locale.ROOT, "%.1f MB", Long.parseLong(f[3]) / 1048576.0));
+        b.setOnClickListener(v -> openArchive(f[0], f[1]));
         content.addView(b, item());
       }
       return;
@@ -325,34 +327,90 @@ public final class StudioActivity extends Activity {
     Button back = pill("‹ All archives", false);
     back.setOnClickListener(v -> { archivePath = null; showTab(0); });
     content.addView(back, item());
-    content.addView(note(archiveName + ": tap a model to view it; “+ Piece” adds a head, hands or other parts on its "
-        + "skeleton."));
+    Button whole = pill("Whole model again", false);
+    whole.setOnClickListener(v -> loadComplete());
+    content.addView(whole, item());
+    // the pieces on the model: tap one to see it tinted, "Off" takes it off (DevJunior, 19.11.2026: "it is hard to
+    // know what you are changing")
+    TextView onHead = text("On the model", 14, TEXT, true);
+    onHead.setPadding(0, dp(8), 0, dp(2));
+    content.addView(onHead);
+    content.addView(note("Tap a part to see it highlighted in the view."));
+    String[] shownParts = StudioBridge.parts();
+    java.util.Set<Integer> onModel = new java.util.HashSet<>();
+    for (int k = 0; k < shownParts.length; k++) {
+      String[] p = shownParts[k].split("\t", 2);
+      final int piece = k;
+      final int entry = Integer.parseInt(p[0]);
+      onModel.add(entry);
+      LinearLayout line = row();
+      Button b = card(p.length > 1 ? p[1] : "#" + entry, k == 0 ? "main model · #" + entry : "#" + entry);
+      if (highlighted == k) b.setBackground(round(0xFF3A2F1C, ACCENT));
+      b.setOnClickListener(v -> {
+        highlighted = highlighted == piece ? -1 : piece;
+        StudioBridge.highlight(highlighted);
+        showTab(0);
+      });
+      line.addView(b, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+      if (k > 0) {
+        Button off = pill("Off", false);
+        off.setOnClickListener(v -> {
+          String r = StudioBridge.togglePiece(entry);
+          if (!r.equals("removed")) toast("#" + entry + ": " + r);
+          highlighted = -1;
+          StudioBridge.highlight(-1);
+          updateInfo();
+          showTab(0);
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(64), dp(48));
+        lp.setMargins(dp(6), 0, 0, 0);
+        line.addView(off, lp);
+      }
+      content.addView(line, item());
+    }
+    // the archive's other models: on the model, or alone
+    java.util.Map<Integer, String> names = new java.util.HashMap<>();
+    for (String n : StudioBridge.partNames()) {
+      String[] p = n.split("\t", 2);
+      if (p.length == 2) names.put(Integer.parseInt(p[0]), p[1]);
+    }
+    TextView moreHead = text("More in this archive", 14, TEXT, true);
+    moreHead.setPadding(0, dp(12), 0, dp(2));
+    content.addView(moreHead);
+    content.addView(note("Weapons, other hands, faces and outfits: “Add” puts one on the model (when it fits its "
+        + "skeleton), “Alone” shows it by itself."));
     String[] entries = StudioBridge.entries();
     int shown = 0;
     for (String e : entries) {
       String[] p = e.split("\t");
       if (p.length < 3 || !p[1].startsWith("BIN") || p[2].equals("0")) continue;
       final int index = Integer.parseInt(p[0]);
+      if (onModel.contains(index)) continue;
       LinearLayout line = row();
-      Button b = card("Model #" + index, String.format(Locale.ROOT, "%d KB", Long.parseLong(p[2]) / 1024));
-      b.setOnClickListener(v -> loadModel(index));
+      String label = names.containsKey(index) ? names.get(index) : "Model #" + index;
+      Button b = card(label, String.format(Locale.ROOT, "#%d · %d KB", index, Long.parseLong(p[2]) / 1024));
+      b.setClickable(false);
       line.addView(b, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-      Button piece = pill("+ Piece", false);
-      piece.setOnClickListener(v -> {
-        if (!modelLoaded) { toast("Choose the main model first"); return; }
+      Button add = pill("Add", false);
+      add.setOnClickListener(v -> {
+        if (!modelLoaded) { toast("Open a model first"); return; }
         String r = StudioBridge.togglePiece(index);
-        if (r.equals("added")) { style(piece, true); piece.setText("− Piece"); }
-        else if (r.equals("removed")) { style(piece, false); piece.setText("+ Piece"); }
-        else toast("Model #" + index + ": " + r);
+        if (!r.equals("added")) toast(label + ": " + r);
         updateInfo();
+        showTab(0);
       });
-      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(92), dp(54));
+      Button alone = pill("Alone", false);
+      alone.setOnClickListener(v -> loadModel(index, label));
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(58), dp(48));
       lp.setMargins(dp(6), 0, 0, 0);
-      line.addView(piece, lp);
+      line.addView(add, lp);
+      LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(dp(64), dp(48));
+      lp2.setMargins(dp(4), 0, 0, 0);
+      line.addView(alone, lp2);
       content.addView(line, item());
       shown++;
     }
-    if (shown == 0) content.addView(note("This archive holds no models."));
+    if (shown == 0) content.addView(note("Nothing else: every model of this archive is on the view."));
   }
 
   private void showAnimations() {
@@ -367,8 +425,7 @@ public final class StudioActivity extends Activity {
     addSource(sources, "This model's archive", archivePath);
     addSource(sources, "Leon (pl00)", discFile("em/pl00.drs"));
     addSource(sources, "Ganado (em10)", discFile("em/em10.drs"));
-    for (File f : packMotions()) addSource(sources, f.getParentFile().getParentFile().getName() + " · " + f.getName(),
-        f.getAbsolutePath());
+    for (String[] f : packMotions()) addSource(sources, f[1], f[0]);
     content.addView(sources);
     TextView head = text("Animations", 14, TEXT, true);
     head.setPadding(0, dp(10), 0, dp(4));
@@ -387,11 +444,13 @@ public final class StudioActivity extends Activity {
     }
   }
 
-  private void addSource(LinearLayout list, String label, String path) {
-    if (path == null || !new File(path).isFile()) return;
+  private void addSource(LinearLayout list, String label, String rel) {
+    if (rel == null || files.size(rel) < 0) return;
     Button b = pill(label, false);
     b.setOnClickListener(v -> {
-      int n = StudioBridge.useMotions(path);
+      String path = files.path(rel);
+      if (path == null) { toast(label + ": cannot be read"); return; }
+      int n = StudioBridge.useMotions(path, rel.substring(rel.lastIndexOf('/') + 1));
       if (n < 0) toast(label + ": " + StudioBridge.lastError());
       else toast(label + ": " + n + " animations");
       length = 0;
@@ -414,27 +473,49 @@ public final class StudioActivity extends Activity {
   }
 
   // ---- actions
-  private void openArchive(File f) {
-    String why = StudioBridge.openArchive(f.getAbsolutePath());
+  // an archive opened shows its whole model at once, as the game puts it together (DevJunior, 19.11.2026: "the models
+  // should open complete, easily")
+  private void openArchive(String rel, String name) {
+    String path = files.path(rel);
+    String why = path == null ? "cannot be read" : StudioBridge.openArchive(path, name);
     if (!why.isEmpty()) {
-      toast(f.getName() + ": " + why);
+      toast(name + ": " + why);
       return;
     }
-    archivePath = f.getAbsolutePath();
-    archiveName = f.getName();
-    showTab(0);
+    archivePath = rel;
+    archiveName = name;
+    loadComplete();
   }
 
-  private void loadModel(int index) {
-    String why = StudioBridge.loadModel(index, -1);
+  private void loadComplete() {
+    String why = StudioBridge.loadComplete();
+    highlighted = -1;
     if (!why.isEmpty()) {
-      toast("Model #" + index + ": " + why);
+      toast(archiveName + ": " + why);
+      modelLoaded = false;
+      showTab(0);
       return;
     }
     modelLoaded = true;
     length = 0;
     frame = 0;
-    title.setText(archiveName + " · model #" + index);
+    title.setText(archiveName);
+    updateInfo();
+    frameModel();
+    showTab(0);
+  }
+
+  private void loadModel(int index, String label) {
+    String why = StudioBridge.loadModel(index, -1);
+    highlighted = -1;
+    if (!why.isEmpty()) {
+      toast(label + ": " + why);
+      return;
+    }
+    modelLoaded = true;
+    length = 0;
+    frame = 0;
+    title.setText(archiveName + " · " + label + " alone");
     updateInfo();
     frameModel();
     showTab(0);
@@ -456,24 +537,22 @@ public final class StudioActivity extends Activity {
 
   private void updateInfo() { info.setText(StudioBridge.info()); }
 
-  // ---- files
-  private List<File> archives() {
-    List<File> out = new ArrayList<>();
+  // ---- files (below the game's folder game/, StudioFiles)
+  // the archives of the source: rel, file name, pack name ("" none), size
+  private List<String[]> archives() {
+    List<String[]> out = new ArrayList<>();
     if (source.equals("mods")) {
-      File[] packs = new File(game, "mods").listFiles();
-      if (packs != null) {
-        Arrays.sort(packs);
-        for (File p : packs) {
-          collect(new File(p, "em"), out);
-          collect(new File(new File(p, "files"), "em"), out);
-        }
+      for (StudioFiles.Item p : files.list("mods")) {
+        if (!p.dir) continue;
+        collect("mods/" + p.name + "/em", p.name, out);
+        collect("mods/" + p.name + "/files/em", p.name, out);
       }
     } else {
-      collect(new File(new File(new File(game, source), "files"), "em"), out);
+      collect(source + "/files/em", "", out);
     }
-    List<File> kept = new ArrayList<>();
-    for (File f : out) {
-      String n = f.getName().toLowerCase(Locale.ROOT);
+    List<String[]> kept = new ArrayList<>();
+    for (String[] f : out) {
+      String n = f[1].toLowerCase(Locale.ROOT);
       boolean pl = n.startsWith("pl"), em = n.startsWith("em"), wep = n.startsWith("wep");
       if (kind.equals("all") || (kind.equals("pl") && pl) || (kind.equals("em") && em) || (kind.equals("wep") && wep)
           || (kind.equals("other") && !pl && !em && !wep)) kept.add(f);
@@ -481,33 +560,33 @@ public final class StudioActivity extends Activity {
     return kept;
   }
 
-  private static void collect(File dir, List<File> out) {
-    File[] files = dir.listFiles();
-    if (files == null) return;
-    Arrays.sort(files);
-    for (File f : files) {
-      String n = f.getName().toLowerCase(Locale.ROOT);
-      if (f.isFile() && (n.endsWith(".drs") || n.endsWith(".das"))) out.add(f);
+  private void collect(String dir, String pack, List<String[]> out) {
+    for (StudioFiles.Item f : files.list(dir)) {
+      String n = f.name.toLowerCase(Locale.ROOT);
+      if (!f.dir && (n.endsWith(".drs") || n.endsWith(".das"))) {
+        out.add(new String[] {dir + "/" + f.name, f.name, pack, String.valueOf(f.size)});
+      }
     }
   }
 
   private String discFile(String rel) {
-    File f = new File(new File(new File(game, "disc1"), "files"), rel);
-    if (!f.isFile()) f = new File(new File(new File(game, "disc2"), "files"), rel);
-    return f.isFile() ? f.getAbsolutePath() : null;
+    for (String disc : new String[] {"disc1", "disc2"}) {
+      String r = disc + "/files/" + rel;
+      if (files.size(r) >= 0) return r;
+    }
+    return null;
   }
 
-  // the mod packs' animation archives (melee/*.dat: moves, reactions, finishers, kicks)
-  private List<File> packMotions() {
-    List<File> out = new ArrayList<>();
-    File[] packs = new File(game, "mods").listFiles();
-    if (packs == null) return out;
-    Arrays.sort(packs);
-    for (File p : packs) {
-      File[] files = new File(p, "melee").listFiles();
-      if (files == null) continue;
-      Arrays.sort(files);
-      for (File f : files) if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(".dat")) out.add(f);
+  // the mod packs' animation archives (melee/*.dat: moves, reactions, finishers, kicks): rel, label
+  private List<String[]> packMotions() {
+    List<String[]> out = new ArrayList<>();
+    for (StudioFiles.Item p : files.list("mods")) {
+      if (!p.dir) continue;
+      for (StudioFiles.Item f : files.list("mods/" + p.name + "/melee")) {
+        if (!f.dir && f.name.toLowerCase(Locale.ROOT).endsWith(".dat")) {
+          out.add(new String[] {"mods/" + p.name + "/melee/" + f.name, p.name + " · " + f.name});
+        }
+      }
     }
     return out;
   }
@@ -620,6 +699,7 @@ public final class StudioActivity extends Activity {
 
   @Override protected void onDestroy() {
     main.removeCallbacks(ticker);
+    if (files != null) files.close();
     super.onDestroy();
   }
 }

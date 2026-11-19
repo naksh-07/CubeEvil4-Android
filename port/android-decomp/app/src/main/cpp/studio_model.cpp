@@ -2,6 +2,7 @@
 #include "studio_model.h"
 #include "scene.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -27,8 +28,13 @@ bool readFile(const std::string &path, std::vector<std::uint8_t> &out) {
 
 }  // namespace
 
-bool Archive::open(const std::string &path, std::string *why) {
+bool Archive::open(const std::string &path, std::string *why, const std::string &name) {
   path_ = path;
+  name_ = name;
+  if (name_.empty()) {
+    const auto slash = path.find_last_of('/');
+    name_ = slash == std::string::npos ? path : path.substr(slash + 1);
+  }
   body_.clear();
   entries_.clear();
   offsets_.clear();
@@ -98,6 +104,71 @@ int Archive::paletteFor(unsigned bin) const {
   return -1;
 }
 
+namespace {
+
+// the game's own (BIN, TPL) pairs, as its PL_ARC indices (entry + 4: the archive's header words come first)
+struct GamePart {
+  int bin, tpl;
+  const char *label;
+};
+struct Character {
+  const char *files;  // the archives that use it, space separated
+  std::vector<GamePart> parts;
+};
+
+const std::vector<Character> &Characters() {
+  // pl_leon.cpp cPlLeon::setModel (costume 0: pl00; 1..3: pl08, pl09, pl10 with 0x10), setRightHand(0) 0x12,
+  // setLeftHand(1) 0x15; pl_ashley.cpp cPlAshley (pl01, pl05: right hand 0 0x11, left 0 0x14); pl02.cpp cPlAda (pl0b,
+  // pl0c: right 0 0x11, left 0 0x12); pl06.cpp cPlHunk (right 0 0x12, left 1 0x15); pl_klauser.cpp cPlKlauser (pl0a:
+  // the knife 0xE hidden; right 0 0x12, left 1 0x15); pl_wesker.cpp cPlWesker (pl0d: right 0 0x12, left 0 0x14);
+  // pl11.cpp cSubAshley (the partner: right 0xC, left 0xF)
+  static const std::vector<Character> all = {
+      {"pl00", {{4, 5, "Body"}, {0xA, 5, "Outfit"}, {8, 7, "Face"}, {6, 7, "Head"}, {9, 7, "Hair"},
+                {0x12, 0x11, "Right hand"}, {0x15, 0x11, "Left hand"}}},
+      {"pl08 pl09 pl10", {{4, 5, "Body"}, {0xA, 5, "Outfit"}, {0x10, 5, "Costume"}, {8, 7, "Face"}, {6, 7, "Head"},
+                          {9, 7, "Hair"}, {0x12, 0x11, "Right hand"}, {0x15, 0x11, "Left hand"}}},
+      {"pl01 pl05", {{4, 5, "Body"}, {7, 9, "Face"}, {6, 0xB, "Head"}, {8, 5, "Outfit"}, {0xA, 5, "Outfit 2"},
+                     {0x11, 5, "Right hand"}, {0x14, 5, "Left hand"}}},
+      {"pl11", {{4, 5, "Body"}, {7, 0xB, "Face"}, {6, 8, "Head"}, {9, 5, "Outfit"}, {0xA, 5, "Outfit 2"},
+                {0xC, 5, "Right hand"}, {0xF, 5, "Left hand"}}},
+      {"pl0b pl0c", {{4, 5, "Body"}, {6, 7, "Head"}, {8, 7, "Face"}, {9, 0xA, "Outfit"}, {0x11, 5, "Right hand"},
+                     {0x12, 5, "Left hand"}}},
+      {"pl06", {{4, 5, "Body"}, {6, 7, "Head"}, {0x12, 0x11, "Right hand"}, {0x15, 0x11, "Left hand"}}},
+      {"pl0a", {{4, 5, "Body"}, {6, 7, "Face"}, {8, 9, "Head"}, {0xA, 0xB, "Outfit"}, {0xF, 0x10, "Outfit 2"},
+                {0x18, 0x19, "Outfit 3"}, {0x12, 0x11, "Right hand"}, {0x15, 0x11, "Left hand"}}},
+      {"pl0d", {{4, 5, "Body"}, {0xA, 5, "Outfit"}, {8, 7, "Face"}, {6, 7, "Head"}, {0x12, 0x11, "Right hand"},
+                {0x14, 0x11, "Left hand"}}},
+  };
+  return all;
+}
+
+bool kindIs(const Archive &archive, int index, const char *kind) {
+  return index >= 0 && std::size_t(index) < archive.entries().size() && archive.entries()[std::size_t(index)].bytes &&
+         archive.entries()[std::size_t(index)].kind.compare(0, 3, kind) == 0;
+}
+
+}  // namespace
+
+std::vector<PartSpec> GameParts(const std::string &fileName, const Archive &archive) {
+  std::string stem = fileName;
+  if (auto slash = stem.find_last_of("/\\"); slash != std::string::npos) stem = stem.substr(slash + 1);
+  if (auto dot = stem.find('.'); dot != std::string::npos) stem = stem.substr(0, dot);
+  for (auto &c : stem) c = char(std::tolower(static_cast<unsigned char>(c)));
+  std::vector<PartSpec> out;
+  if (stem.size() != 4) return out;
+  for (const auto &character : Characters()) {
+    const std::string files = std::string(" ") + character.files + " ";
+    if (files.find(" " + stem + " ") == std::string::npos) continue;
+    for (const auto &p : character.parts) {
+      const int bin = p.bin - 4, tpl = p.tpl - 4;
+      if (!kindIs(archive, bin, "BIN")) continue;
+      out.push_back({unsigned(bin), kindIs(archive, tpl, "TPL") ? tpl : -1, p.label});
+    }
+    break;
+  }
+  return out;
+}
+
 Viewer::Viewer() = default;
 Viewer::~Viewer() = default;
 
@@ -133,6 +204,7 @@ bool Viewer::buildPiece(const Archive &archive, unsigned bin, int tpl, Piece &pi
       d.texture = image < images && !textures_[std::size_t(textureBase) + image].rgba.empty()
                       ? textureBase + int(image) : -1;
       d.alphaTest = (header[11] & 4) != 0;
+      d.piece = int(pieces_.size());
       for (const auto &triangle : primitive.triangles)
         for (auto corner : triangle) {
           const auto &ref = primitive.vertices.at(corner);
@@ -156,9 +228,11 @@ void Viewer::rebuild() {
   draws_.clear();
   uvs_.clear();
   std::size_t base = 0;
-  for (const auto &p : pieces_) {
+  for (std::size_t k = 0; k < pieces_.size(); ++k) {
+    const auto &p = pieces_[k];
     for (auto d : p.draws) {
       d.first += base;
+      d.piece = int(k);
       draws_.push_back(d);
     }
     uvs_.insert(uvs_.end(), p.uvs.begin(), p.uvs.end());
@@ -174,6 +248,7 @@ bool Viewer::loadModel(const Archive &archive, unsigned bin, int tpl, std::strin
   model_ = nullptr;
   textures_.clear();
   clip_ = -1;
+  highlight_ = -1;
   Piece piece;
   if (!buildPiece(archive, bin, tpl, piece, why)) return false;
   try {
@@ -196,13 +271,15 @@ bool Viewer::loadModel(const Archive &archive, unsigned bin, int tpl, std::strin
   return true;
 }
 
-bool Viewer::togglePiece(const Archive &archive, unsigned bin, int tpl, bool *added, std::string *why) {
+bool Viewer::togglePiece(const Archive &archive, unsigned bin, int tpl, bool *added, std::string *why,
+                         const std::string &label) {
   if (!model_) return false;
   for (std::size_t i = 1; i < pieces_.size(); ++i)
     if (pieceKeys_[i].first == archive.path() && pieceKeys_[i].second == bin) {
       pieces_.erase(pieces_.begin() + long(i));
       pieceKeys_.erase(pieceKeys_.begin() + long(i));
       pieceNames_.erase(pieceNames_.begin() + long(i));
+      highlight_ = -1;
       if (added) *added = false;
       rebuild();
       skin(rig_->bones());
@@ -223,7 +300,7 @@ bool Viewer::togglePiece(const Archive &archive, unsigned bin, int tpl, bool *ad
   }
   pieces_.push_back(std::move(piece));
   pieceKeys_.push_back({archive.path(), bin});
-  pieceNames_.push_back("#" + std::to_string(bin));
+  pieceNames_.push_back(label.empty() ? "#" + std::to_string(bin) : label);
   if (added) *added = true;
   rebuild();
   skin(rig_->bones());
@@ -233,11 +310,13 @@ bool Viewer::togglePiece(const Archive &archive, unsigned bin, int tpl, bool *ad
 int Viewer::addMotions(const Archive &archive, std::string *why) {
   int added = 0;
   const auto fcv = archive.of("FCV");
-  std::string base = archive.path();
-  if (auto slash = base.find_last_of('/'); slash != std::string::npos) base = base.substr(slash + 1);
+  const std::string base = archive.name();
   for (unsigned i : fcv) {
     AnimationBytes b;
     b.motion = archive.entry(i);
+    // an empty place of the archive (all zero: no frames) is no animation (DevJunior's device test 19.11.2026:
+    // "pl08.drs #23: unsupported preview frame range")
+    if (b.motion.size() < 4 || !((unsigned(b.motion[0]) << 8 | b.motion[1]) & 0x3FFF)) continue;
     // its sequence: the SEQ right after it, if any (the events: steps, sounds)
     if (i + 1 < archive.entries().size() && archive.entries()[i + 1].kind.compare(0, 3, "SEQ") == 0)
       b.sequence = archive.entry(i + 1);
@@ -268,7 +347,17 @@ bool Viewer::setMotion(int clip, std::string *why) {
       skin(rig_->bones());
       return clip < 0;
     }
-    auto rig = std::make_unique<AnimationRig>(*model_, std::vector<AnimationBytes>{clips_[std::size_t(clip)]});
+    std::unique_ptr<AnimationRig> rig;
+    try {
+      rig = std::make_unique<AnimationRig>(*model_, std::vector<AnimationBytes>{clips_[std::size_t(clip)]});
+    } catch (const std::exception &) {
+      // its events (the SEQ entry after it) may belong to another animation: the motion alone (the viewer needs no
+      // footsteps or sounds)
+      if (clips_[std::size_t(clip)].sequence.empty()) throw;
+      AnimationBytes alone = clips_[std::size_t(clip)];
+      alone.sequence.clear();
+      rig = std::make_unique<AnimationRig>(*model_, std::vector<AnimationBytes>{alone});
+    }
     rig->sample(0, 0);
     rig_ = std::move(rig);
     clip_ = clip;
@@ -283,14 +372,38 @@ bool Viewer::setMotion(int clip, std::string *why) {
   return true;
 }
 
+// (the frame count is maxFrame's low 14 bits; the top ones are flags, as MotionSetCore reads it)
 float Viewer::motionLength() const {
-  return rig_ && clip_ >= 0 ? rig_->maxFrame(0) : 0.f;
+  return rig_ && clip_ >= 0 ? float(unsigned(rig_->maxFrame(0)) & 0x3FFF) : 0.f;
+}
+
+bool Viewer::loadParts(const Archive &archive, const std::vector<PartSpec> &specs, std::string *why) {
+  if (specs.empty()) {
+    if (why) *why = "no parts";
+    return false;
+  }
+  if (!loadModel(archive, specs[0].bin, specs[0].tpl, why)) return false;
+  if (!specs[0].label.empty()) pieceNames_[0] = specs[0].label;
+  for (std::size_t i = 1; i < specs.size(); ++i) {
+    bool added = false;
+    std::string ignored;
+    togglePiece(archive, specs[i].bin, specs[i].tpl, &added, &ignored, specs[i].label);
+  }
+  restMinimum_ = minimum_;
+  restMaximum_ = maximum_;
+  return true;
+}
+
+std::vector<unsigned> Viewer::pieceEntries() const {
+  std::vector<unsigned> out;
+  for (const auto &k : pieceKeys_) out.push_back(k.second);
+  return out;
 }
 
 void Viewer::pose(float frame) {
   if (!rig_) return;
   if (clip_ >= 0) {
-    const float last = rig_->maxFrame(0);
+    const float last = motionLength();
     frame = std::isfinite(frame) ? std::clamp(frame, 0.f, last) : 0.f;
     try {
       rig_->sample(0, frame);

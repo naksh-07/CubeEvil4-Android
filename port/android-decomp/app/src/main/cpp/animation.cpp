@@ -139,7 +139,9 @@ std::unique_ptr<Clip> parseClip(const AnimationBytes &source,
   c.data.nParts = source.motion[2];
   // Original EM2A_MOT_TRAP1_SET is a real ten-frame FCV with zero
   // channels: MotionMove holds modelInit's authored rest parts.
-  if (!c.data.maxFrame || c.data.maxFrame > 1023)
+  // (Mods, 19.11.2026: CubeEvil4 Studio) the frame count is the low 14 bits, as the original MotionSetCore reads it
+  // (Seq_frame_num = maxFrame & 0x3FFF); the top bits are flags, and long clips (events) run past 1023 frames
+  if (!(c.data.maxFrame & 0x3FFF))
     throw std::runtime_error("FCV: unsupported preview frame range");
   auto table = (3u + unsigned(c.data.nParts) * 3 + 3) & ~3u;
   r.range(table, 4 + std::size_t(c.data.nParts) * 4);

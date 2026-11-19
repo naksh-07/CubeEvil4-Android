@@ -96,6 +96,8 @@ android {
         // a data folder of the player's choice (DataFolder): only the flavour "sideload" (1.0, the project owner's
         // wish of 16.11.2026); every other flavour keeps the app's own folder, with no menu entry and no permission
         buildConfigField 'boolean', 'CUSTOM_DATA_FOLDER', 'false'
+        // CubeEvil4 Studio's own APK (the flavour "studio") reads the game app's files (StudioFiles)
+        buildConfigField 'boolean', 'STUDIO_APP', 'false'
     }
     buildFeatures { buildConfig true }
     // classic: the app's own game modules (arm64-v8a), as before; since
@@ -168,8 +170,23 @@ android {
                 externalNativeBuild { cmake { arguments '-DRE4_EMULATOR_SHELL=ON' } }
             }
         }
+        // studio: CubeEvil4 Studio as an APK of its own (Mods, 19.11.2026; DevJunior: "the Studio an APK apart", the
+        //   players' APK without it). App id "com.ast.cubeevil4.studio", its launcher StudioActivity (src/studio's
+        //   manifest takes the game's activities out), only the library libre4studio (the viewer; no game core, no
+        //   core libraries); the discs and mod packs come from the game app (StudioDataProvider, same signing key).
+        //   Built as studioDebug / studioRelease (.github/workflows/build-apk.yml).
+        studio {
+            dimension 'engine'
+            applicationId 'com.ast.cubeevil4.studio'
+            versionNameSuffix '-studio'
+            minSdk 24
+            ndk { abiFilters 'armeabi-v7a', 'arm64-v8a' }
+            externalNativeBuild { cmake { arguments '-DRE4_CORE_MODE=ON'; targets 're4studio' } }
+            buildConfigField 'boolean', 'STUDIO_APP', 'true'
+        }
     }
     sourceSets {
+        // studio: only main's resources and its own manifest (src/studio), no game core libraries
         car {
             res.srcDirs = ['src/core/res', 'src/car/res']
             jniLibs.srcDirs = ['src/core/jniLibs']

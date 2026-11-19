@@ -33,7 +33,16 @@ int main(int argc, char **argv) {
     std::printf("%s: %zu entries, %zu BIN, %zu TPL, %zu FCV\n", argv[1], arc.entries().size(), arc.of("BIN").size(),
                 arc.of("TPL").size(), arc.of("FCV").size());
     Viewer v;
-    check(v.loadModel(arc, unsigned(std::atoi(argv[2])), -1, &why), ("model: " + why).c_str());
+    // BIN "game": the whole model as the game puts it together (GameParts)
+    if (argv[2] == std::string("game")) {
+      const auto specs = GameParts(arc.name(), arc);
+      check(!specs.empty(), "no game parts for this archive");
+      check(v.loadParts(arc, specs, &why), ("parts: " + why).c_str());
+      for (const auto &n : v.pieces()) std::printf("piece: %s\n", n.c_str());
+      if (const char *h = std::getenv("STUDIO_HIGHLIGHT")) v.setHighlight(std::atoi(h));
+    } else {
+      check(v.loadModel(arc, unsigned(std::atoi(argv[2])), -1, &why), ("model: " + why).c_str());
+    }
     std::printf("model: %u parts, %zu triangles, %zu textures, rest %.0f..%.0f mm high\n", v.parts(), v.triangles(),
                 v.textures().size(), v.restMinimum()[1], v.restMaximum()[1]);
     if (const char *pieces = std::getenv("STUDIO_PIECES")) {
@@ -52,7 +61,11 @@ int main(int argc, char **argv) {
     std::printf("motions: %d\n", v.addMotions(mot, &why));
     const int clip = std::atoi(argv[4]);
     int fit = 0;
-    for (int i = 0; i < v.motionCount(); ++i) fit += v.setMotion(i, nullptr);
+    for (int i = 0; i < v.motionCount(); ++i) {
+      std::string no;
+      if (v.setMotion(i, &no)) ++fit;
+      else std::printf("motion %s: %s\n", v.motionName(i).c_str(), no.c_str());
+    }
     std::printf("motions that fit the skeleton: %d of %d\n", fit, v.motionCount());
     if (clip >= 0) {
       check(v.setMotion(clip, &why), ("motion: " + why).c_str());

@@ -23,13 +23,23 @@ struct Draw {
   std::size_t first{}, count{};
   int texture = -1;  // index into textures(), -1 none (untextured)
   bool alphaTest{};
+  int piece = 0;     // which piece of the model it belongs to (the highlight)
+};
+
+// A part the game puts on a character: a BIN entry, its palette (TPL entry) and what it is
+struct PartSpec {
+  unsigned bin{};
+  int tpl = -1;
+  std::string label;
 };
 
 // An archive opened for the Studio: a disc archive with its part table (.drs, .das, .dat with one) or a DAT body
 // (a mod pack's melee/*.dat)
 class Archive {
 public:
-  bool open(const std::string &path, std::string *why);
+  // `name`: the file's own name when `path` does not carry it (a file the CubeEvil4 app hands over, /proc/self/fd/N)
+  bool open(const std::string &path, std::string *why, const std::string &name = "");
+  const std::string &name() const { return name_; }
   const std::vector<Entry> &entries() const { return entries_; }
   std::vector<std::uint8_t> entry(unsigned index) const;
   const std::string &path() const { return path_; }
@@ -39,11 +49,17 @@ public:
   int paletteFor(unsigned bin) const;
 
 private:
-  std::string path_;
+  std::string path_, name_;
   std::vector<std::uint8_t> body_;
   std::vector<Entry> entries_;
   std::vector<std::size_t> offsets_;
 };
+
+// The parts the game itself puts together for a character (its setModel: cPlLeon, cPlAshley, cPlAda, cPlHunk,
+// cPlKlauser, cPlWesker, cSubAshley), by the archive's file name (pl00.drs ...), the body first; each with the palette
+// the game gives it (Mods, 19.11.2026, DevJunior's device test: "the models do not load complete", "texture errors":
+// the next TPL after a BIN is not always its own, Leon's face took the wound's). Empty: a file it does not know.
+std::vector<PartSpec> GameParts(const std::string &fileName, const Archive &archive);
 
 class Viewer {
 public:
@@ -54,7 +70,16 @@ public:
   bool hasModel() const { return model_ != nullptr; }
   // another model on the same skeleton (a head, hands, a jacket: its weights name the first model's joints); false
   // when it does not fit. Taken off again by a second call (toggle); `added` says which.
-  bool togglePiece(const Archive &archive, unsigned bin, int tpl, bool *added, std::string *why);
+  bool togglePiece(const Archive &archive, unsigned bin, int tpl, bool *added, std::string *why,
+                   const std::string &label = "");
+  // the whole model as the game puts it together: specs[0] the main model, the others pieces on its skeleton (those
+  // that do not fit are left out); false when the main model cannot be read
+  bool loadParts(const Archive &archive, const std::vector<PartSpec> &specs, std::string *why);
+  // the BIN entries shown (the main model first) and their names
+  std::vector<unsigned> pieceEntries() const;
+  // one piece drawn tinted (the one the list points at); -1 none
+  void setHighlight(int piece) { highlight_ = piece; }
+  int highlight() const { return highlight_; }
   // the entries shown: the first model's, then the pieces'
   std::vector<std::string> pieces() const { return pieceNames_; }
   // the animations: FCV entries of an archive (the model's own or a pack's); returns how many were added
@@ -106,6 +131,7 @@ private:
   std::vector<std::string> names_;
   int clip_ = -1;
   bool inPlace_ = true;
+  int highlight_ = -1;
   std::vector<float> positions_, normals_, uvs_;
   std::vector<Draw> draws_;
   std::vector<Texture> textures_;

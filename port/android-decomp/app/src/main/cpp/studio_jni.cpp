@@ -37,6 +37,13 @@ jobjectArray strings(JNIEnv *env, const std::vector<std::string> &list) {
 
 void log(const std::string &what) { __android_log_print(ANDROID_LOG_INFO, "RE4Studio", "%s", what.c_str()); }
 
+// the game's own part for a BIN of the open archive (its palette and name), if it is one
+PartSpec specFor(unsigned bin) {
+  for (const auto &p : GameParts(gArchive.name(), gArchive))
+    if (p.bin == bin) return p;
+  return {bin, -1, ""};
+}
+
 }  // namespace
 
 #define STUDIO(name) Java_com_ast_re4decomp_StudioBridge_##name
@@ -44,10 +51,10 @@ void log(const std::string &what) { __android_log_print(ANDROID_LOG_INFO, "RE4St
 extern "C" {
 
 // "" or why the archive cannot be shown
-JNIEXPORT jstring JNICALL STUDIO(openArchive)(JNIEnv *env, jclass, jstring path) {
+JNIEXPORT jstring JNICALL STUDIO(openArchive)(JNIEnv *env, jclass, jstring path, jstring name) {
   std::lock_guard<std::mutex> lock(gLock);
   std::string why;
-  const bool ok = gArchive.open(text(env, path), &why);
+  const bool ok = gArchive.open(text(env, path), &why, text(env, name));
   log("archive " + text(env, path) + (ok ? ": " + std::to_string(gArchive.entries().size()) + " entries" : ": " + why));
   return env->NewStringUTF(ok ? "" : why.c_str());
 }
@@ -64,7 +71,8 @@ JNIEXPORT jobjectArray JNICALL STUDIO(entries)(JNIEnv *env, jclass) {
 JNIEXPORT jstring JNICALL STUDIO(loadModel)(JNIEnv *env, jclass, jint bin, jint tpl) {
   std::lock_guard<std::mutex> lock(gLock);
   std::string why;
-  const bool ok = gViewer.loadModel(gArchive, unsigned(bin), tpl, &why);
+  const auto spec = specFor(unsigned(bin));
+  const bool ok = gViewer.loadModel(gArchive, unsigned(bin), tpl >= 0 ? tpl : spec.tpl, &why);
   if (ok) {
     gViewer.clearMotions();
     gViewer.addMotions(gArchive, nullptr);  // the model's own archive's animations first
@@ -74,22 +82,69 @@ JNIEXPORT jstring JNICALL STUDIO(loadModel)(JNIEnv *env, jclass, jint bin, jint 
   return env->NewStringUTF(ok ? "" : why.c_str());
 }
 
+// the whole model as the game puts it together (the archive's character: GameParts), else its first model; "" or why
+JNIEXPORT jstring JNICALL STUDIO(loadComplete)(JNIEnv *env, jclass) {
+  std::lock_guard<std::mutex> lock(gLock);
+  std::string why;
+  auto specs = GameParts(gArchive.name(), gArchive);
+  if (specs.empty()) {
+    const auto bins = gArchive.of("BIN");
+    if (bins.empty()) return env->NewStringUTF("this archive holds no models");
+    specs.push_back({bins[0], -1, "Model #" + std::to_string(bins[0])});
+  }
+  const bool ok = gViewer.loadParts(gArchive, specs, &why);
+  if (ok) {
+    gViewer.clearMotions();
+    gViewer.addMotions(gArchive, nullptr);
+    gUpload = true;
+  }
+  log("complete model of " + gArchive.name() + (ok ? ": " + std::to_string(gViewer.pieces().size()) + " pieces, " +
+      std::to_string(gViewer.triangles()) + " triangles" : ": " + why));
+  return env->NewStringUTF(ok ? "" : why.c_str());
+}
+
+// the pieces shown: "entry\tname" (the main model first)
+JNIEXPORT jobjectArray JNICALL STUDIO(parts)(JNIEnv *env, jclass) {
+  std::lock_guard<std::mutex> lock(gLock);
+  std::vector<std::string> out;
+  const auto entries = gViewer.pieceEntries();
+  const auto names = gViewer.pieces();
+  for (std::size_t i = 0; i < entries.size() && i < names.size(); ++i)
+    out.push_back(std::to_string(entries[i]) + "\t" + names[i]);
+  return strings(env, out);
+}
+
+// the names the game gives the open archive's models: "entry\tname" (none for an archive it does not know)
+JNIEXPORT jobjectArray JNICALL STUDIO(partNames)(JNIEnv *env, jclass) {
+  std::lock_guard<std::mutex> lock(gLock);
+  std::vector<std::string> out;
+  for (const auto &p : GameParts(gArchive.name(), gArchive)) out.push_back(std::to_string(p.bin) + "\t" + p.label);
+  return strings(env, out);
+}
+
+// the piece drawn tinted (its place in parts()), -1 none
+JNIEXPORT void JNICALL STUDIO(highlight)(JNIEnv *, jclass, jint piece) {
+  std::lock_guard<std::mutex> lock(gLock);
+  gViewer.setHighlight(piece);
+}
+
 // "added", "removed" or why not
 JNIEXPORT jstring JNICALL STUDIO(togglePiece)(JNIEnv *env, jclass, jint bin) {
   std::lock_guard<std::mutex> lock(gLock);
   std::string why;
   bool added = false;
-  const bool ok = gViewer.togglePiece(gArchive, unsigned(bin), -1, &added, &why);
+  const auto spec = specFor(unsigned(bin));
+  const bool ok = gViewer.togglePiece(gArchive, unsigned(bin), spec.tpl, &added, &why, spec.label);
   if (ok) gUpload = true;
   return env->NewStringUTF(ok ? (added ? "added" : "removed") : why.c_str());
 }
 
 // the animations of another archive (a disc archive or a mod pack's .dat) in place of the list: how many, -1 none
-JNIEXPORT jint JNICALL STUDIO(useMotions)(JNIEnv *env, jclass, jstring path) {
+JNIEXPORT jint JNICALL STUDIO(useMotions)(JNIEnv *env, jclass, jstring path, jstring name) {
   std::lock_guard<std::mutex> lock(gLock);
   Archive a;
   std::string why;
-  if (!a.open(text(env, path), &why)) {
+  if (!a.open(text(env, path), &why, text(env, name))) {
     gError = why;
     return -1;
   }

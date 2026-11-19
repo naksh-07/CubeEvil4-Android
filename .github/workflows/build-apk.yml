@@ -118,10 +118,13 @@ jobs:
           done
           [ -f "$zip" ] || { echo "Gradle could not be downloaded"; exit 1; }
           sed -i "s|^distributionUrl=.*|distributionUrl=file\\://$zip|" $props
-          bash ./gradlew --no-daemon assembleCoreDebug -Pre4.modsBuild
+          # the game (core) and CubeEvil4 Studio, an APK of its own (flavour "studio", DevJunior 19.11.2026: only for him,
+          # the players' APK without it); same debug key, so the Studio may read the game app's files
+          bash ./gradlew --no-daemon assembleCoreDebug assembleStudioDebug -Pre4.modsBuild
           short=$(git rev-parse --short HEAD)
           mkdir -p "$GITHUB_WORKSPACE/out"
           cp app/build/outputs/apk/core/debug/*.apk "$GITHUB_WORKSPACE/out/CubeEvil4-Mods-$short.apk"
+          cp app/build/outputs/apk/studio/debug/*.apk "$GITHUB_WORKSPACE/out/CubeEvil4-Studio-$short.apk"
           ls -la "$GITHUB_WORKSPACE/out"
 
       - name: Release "mods-latest" (the APK to download)

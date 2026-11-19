@@ -88,9 +88,13 @@ if(ANDROID)
         message(FATAL_ERROR "This port supports arm64-v8a only")
     endif()
     add_library(re4decomp SHARED android_bridge.cpp scene_gl.cpp event_focus_gl.cpp foot_shadow_gl.cpp environment_gl.cpp world_effects_gl.cpp actor_gl.cpp event_actor_gl.cpp event_mirror_gl.cpp)
-    # CubeEvil4 Studio (Mods, 19.11.2026): its own viewer, without the game
-    target_sources(re4decomp PRIVATE studio_gl.cpp studio_jni.cpp)
     target_link_libraries(re4decomp PRIVATE re4_platform GLESv3 log)
+    # CubeEvil4 Studio (Mods, 19.11.2026): its own viewer, without the game, in a library of its own (DevJunior,
+    # 19.11.2026: the Studio is an APK of its own, the flavour "studio"; it loads only this one: libre4decomp's
+    # JNI_OnLoad would load the game core)
+    add_library(re4studio SHARED studio_gl.cpp studio_jni.cpp)
+    target_link_libraries(re4studio PRIVATE re4_platform GLESv3 log)
+    target_link_options(re4studio PRIVATE "-Wl,-z,max-page-size=16384")
     if(RE4_CORE_MODE)
         # the core in a process of its own when MEM1 is taken here (port/docs/32bit-kernprozess.md)
         target_sources(re4decomp PRIVATE core_mode.cpp core_scene.cpp gx_gl.cpp gx_core.cpp gx_renderer.cpp gx_gl_shader.cpp gx_selfcheck.cpp gx_texture.cpp
@@ -106,7 +110,7 @@ if(ANDROID)
     # Test APKs otherwise build the native resource parsers and motion engine
     # with -O0. Keep symbols/assertions, and the original floating-point rules,
     # while preparing imported rooms and actors with optimized native code.
-    foreach(task_native_target re4_platform re4_motion64 re4decomp)
+    foreach(task_native_target re4_platform re4_motion64 re4decomp re4studio)
         target_compile_options(${task_native_target} PRIVATE -O2 -fno-fast-math -ffp-contract=off)
     endforeach()
 else()
@@ -295,7 +299,7 @@ else()
         find_package(JNI)
         if(JNI_INCLUDE_DIRS)
             enable_language(C)
-            add_library(re4decomp_link_check SHARED android_bridge.cpp scene_gl.cpp event_focus_gl.cpp foot_shadow_gl.cpp environment_gl.cpp world_effects_gl.cpp actor_gl.cpp event_actor_gl.cpp event_mirror_gl.cpp studio_gl.cpp studio_jni.cpp
+            add_library(re4decomp_link_check SHARED android_bridge.cpp scene_gl.cpp event_focus_gl.cpp foot_shadow_gl.cpp environment_gl.cpp world_effects_gl.cpp actor_gl.cpp event_actor_gl.cpp event_mirror_gl.cpp
                 core_mode.cpp core_scene.cpp gx_gl.cpp gx_core.cpp gx_renderer.cpp gx_gl_shader.cpp gx_selfcheck.cpp gx_texture.cpp
                 "${RE4_CORE_INCLUDE}/core_ipc.cpp" "${RE4_CORE_INCLUDE}/core_ipc_client.cpp" ../../../../tools/host_android/android_log.c)
             target_include_directories(re4decomp_link_check PRIVATE ${RE4_GLES_INCLUDE_DIR} "${RE4_CORE_INCLUDE}"
@@ -303,6 +307,13 @@ else()
             target_link_libraries(re4decomp_link_check PRIVATE re4_platform ${RE4_EGL_LIBRARY} ${RE4_GLES_LIBRARY} dl)
             target_compile_definitions(re4decomp_link_check PRIVATE __ANDROID_API__=21)
             target_link_options(re4decomp_link_check PRIVATE -Wl,--no-undefined)
+            # the Studio's own library (the flavour "studio" loads only it): nothing left open but GLES and the log
+            add_library(re4studio_link_check SHARED studio_gl.cpp studio_jni.cpp ../../../../tools/host_android/android_log.c)
+            target_include_directories(re4studio_link_check PRIVATE ${RE4_GLES_INCLUDE_DIR}
+                ../../../../tools/host_android ${JNI_INCLUDE_DIRS})
+            target_link_libraries(re4studio_link_check PRIVATE re4_platform ${RE4_GLES_LIBRARY})
+            target_compile_definitions(re4studio_link_check PRIVATE __ANDROID_API__=21)
+            target_link_options(re4studio_link_check PRIVATE -Wl,--no-undefined)
         endif()
         # pictures of core snapshots (RE4_BRIDGE_SNAPSHOT) with the disc data:
         # the local r100 check (port/tools/whole_r100_check.sh)
