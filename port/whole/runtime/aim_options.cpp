@@ -151,6 +151,7 @@ extern "C" void re4_finish_set(int on);                   // runtime/finisher.cp
 extern "C" void re4_move_set(int on);                     // runtime/locomotion.cpp
 extern "C" void re4_react_set(int on);                    // runtime/react.cpp
 extern "C" int re4_move_sprint(int held);                 // runtime/locomotion.cpp
+extern "C" void re4_move_jog_press(void);                 // runtime/locomotion.cpp
 extern "C" void re4_back_adjust_set(int word);           // runtime/wardrobe.cpp
 extern "C" void re4_ashley_gun_set(int on);             // runtime/ashley_gun.cpp
 // Patch 0905 (title.cpp titleWait): 1 = the title starts at its main menu (the app's "Skip intro logos"; on the PC
@@ -168,6 +169,13 @@ void re4_aim_set(int bits)
         re4_finish_set((bits >> 13) & 1);      // bit 13 "Finishers" (patch 0921, runtime/finisher.cpp)
         re4_move_set((bits >> 14) & 1);        // bit 14 "Remake movement" (patch 0923, runtime/locomotion.cpp)
         re4_react_set((bits >> 15) & 1);       // bit 15 "Remake reactions" (patch 0925, runtime/react.cpp)
+        // bit 16 toggled by each press of L3, the app's "Jog" (runtime/locomotion.cpp)
+        static std::atomic<int> jogBit(-1);
+        const int jog = (bits >> 16) & 1;
+        const int jogBefore = jogBit.exchange(jog);
+        if (jogBefore >= 0 && jogBefore != jog) {
+            re4_move_jog_press();
+        }
         int knife = bits & 0xFFF;
         knife = knife == 0 ? 0 : knife < 50 ? 50 : knife > 300 ? 300 : knife;
         if (gKnifeSpeed.exchange(knife) != knife) {

@@ -25,12 +25,13 @@ public final class ActionMapTests {
   public static void main(String[] args) {
     final int A = CoreInput.KEYCODE_BUTTON_A, B = CoreInput.KEYCODE_BUTTON_B, X = CoreInput.KEYCODE_BUTTON_X,
         Y = CoreInput.KEYCODE_BUTTON_Y, L1 = CoreInput.KEYCODE_BUTTON_L1, R1 = CoreInput.KEYCODE_BUTTON_R1,
+        L3 = CoreInput.KEYCODE_BUTTON_THUMBL,
         L2 = CoreInput.KEYCODE_BUTTON_L2, R2 = CoreInput.KEYCODE_BUTTON_R2;
 
     // one entry per action in every table (a missing one ended the app at its start, 08.11.2026)
     check(ActionMap.OUT.length == ActionMap.ACTIONS && ActionMap.HOLD.length == ActionMap.ACTIONS
         && ActionMap.NAMES.length == ActionMap.ACTIONS);
-    check(ActionMap.defaults(ActionMap.KIND_CONTROLLER).describe(k -> "k" + k).endsWith("quick reload = k102"));
+    check(ActionMap.defaults(ActionMap.KIND_CONTROLLER).describe(k -> "k" + k).endsWith("quick reload = k102, jog = k106"));
     check(ActionMap.defaults(ActionMap.KIND_KEYBOARD).describe(k -> "k" + k).contains("quick reload = k46"));
     ActionMap c = ActionMap.defaults(ActionMap.KIND_CONTROLLER);
     check(c.isDefault() && c.encode() == null);
@@ -43,6 +44,8 @@ public final class ActionMapTests {
     check(press(c, CoreInput.KEYCODE_BUTTON_SELECT) == 0 && c.singleOn(CoreInput.KEYCODE_BUTTON_SELECT) == ActionMap.APP_MENU);
     check(press(c, L1) == 0 && c.singleOn(L1) == ActionMap.QUICK_RELOAD);  // the quick reload: an app action
     check(ActionMap.defaults(ActionMap.KIND_KEYBOARD).singleOn(ActionMap.KEY_R) == ActionMap.QUICK_RELOAD);
+    check(c.singleOn(L3) == ActionMap.JOG && press(c, L3) == 0);  // the jog: an app action (18.11.2026)
+    check(ActionMap.defaults(ActionMap.KIND_KEYBOARD).singleOn(ActionMap.KEY_CTRL_LEFT) == ActionMap.JOG);
     check(!ActionMap.available(ActionMap.KIND_CONTROLLER, ActionMap.MOVE_FORWARD));
     check(c.assign(ActionMap.MAP, new int[] {CoreInput.KEYCODE_DPAD_LEFT}) == null);  // the D-pad stays the D-pad
     check(c.assign(ActionMap.MOVE_FORWARD, new int[] {A}) == null);

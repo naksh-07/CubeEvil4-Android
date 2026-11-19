@@ -30,24 +30,27 @@ public final class ActionMap {
       // each tilts it fully that way; up zooms the scope and the binoculars in, down out, as on the GameCube
       C_UP = 16, C_DOWN = 17, C_LEFT = 18, C_RIGHT = 19,
       // the mods' quick reload (after upstream's numbers since the merge of 0.99.15)
-      QUICK_RELOAD = 20, ACTIONS = 21;
+      QUICK_RELOAD = 20,
+      // the mods' jog (the remake's movements: a press toggles walking and jogging, CoreBridge.toggleJog; wish of
+      // DevJunior, 18.11.2026: "to jog you press the left stick while walking")
+      JOG = 21, ACTIONS = 22;
   /** The actions in the order of the page: the C stick after the moves. */
   public static final int[] PAGE = {MOVE_FORWARD, MOVE_BACK, MOVE_LEFT, MOVE_RIGHT, C_UP, C_DOWN, C_LEFT, C_RIGHT,
-      ACTION, RUN, AIM, FIRE, RELOAD, QUICK_RELOAD, KNIFE, SLASH, ASHLEY, INVENTORY, MAP, OPTIONS, APP_MENU};
+      ACTION, RUN, JOG, AIM, FIRE, RELOAD, QUICK_RELOAD, KNIFE, SLASH, ASHLEY, INVENTORY, MAP, OPTIONS, APP_MENU};
   public static final int KIND_CONTROLLER = 0, KIND_KEYBOARD = 1;
 
   /** The GameCube button of each action (the moves: the stick; the app's menu: none). */
   static final int[] OUT = {0, 0, 0, 0, CoreInput.GC_A, CoreInput.GC_B, CoreInput.GC_R, CoreInput.GC_A,
       CoreInput.GC_B, CoreInput.GC_L, CoreInput.GC_A, CoreInput.GC_X, CoreInput.GC_Y, CoreInput.GC_Z,
-      CoreInput.GC_START, 0, 0, 0, 0, 0, 0};
+      CoreInput.GC_START, 0, 0, 0, 0, 0, 0, 0};
   /** The action a combination holds with its first key; -1: a single key. */
-  static final int[] HOLD = {-1, -1, -1, -1, -1, -1, -1, AIM, AIM, -1, KNIFE, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+  static final int[] HOLD = {-1, -1, -1, -1, -1, -1, -1, AIM, AIM, -1, KNIFE, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 
   // android.view.KeyEvent key codes
   static final int KEY_I = 37, KEY_J = 38, KEY_K = 39, KEY_L = 40;
   static final int KEY_A = 29, KEY_C = 31, KEY_D = 32, KEY_E = 33, KEY_F = 34, KEY_M = 41, KEY_Q = 45, KEY_R = 46,
       KEY_S = 47, KEY_W = 51, KEY_SHIFT_LEFT = 59, KEY_SPACE = 62, KEY_ENTER = 66, KEY_DEL = 67, KEY_TAB = 61,
-      KEY_ESCAPE = 111, KEY_F1 = 131, KEY_NUMPAD_ENTER = 160;
+      KEY_ESCAPE = 111, KEY_F1 = 131, KEY_NUMPAD_ENTER = 160, KEY_CTRL_LEFT = 113;
   /**
    * The mouse's buttons as keys of the keyboard's mapping (step 2, 29.10.2026): codes above Android's key
    * codes (left, right, middle, back = 4, forward = 5).
@@ -106,7 +109,7 @@ public final class ActionMap {
    * The default of `kind`. The controller's is its layout without a mapping (CoreInput): A action, B run,
    * R2 aim, R2+A fire, R2+B reload, L2 knife, L2+A slash, X Ashley, Y inventory, R1 map, START options,
    * SELECT the app's menu, L1 the quick reload (reload without aiming, as in the remake: an app action,
-   * CoreBridge.requestReload; wish of DevJunior, 08.11.2026; the keyboard: R). The keyboard's with the mouse: WASD move, E action, left Shift run, the right
+   * CoreBridge.requestReload; wish of DevJunior, 08.11.2026; the keyboard: R), L3 the jog (the keyboard: left Ctrl). The keyboard's with the mouse: WASD move, E action, left Shift run, the right
    * mouse button aims, right + left fire, right + R reload, C knife, C + left slash, Q Ashley, Tab
    * inventory, M map, Esc options, F1 the app's menu.
    */
@@ -128,6 +131,7 @@ public final class ActionMap {
       m.keys[OPTIONS] = new int[] {CoreInput.KEYCODE_BUTTON_START};
       m.keys[APP_MENU] = new int[] {CoreInput.KEYCODE_BUTTON_SELECT};
       m.keys[QUICK_RELOAD] = new int[] {CoreInput.KEYCODE_BUTTON_L1};
+      m.keys[JOG] = new int[] {CoreInput.KEYCODE_BUTTON_THUMBL};
     } else {
       m.keys[MOVE_FORWARD] = new int[] {KEY_W};
       m.keys[MOVE_BACK] = new int[] {KEY_S};
@@ -146,6 +150,7 @@ public final class ActionMap {
       m.keys[OPTIONS] = new int[] {KEY_ESCAPE};
       m.keys[APP_MENU] = new int[] {KEY_F1};
       m.keys[QUICK_RELOAD] = new int[] {KEY_R};
+      m.keys[JOG] = new int[] {KEY_CTRL_LEFT};
       // the C stick (0.99.15): I K J L, a second WASD for the right hand; I zooms the scope in, K out
       m.keys[C_UP] = new int[] {KEY_I};
       m.keys[C_DOWN] = new int[] {KEY_K};
@@ -277,7 +282,8 @@ public final class ActionMap {
   private boolean held(Held h, int action) { return keys[action].length == 1 && h.held(keys[action][0]); }
 
   static final String[] NAMES = {"forward", "back", "left", "right", "action", "run", "aim", "fire", "reload",
-      "knife", "slash", "Ashley", "inventory", "map", "options", "app menu", "C up", "C down", "C left", "C right", "quick reload"};
+      "knife", "slash", "Ashley", "inventory", "map", "options", "app menu", "C up", "C down", "C left", "C right", "quick reload",
+      "jog"};
 
   /** For the log: "action = A, run = B, …, fire = R2+A" with the keys' names. */
   public String describe(java.util.function.IntFunction<String> keyName) {

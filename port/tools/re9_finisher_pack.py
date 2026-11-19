@@ -64,7 +64,10 @@ its class, u8 0, u16 its entry, u16 its last frame, u16 0.
 (searched: the pair of frames LOOP_SEARCH apart whose poses differ least) of the stand, the walk, the jog (the game's
 run), the walk back and the two turns in place (wheel loops); without fingers (the game's hands hold the weapon).
 Entry 0 ("MOV1", big-endian): per movement u8 the motion table's slot (m_MotTbl: 0 stand, 2 walk, 6 run, 8 back), u8 flags (1 its speed matched to the game's at runtime: walk, run, back), u16 its entry, u16
-its last frame, u16 the right and the left foot's strike (game frames, 0xFFFF none), u16 pad.
+its last frame, u16 the right and the left foot's strike (game frames, 0xFFFF none), u16 pad. After the rows "STK1"
+and per row u8 n and n u16: every footstep of the motion (contacts(): the foot coming down onto the floor; its game
+frame, 0x4000 the left foot), for the footstep sounds of the clips and of loops of several strides (device report
+18.11.2026: no footsteps while running).
 
 Game files and the PC mod's files never go into the repository; this tool only reads and writes the paths given.
 """
@@ -121,6 +124,9 @@ CSAW_MOVES = ["1200_knife_parry_F_start", "1202_knife_parry_F_end"]
 # half round so that Leon faces the Ganado as in the block (device video 16.11.2026: "he comes out with his back to
 # the enemy")
 CSAW_YAW = {"1202_knife_parry_F_end": math.pi}
+# the push's game frames over which Leon's heading turns into his body's (Fit.settle; runtime/parry.cpp plays it from
+# kPushFrom and ends it at kPushEnd)
+CSAW_SETTLE = {"1202_knife_parry_F_end": (12, 62)}
 
 HANDGUNS = [1, 2, 3, 4, 0x11]  # item.cpp wep_info: the handguns' weapon numbers (em_sub.cpp HandgunCk)
 
@@ -213,6 +219,28 @@ class Fit:
         self.hold_back = True
         top = float(self.model.parts[0].pos[1])
         self.rows = [(r[0], np.array([r[1][0], min(r[1][1], top), r[1][2]])) + tuple(r[2:]) for r in self.rows]
+
+    def settle(self, start, end):
+        """From game frame `start` to `end` the root heading turns into the body's (the pelvis' facing against the
+        root at `end`) and the body back by as much: the pose stays, but at `end` Leon's own heading is where his body
+        faces, so the motion after it starts there (device report 18.11.2026: after the chainsaw clash's push he
+        swung sideways into his stand, also into his aim)."""
+        last = min(end, len(self.rows) - 1)
+        turn = RT.yaw_of(self.rows[last][0][17]) if 17 in self.rows[last][0] else 0.0
+        rows, root = [], []
+        for i, (row, (p, y)) in enumerate(zip(self.rows, self.root)):
+            t = min(max((i - start) / float(max(1, end - start)), 0.0), 1.0)
+            d = turn * t * t * (3.0 - 2.0 * t)
+            back = RT.rot_y(-d)
+            local = dict(row[0])
+            for part in (1, 17):
+                if part in local:
+                    local[part] = back @ local[part]
+            pts = {k: back @ v for k, v in row[2].items()} if isinstance(row[2], dict) else row[2]
+            rows.append((local, back @ np.array(row[1]), pts, (p, y + d)) + tuple(row[4:]))
+            root.append((p, y + d))
+        self.rows, self.root = rows, root
+        return math.degrees(turn)
 
     def motion(self, world_scale):
         fixed = None
@@ -376,11 +404,12 @@ def kicks(root, model, tol, out_path, no_fingers, box=None, box_kick=None):
     for name in CSAW_MOVES:
         m = next(x for x in csaw if x.name.endswith(name))
         fit = Fit(m, model, "leon", 2.0, tol, m.frames, no_fingers, yaw_offset=CSAW_YAW.get(name, 0.0))
+        settled = fit.settle(*CSAW_SETTLE[name]) if name in CSAW_SETTLE else 0.0
         data = fcv.serialise(fit.motion(fit.scale))
         c = fit.check(data)
         entries.append(data)
-        print("chainsaw clash %-28s %d game frames, %d bytes; check %.1f/%.1f deg" % (
-            name, len(fit.frames), len(data), c[0], c[1]))
+        print("chainsaw clash %-28s %d game frames, %d bytes, heading settled %.0f deg; check %.1f/%.1f deg" % (
+            name, len(fit.frames), len(data), settled, c[0], c[1]))
     if box_kick:
         path, _, name = box_kick.partition(":")
         _v, km = R.read_motlist(Path(path))
@@ -406,8 +435,11 @@ def kicks(root, model, tol, out_path, no_fingers, box=None, box_kick=None):
 
 # Leon's movements (--move): (slot, the cha0_general motion, (first, last) cycle lengths searched in source frames or None
 # for the whole motion, flags)
+# The jog: its whole motion (360 source frames, eight strides; its last pose is its first): one stride of it (46
+# frames) closes only within 0.33 of a pose's distance, its strides differ (device report 18.11.2026: the run looked
+# cut at one point and started over).
 MOVES = [(0, "0160_stand_loop", (150, 300), 0), (2, "0403_walk_F_loop", (60, 70), 1),
-         (6, "0520_jog_loop_VerA", (40, 50), 1), (8, "0443_walk_B_loop", (50, 170), 1)]
+         (6, "0520_jog_loop_VerA", None, 1), (8, "0443_walk_B_loop", (50, 170), 1)]
 # the transitions (wish of DevJunior, 16.11.2026: "starts, stops and turns as in the remake", Leon still turning to
 # where he goes): (code of runtime/locomotion.cpp, the cha0_general motion). 0x80 / 0x81 setting off / stopping from a
 # walk, 0x82 / 0x83 from a run, 0x84 / 0x85 turning about to the left / right while running, 0x86 / 0x87 standing
@@ -446,6 +478,28 @@ def find_loop(motion, lengths):
     return best[1], best[2]
 
 
+def contacts(motion, frames, low=0.035, lift=0.07):
+    """Game frames (indices into `frames`) where a foot comes down onto the floor, with the foot (0 right, 1 left): its
+    height below its lowest plus `low` after it was raised above its lowest plus `lift` (metres)."""
+    src = RT.Source(motion)
+    hs = ([], [])
+    for f in frames:
+        _rot, pos = src.pose(f)
+        hs[0].append(pos[src.by_name["R_Foot"]][1])
+        hs[1].append(pos[src.by_name["L_Foot"]][1])
+    out = []
+    for foot, h in enumerate(hs):
+        base = min(h)
+        up = h[0] > base + lift
+        for i in range(1, len(h)):
+            if h[i] > base + lift:
+                up = True
+            elif up and h[i] < base + low:
+                out.append((i, foot))
+                up = False
+    return sorted(out)
+
+
 def plants(motion, first, length, back=False):
     """Game frames (from the cycle's start) where the right and the left foot strike: furthest ahead of the hips along
     the way (behind them walking back)."""
@@ -465,7 +519,7 @@ def plants(motion, first, length, back=False):
 def moves(root, model, tol, out_path):
     """Leon's movements (see --move)."""
     _v, mots = R.read_motlist(root / CHA0)
-    entries, table = [b""], []
+    entries, table, steps = [b""], [], []
     for slot, name, lengths, flags in MOVES:
         m = next(x for x in mots if x.name.endswith(name))
         first, length = find_loop(m, lengths)
@@ -476,9 +530,12 @@ def moves(root, model, tol, out_path):
         entries.append(data)
         feet = plants(m, first, length, back=slot == 8) if flags & 1 else [0xFFFF, 0xFFFF]
         table.append(struct.pack(">BBHHHHH", slot, flags, len(entries) - 1, len(fit.frames) - 1, feet[0], feet[1], 0))
+        # the strikes of a loop: all of them (a loop of several strides), the last frame being the first again
+        steps.append([] if not flags & 1 else [(i, f) for i, f in contacts(m, fit.frames) if i < len(fit.frames) - 1])
         dist = np.linalg.norm(np.array(fit.root[-1][0]) - np.array(fit.root[0][0])) * fit.scale
-        print("move %-22s slot 0x%x: source %d..%d, %d game frames, %d bytes, %.0f mm a cycle, feet %s; check %.1f/%.1f "
-              "deg" % (name, slot, first, first + length, len(fit.frames), len(data), dist, feet, c[0], c[1]))
+        print("move %-22s slot 0x%x: source %d..%d, %d game frames, %d bytes, %.0f mm a cycle, feet %s, steps %s; "
+              "check %.1f/%.1f deg" % (name, slot, first, first + length, len(fit.frames), len(data), dist, feet,
+                                       [i for i, _f in steps[-1]], c[0], c[1]))
     for code, name in CLIPS:
         m = next(x for x in mots if x.name.endswith(name))
         fit = Fit(m, model, "leon", 2.0, tol, m.frames, True, loop=code in CLIP_LOOPS)
@@ -486,11 +543,19 @@ def moves(root, model, tol, out_path):
         c = fit.check(data)
         entries.append(data)
         table.append(struct.pack(">BBHHHHH", code, 1 if code in CLIP_LOOPS else 0, len(entries) - 1, len(fit.frames) - 1, 0xFFFF, 0xFFFF, 0))
+        st = contacts(m, fit.frames)
+        if code in CLIP_LOOPS:
+            st = [(i, f) for i, f in st if i < len(fit.frames) - 1]
+        steps.append(st)
         end = fit.track(fit.scale)[-1]
-        print("clip %-22s 0x%x: %d game frames, %d bytes, ends %.0f mm ahead, %.0f mm aside, turned %.0f deg; check "
-              "%.1f/%.1f deg" % (name, code, len(fit.frames), len(data), end[2], end[0], math.degrees(end[3]), c[0],
-                                 c[1]))
-    entries[0] = b"MOV1" + struct.pack(">I", len(table)) + b"".join(table)
+        print("clip %-22s 0x%x: %d game frames, %d bytes, ends %.0f mm ahead, %.0f mm aside, turned %.0f deg, steps %s; "
+              "check %.1f/%.1f deg" % (name, code, len(fit.frames), len(data), end[2], end[0], math.degrees(end[3]),
+                                       [i for i, _f in st], c[0], c[1]))
+    stk = b"STK1"
+    for st in steps:
+        st = st[:24]
+        stk += struct.pack(">B", len(st)) + b"".join(struct.pack(">H", i | (0x4000 if f else 0)) for i, f in st)
+    entries[0] = b"MOV1" + struct.pack(">I", len(table)) + b"".join(table) + stk
     tags = [b"MOV\x00"] + [b"FCV\x00"] * (len(entries) - 1)
     body = U.build_body(entries, tags)
     out = Path(out_path)

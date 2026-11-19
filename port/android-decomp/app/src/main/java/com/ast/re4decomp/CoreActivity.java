@@ -2090,6 +2090,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
   private void send() {
     int[] p = input.pad();
     if (input.takeReload()) CoreBridge.requestReload();  // the fire key without aiming (CoreInput)
+    if (input.takeJog()) CoreBridge.toggleJog();  // the jog on a trigger (CoreInput)
     CoreBridge.pad(p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
     String stick = stickWatch.sample(SystemClock.uptimeMillis(), p[1], p[2]);
     if (stick != null) Log.i(TAG, stick);
@@ -2222,6 +2223,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     int function = input.appFunctionOf(code, keyboard);
     if (function != CoreInput.APP_NONE && first) {
       String what = function == CoreInput.APP_MENU ? "menu" : function == CoreInput.APP_RELOAD ? "quick reload"
+          : function == CoreInput.APP_JOG ? "jog"
           : tools ? "graphics capture" : "nothing (tools off)";
       Log.i(TAG, "key " + KeyEvent.keyCodeToString(code) + " (" + code + ") -> app " + what);
     }
@@ -2238,6 +2240,10 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
       case CoreInput.APP_RELOAD:
         // the quick reload (wish of DevJunior, 08.11.2026): reload without aiming, as the touch RLOAD button
         if (first) CoreBridge.requestReload();
+        return true;
+      case CoreInput.APP_JOG:
+        // the jog (wish of DevJunior, 18.11.2026): each press toggles walking and jogging (the remake's movements)
+        if (first) CoreBridge.toggleJog();
         return true;
       case CoreInput.APP_GX_DUMP:
         // R3 (right stick pressed): the graphics data of the next pictures for the

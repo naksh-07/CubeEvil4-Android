@@ -351,6 +351,7 @@
     <string name="ingame_act_menu">Menu de l’app (maintenu : menu debug)</string>
     <string name="ingame_act_menu_app">Menu de l’app</string>
     <string name="ingame_act_quick_reload">Rechargement rapide (sans viser)</string>
+    <string name="ingame_act_jog">Trottiner (basculer)</string>
     <string name="ingame_act_options">Options / Passer</string>
     <string name="ingame_act_map">Carte</string>
     <string name="ingame_act_inventory">Inventaire</string>

@@ -352,6 +352,7 @@
     <string name="ingame_act_menu">Меню приложения (держать: отладка)</string>
     <string name="ingame_act_menu_app">Меню приложения</string>
     <string name="ingame_act_quick_reload">Быстрая перезарядка (без прицеливания)</string>
+    <string name="ingame_act_jog">Трусца (вкл./выкл.)</string>
     <string name="ingame_act_options">Настройки / Пропустить</string>
     <string name="ingame_act_map">Карта</string>
     <string name="ingame_act_inventory">Инвентарь</string>

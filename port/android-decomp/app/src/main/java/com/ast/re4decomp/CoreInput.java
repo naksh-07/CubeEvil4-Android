@@ -53,7 +53,7 @@ public final class CoreInput {
       GC_Z = 0x0010, GC_R = 0x0020, GC_L = 0x0040, GC_A = 0x0100, GC_B = 0x0200, GC_X = 0x0400,
       GC_Y = 0x0800, GC_START = 0x1000;
   // what a key does for the app instead of the game
-  public static final int APP_NONE = 0, APP_MENU = 1, APP_GX_DUMP = 2, APP_RELOAD = 3;
+  public static final int APP_NONE = 0, APP_MENU = 1, APP_GX_DUMP = 2, APP_RELOAD = 3, APP_JOG = 4;
   // android.view.KeyEvent key codes
   static final int KEYCODE_DPAD_UP = 19, KEYCODE_DPAD_DOWN = 20, KEYCODE_DPAD_LEFT = 21,
       KEYCODE_DPAD_RIGHT = 22, KEYCODE_BUTTON_A = 96, KEYCODE_BUTTON_B = 97,
@@ -94,6 +94,7 @@ public final class CoreInput {
     int mapped;             // pad(): the GameCube buttons of the mapping, -1 the layout above
     boolean fireKeyDown;    // pad(): the mapping's fire key (the second of fire's two) held at the last pad()
     boolean quickDown;      // pad(): the mapping's quick reload on a trigger held at the last pad()
+    boolean jogDown;        // pad(): the mapping's jog on a trigger held at the last pad()
     int hats;               // D-pad from the hat axes
     float lx, ly, rx, ry;   // sticks -1..1, y down as Android reports it
     float lt, rt;           // analog triggers 0..1
@@ -109,6 +110,7 @@ public final class CoreInput {
   private boolean pressedL, pressedR, pressedB;  // the controller's L, R, B at the last pad()
   private boolean clickL, clickR, fire;          // the triggers' digital L/R and fire at the last pad()
   private boolean reloadAsked;                   // the fire key pressed without aiming: a quick reload (takeReload)
+  private boolean jogAsked;                      // the mapping's jog on a trigger pressed (takeJog)
   private ActionMap controllerMap;               // the controller's own mapping, null: the layout above
   private ActionMap keyboardMap = ActionMap.defaults(ActionMap.KIND_KEYBOARD);
   private static final ActionMap KEYBOARD_DEFAULT = ActionMap.defaults(ActionMap.KIND_KEYBOARD);
@@ -327,15 +329,19 @@ public final class CoreInput {
   /**
    * What a key of a controller or of a keyboard does for the app now (its mapping's menu key; R3 without a function;
    * the quick reload: the mapping's key, else L1 of the layout without a mapping, which has no function there but
-   * with the alternate controls, and L3).
+   * with the alternate controls; the jog: the mapping's key, else L3, 18.11.2026; until then L3 reloaded too).
    */
   public int appFunctionOf(int keyCode, boolean keyboard) {
     ActionMap m = mapping(keyboard);
     if (m == null) {
-      if (!keyboard && ((keyCode == KEYCODE_BUTTON_L1 && !alternate) || keyCode == KEYCODE_BUTTON_THUMBL)) return APP_RELOAD;
+      if (!keyboard && keyCode == KEYCODE_BUTTON_THUMBL) return APP_JOG;
+      if (!keyboard && keyCode == KEYCODE_BUTTON_L1 && !alternate) return APP_RELOAD;
       return appFunction(keyCode);
     }
     if (m.singleOn(keyCode) == ActionMap.APP_MENU) return APP_MENU;
+    if (m.singleOn(keyCode) == ActionMap.JOG) {
+      return keyCode == KEYCODE_BUTTON_L2 || keyCode == KEYCODE_BUTTON_R2 ? APP_NONE : APP_JOG;
+    }
     if (m.singleOn(keyCode) == ActionMap.QUICK_RELOAD) {
       // a trigger: pad() (its axis and its key are one press)
       return keyCode == KEYCODE_BUTTON_L2 || keyCode == KEYCODE_BUTTON_R2 ? APP_NONE : APP_RELOAD;
@@ -620,6 +626,11 @@ public final class CoreInput {
             && keyHeld.held(quick[0]);
         if (quickDown && !d.quickDown && !menu) reloadAsked = true;
         d.quickDown = quickDown;
+        int[] jog = m.keys(ActionMap.JOG);
+        boolean jogDown = jog.length == 1 && (jog[0] == KEYCODE_BUTTON_L2 || jog[0] == KEYCODE_BUTTON_R2)
+            && keyHeld.held(jog[0]);
+        if (jogDown && !d.jogDown && !menu) jogAsked = true;
+        d.jogDown = jogDown;
         d.mapped = bits;  // (again below, after the latching)
         if ((bits & GC_L) != 0) padL = 1f;
         if ((bits & GC_R) != 0) padR = 1f;
@@ -803,6 +814,13 @@ public final class CoreInput {
   public boolean takeReload() {
     boolean r = reloadAsked;
     reloadAsked = false;
+    return r;
+  }
+
+  /** Whether the mapping's jog on a trigger went down since the last call (CoreBridge.toggleJog). */
+  public boolean takeJog() {
+    boolean r = jogAsked;
+    jogAsked = false;
     return r;
   }
 

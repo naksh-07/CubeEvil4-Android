@@ -67,6 +67,7 @@
 #include <string.h>
 
 extern cPlayer* pPL;
+extern "C" void re4_log(const char* fmt, ...);
 extern "C" int re4_free_move_on(void);  // runtime/aim_options.cpp
 extern "C" int re4_aim_move_on(void);
 extern "C" void re4_quick_slots_input(cPlayer* pl);  // runtime/quick_slots.cpp
@@ -74,6 +75,7 @@ extern "C" int re4_run_held(int held);               // runtime/aim_options.cpp 
 extern "C" void re4_parry_input(cPlayer* pl);         // runtime/parry.cpp
 extern "C" int re4_ashley_gun_input(cPlayer* pl, int freeCam);  // runtime/ashley_gun.cpp (patch 0913)
 extern "C" int re4_move_turn(void* pl, float diff, int armed);   // runtime/locomotion.cpp (the remake's turns)
+extern "C" int re4_move_heavy_legs(void* pl);  // runtime/locomotion.cpp (the remake's legs under a big weapon)
 
 namespace {
 
@@ -445,6 +447,37 @@ void aimMove(cPlayer* pl)
     pl->pos.z += c * fwd + s * side;
 }
 
+// The big guns' shots (device report 18.11.2026: "firing the big weapons stops you too long, leaving you exposed to
+// enemies like the giant"): with "Free movement" the aim key let go ends the shotgun's recoil and pump
+// (pl_shotgun.cpp wep07_r3_fire10, 40 frames, the Striker's 32: the game waits for all of it) and the bolt-action
+// rifle's bolt cycle (pl_rifle.cpp wep09_r3_fire30: from its frame 25) from frame kShotEscape on; the gun goes down
+// as the game puts it down then (the set state's wepDown, the bolt's down state). The semi-automatic rifles already
+// let go from their frame 10 (wep09_r3_fire10).
+const f32 kShotEscape = 16.0f;
+
+void shotEscape(cPlayer* pl)
+{
+    if (pl->r_no_0 != 0 || pl->r_no_1 != 6 || pl->r_no_2 != 2 || !pl->Wep || !pl->Wep->m_pWep ||
+        pl->Motion.Seq_frame < kShotEscape || joyKamae()) {
+        return;
+    }
+    const int no = pG->weapon_no;
+    if (pl->r_no_3 == 1 && (no == 7 || no == 8 || no == 0x21)) {
+        pl->r_no_2 = 1;  // the end of the pump: the set state sees the aim key let go
+        pl->r_no_3 = 4;
+    } else if (pl->r_no_3 == 3 && no == 9 && !pl->stat.check(cPlayer::F_CROUCH)) {
+        pl->setRno(0, 6, 3, 0);  // the bolt's own way out (wep09_r3_fire30)
+        pl->m_Work0 = 1;
+    } else {
+        return;
+    }
+    static int said;
+    if (!said) {
+        said = 1;
+        re4_log("free move: the shot's recovery let go (weapon %d, frame %.0f)", no, (double) pl->Motion.Seq_frame);
+    }
+}
+
 bool weaponRoutine(cPlayer* pl)
 {
     return pl->r_no_0 == 0 && (pl->r_no_1 == 6 || pl->r_no_1 == 0xB);
@@ -506,38 +539,20 @@ void findLegs(cPlayer* pl, int n)
     }
 }
 
-void legs(cPlayer* pl)
+// A walk-like motion on Leon's legs (`mot`, `seq`; from sequence frame `start` when it is new): every part as the
+// routines posed him is kept, the motion is posed on a copy (its own work gWalk and key histories), the legs take its
+// turns (`legW` of them), the hips its swing against its running mean (`swayW` of the turn, `shiftW` of the bob).
+// `at` >= 0: the motion at that sequence frame (the caller keeps it in step), else it advances by `speed`.
+// Shared by the legs while aiming (legs) and the remake's legs under a big weapon (runtime/locomotion.cpp).
+bool overlay(cPlayer* pl, void* mot, void* seq, int start, f32 speed, f32 at, f32 legW, f32 swayW, f32 shiftW)
 {
-    const bool reload = directReload(pl);
-    const bool want = gAimMoving && weaponRoutine(pl) && (pl->isKamae() || reload);
-    gLegW = want ? (gLegW + kLegFade > 1.0f ? 1.0f : gLegW + kLegFade) : (gLegW - kLegFade < 0.0f ? 0.0f : gLegW - kLegFade);
-    if (want && reload && gReloadFromMove) {
-        gLegW = 1.0f;  // he was walking or running: no fade in (see gReloadFromMove)
-    }
-    if (gLegW <= 0.0f || !weaponRoutine(pl) || !pl->pList || !pl->m_MotTbl) {
-        gLegW = 0.0f;
-        gWalkMot = 0;
-        return;
-    }
-    // the walk motion, the back step when he moves back (as the routines choose them: dmMotCk, player.cpp)
-    const bool back = gAimSy < -0.3f && -gAimSy > fabsf(gAimSx);
-    const bool run = gLegRun && !back && directReload(pl);  // running while reloading: his run (pl_R1_Run's)
-    void** tbl = pl->m_MotTbl;
-    const bool own = dmMotCk() != 0;
-    void* mot = own ? tbl[run ? 6 : back ? 8 : 2] : tbl[run ? 0x65 : back ? 0x63 : 0x61];
-    void* seq = own ? tbl[run ? 7 : back ? 9 : 3] : tbl[run ? 0x66 : back ? 0x64 : 0x62];
-    if (!mot) {
-        gLegW = 0.0f;
-        return;
-    }
     int n = 0;
     for (cParts* p = pl->pList; p; p = p->pList) {
         if (++n > kMaxParts) {
-            gLegW = 0.0f;
-            return;
+            return false;
         }
     }
-    // a copy of every part (the aiming pose), the model's matrix
+    // a copy of every part (the routines' pose), the model's matrix
     int i = 0;
     for (cParts* p = pl->pList; p; p = p->pList, i++) {
         memcpy(gSave + i * sizeof(cParts), (void*) p, sizeof(cParts));
@@ -548,9 +563,7 @@ void legs(cPlayer* pl)
         memset(&gWalk, 0, sizeof gWalk);
         // keep the model's blend motion (cMot3's pitch blend); IKInit below, on the copy only
         gWalk.Mot_flag = 0x20000000 | 0x10000000;
-        // a reload started on the move: the step he was in (his walk / run motion's frame), else the first
-        const bool cont = gReloadFromMove && reload && run == gReloadFromRun && !back;
-        MotionSetCore(pl, &gWalk, mot, seq, 0, 4, cont ? (int) gReloadFrame : 0);
+        MotionSetCore(pl, &gWalk, mot, seq, 0, 4, start);
         gWalk.Mot_flag |= 0x40000000;  // MotionMoveCore: leave the model's matrix alone
         memset(gWalkHist, 0, sizeof gWalkHist);
         gWalkMot = mot;
@@ -563,10 +576,17 @@ void legs(cPlayer* pl)
         memcpy(p->motParts.hist, gWalkHist[i], sizeof gWalkHist[i]);
     }
     // the walk pose as MotionMove makes it: keys, local matrices, the motion's leg IK on the floor
-    gWalk.Seq_speed = kLegSpeed * (gAimMag > 0.4f ? gAimMag : 0.4f);
     gWalk.Hokan_cnt = 0;
-    MotionMoveCore(pl, &gWalk, 0);
-    MotionSequenceCtrl(&gWalk);
+    if (at >= 0.0f) {
+        gWalk.Seq_frame = at;
+        gWalk.Seq_speed = 0.0f;
+        MotionSequenceCtrl(&gWalk);  // its keys at `at`
+        MotionMoveCore(pl, &gWalk, 0);
+    } else {
+        gWalk.Seq_speed = speed;
+        MotionMoveCore(pl, &gWalk, 0);
+        MotionSequenceCtrl(&gWalk);
+    }
     pl->partsMatCalc();
     IKInit(pl, &gWalk);
     pl->partsWorldCalc();
@@ -580,13 +600,13 @@ void legs(cPlayer* pl)
             PSMTXCopy(gLegRoot[i] ? p->mat : p->l_mat, gWalkRot[i]);
         }
     }
-    // the aiming pose back, every part and the model
+    // the routines' pose back, every part and the model
     i = 0;
     for (cParts* p = pl->pList; p; p = p->pList, i++) {
         memcpy((void*) p, gSave + i * sizeof(cParts), sizeof(cParts));
     }
     PSMTXCopy(modelMat, pl->mat);
-    // the hips: the walk's swing (the walk pose's hips against their running mean) on the aiming pose's
+    // the hips: the walk's swing (the walk pose's hips against their running mean) on the routines' pose
     cParts* hips = pl->pList;
     Mtx hipsWorld;
     {
@@ -615,15 +635,15 @@ void legs(cPlayer* pl)
         quatMul(qw, inv, &swing);
         const Quaternion none = {0.0f, 0.0f, 0.0f, 1.0f};
         Quaternion part;
-        C_QUATSlerp(&none, &swing, &part, gLegW * (directReload(pl) ? 1.0f : kSwayAim));
+        C_QUATSlerp(&none, &swing, &part, swayW);
         Quaternion qa;
         Quaternion q;
         C_QUATMtx(&qa, hips->l_mat);
         quatMul(part, qa, &q);
         Vec t;
-        t.x = hips->l_mat[0][3] + (tw.x - gHipT.x) * gLegW;
-        t.y = hips->l_mat[1][3] + (tw.y - gHipT.y) * gLegW;
-        t.z = hips->l_mat[2][3] + (tw.z - gHipT.z) * gLegW;
+        t.x = hips->l_mat[0][3] + (tw.x - gHipT.x) * shiftW;
+        t.y = hips->l_mat[1][3] + (tw.y - gHipT.y) * shiftW;
+        t.z = hips->l_mat[2][3] + (tw.z - gHipT.z) * shiftW;
         PSMTXQuat(hips->l_mat, &q);
         TransMatrix(hips->l_mat, &t);
         ScaleMatrix(hips->l_mat, &hips->scale);
@@ -634,9 +654,7 @@ void legs(cPlayer* pl)
             PSMTXConcat(hips->pParent->mat, hips->l_mat, hipsWorld);
         }
     }
-    // the legs: the aiming pose's turn toward the walk pose's, the bones' offsets kept (all of the walk's while
-    // reloading: no aiming stance to keep)
-    const f32 w = gLegW * (reload ? 1.0f : kLegMax);
+    // the legs: the routines' turn toward the walk pose's, the bones' offsets kept
     i = 0;
     for (cParts* p = pl->pList; p; p = p->pList, i++) {
         if (!gLeg[i]) {
@@ -644,7 +662,7 @@ void legs(cPlayer* pl)
         }
         Mtx walk;
         if (gLegRoot[i]) {
-            // the thigh as the walk pose turns it against the model, under the aiming pose's hips
+            // the thigh as the walk pose turns it against the model, under the routines' hips
             Mtx inv;
             PSMTXInverse(p->pParent == hips ? hipsWorld : p->pParent->mat, inv);
             PSMTXConcat(inv, gWalkRot[i], walk);
@@ -656,7 +674,7 @@ void legs(cPlayer* pl)
         Quaternion q;
         C_QUATMtx(&qa, p->l_mat);
         C_QUATMtx(&qw, walk);
-        C_QUATSlerp(&qa, &qw, &q, w);
+        C_QUATSlerp(&qa, &qw, &q, legW);
         Vec t;
         t.x = p->l_mat[0][3];
         t.y = p->l_mat[1][3];
@@ -664,6 +682,39 @@ void legs(cPlayer* pl)
         PSMTXQuat(p->l_mat, &q);
         TransMatrix(p->l_mat, &t);
         ScaleMatrix(p->l_mat, &p->scale);
+    }
+    return true;
+}
+
+void legs(cPlayer* pl)
+{
+    const bool reload = directReload(pl);
+    const bool want = gAimMoving && weaponRoutine(pl) && (pl->isKamae() || reload);
+    gLegW = want ? (gLegW + kLegFade > 1.0f ? 1.0f : gLegW + kLegFade) : (gLegW - kLegFade < 0.0f ? 0.0f : gLegW - kLegFade);
+    if (want && reload && gReloadFromMove) {
+        gLegW = 1.0f;  // he was walking or running: no fade in (see gReloadFromMove)
+    }
+    if (gLegW <= 0.0f || !weaponRoutine(pl) || !pl->pList || !pl->m_MotTbl) {
+        gLegW = 0.0f;
+        gWalkMot = 0;
+        return;
+    }
+    // the walk motion, the back step when he moves back (as the routines choose them: dmMotCk, player.cpp)
+    const bool back = gAimSy < -0.3f && -gAimSy > fabsf(gAimSx);
+    const bool run = gLegRun && !back && directReload(pl);  // running while reloading: his run (pl_R1_Run's)
+    void** tbl = pl->m_MotTbl;
+    const bool own = dmMotCk() != 0;
+    void* mot = own ? tbl[run ? 6 : back ? 8 : 2] : tbl[run ? 0x65 : back ? 0x63 : 0x61];
+    void* seq = own ? tbl[run ? 7 : back ? 9 : 3] : tbl[run ? 0x66 : back ? 0x64 : 0x62];
+    if (!mot) {
+        gLegW = 0.0f;
+        return;
+    }
+    // a reload started on the move: the step he was in (his walk / run motion's frame), else the first
+    const bool cont = gReloadFromMove && reload && run == gReloadFromRun && !back;
+    if (!overlay(pl, mot, seq, cont ? (int) gReloadFrame : 0, kLegSpeed * (gAimMag > 0.4f ? gAimMag : 0.4f), -1.0f,
+                 gLegW * (reload ? 1.0f : kLegMax), gLegW * (reload ? 1.0f : kSwayAim), gLegW)) {
+        gLegW = 0.0f;
     }
 }
 
@@ -680,10 +731,20 @@ void re4_player_after_routine(cPlayer* pl)
     }
     if (!pl || !re4_aim_move_on()) {
         gLegW = 0.0f;
-        gWalkMot = 0;
-        return;
+    } else {
+        legs(pl);
     }
-    legs(pl);
+    // a big weapon in his hands: the game's own movement, the remake's legs (runtime/locomotion.cpp)
+    if (gLegW <= 0.0f && !(pl && re4_move_heavy_legs(pl))) {
+        gWalkMot = 0;
+    }
+}
+
+// runtime/locomotion.cpp (re4_move_heavy_legs): a motion on Leon's legs, see overlay
+int re4_legs_overlay(void* pl, void* mot, void* seq, int start, float speed, float at, float legW, float sway,
+                     float shift)
+{
+    return pl && mot && overlay((cPlayer*) pl, mot, seq, start, speed, at, legW, sway, shift) ? 1 : 0;
 }
 
 // Patch 0909 (the shotgun, rifle and machine gun reload steps, the game thread): 1 when a reload without aiming
@@ -736,6 +797,7 @@ void re4_player_input(cPlayer* pl)
     re4_parry_input(pl);
     reloadInput(pl);  // before the camera: a reload started now keeps the free camera
     if (re4_free_move_on()) {
+        shotEscape(pl);
         freeMove(pl);
     } else {
         gCamValid = false;

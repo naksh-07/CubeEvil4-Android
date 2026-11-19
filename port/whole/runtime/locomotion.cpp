@@ -7,8 +7,9 @@
 // re4_move_table: with bare hands (weapon 0, the quick slots' "weapon put away"), a handgun (em_sub.cpp HandgunCk) or a
 // grenade the
 // table's stand (0 / 1), walk (2 / 3), run (6 / 7) and back step (8 / 9) take the remake's motion and a sequence made
-// here. The remake's motions are unarmed ones: with a rifle or shotgun in both hands the game's own stay, and so do the
-// hurt motions (life under two thirds: m_MotTbl 0x5F..), the turns in place and everything else.
+// here, in the hurt pairs (life under two thirds: m_MotTbl 0x5F..) too. The remake's motions are unarmed ones: with a
+// rifle or shotgun in both hands the game's own stay, their legs the remake's (heavyLegs); the turns in place and
+// everything else stay the game's.
 // The game's speed stays: per movement the game's own motion tells how far Leon goes a frame (its root joint, kind 1,
 // over its sequence's frames); the remake's cycle is played faster or slower by the square root of the ratio (its
 // sequence maps frames in 10.6 fixed point; at most kTimeMin..kTimeMax) and its root motion scaled by the rest, so the
@@ -50,6 +51,9 @@ namespace {
 
 const int kMoves = 4;
 const int kSlots[kMoves] = {0, 2, 6, 8};  // m_MotTbl: stand, walk, run, back step (the sequence in the next slot)
+// their hurt pairs (cPlayer::motionSet takes them while dmMotCk() is 0: life under two thirds; wish of DevJunior,
+// 18.11.2026: "the movement animations do not work when hurt"): the same remake motions
+const int kHurt[kMoves] = {0x5F, 0x61, 0x65, 0x63};
 const char* const kNames[kMoves] = {"stand", "walk", "run", "back step"};
 // The head's turn toward an enemy (cPlNeck) blends the body with the game's own "looking right / left" variant of the
 // stand, the walk and the run (m_MotTbl 0x3F / 0x39 / 0x41 and the next slot): two different walks mixed, out of step
@@ -60,15 +64,22 @@ const f32 kTimeMin = 0.75f, kTimeMax = 1.35f;
 const unsigned kMaxBytes = 0x80000;  // (with the transitions: 0.16 MB)
 const int kSeqMax = 255;
 
+const int kStepsMax = 24;
+
 struct Move {
     u8* mot;        // the remake's motion (0 none)
     u8 flags;       // 1: matched to the game's speed
     u16 last;       // its last frame (the first pose again)
     u16 foot[2];    // the frames the right and the left foot strike (0xFFFF none)
+    u8 nSteps;      // every footstep (move.dat's "STK1": frame, 0x4000 the left foot; 0 none: foot[] only)
+    u16 steps[kStepsMax];
+    u8 se[2];       // the game's footstep sounds of this movement (right, left) as fit() found them
     f32 scale;      // the scale its root motion has now
     f32 time;       // its playing speed (1: the remake's own)
     void* orig;     // the game's motion and sequence it stands in for now
     void* origSeq;
+    void* origH;    // and the hurt pair's (kHurt)
+    void* origHSeq;
     void* neck[2];  // the game's looking variants taken out
     bool neckOut;
     u16 seq[2 + 2 * (kSeqMax + 1)];
@@ -87,12 +98,22 @@ const char* const kClipNames[kClips] = {"walk start",   "walk stop",      "run s
                                         "run turn left", "run turn right", "turn left",  "turn right",
                                         "sprint",        "sprint start",   "sprint stop", "sprint from the jog"};
 // The sprint (wish of DevJunior, 17.11.2026: "jog with the stick, really run with the run button, as the remake"):
-// with the remake's movements and Free movement, the stick pushed beyond kJogTilt runs (the game's run routine:
-// the remake's jog), the run key sprints (its dash, kSprintSpeed times the jog's pace, its own start, stop and the
-// way into it from the jog); a light push walks. aim_options.cpp re4_run_held asks re4_move_sprint.
-const f32 kJogTilt = 0.6f;
-const f32 kSprintSpeed = 1.1f;
+// with the remake's movements and Free movement the stick walks; the left stick pressed (L3, the app's "Jog" action,
+// a toggling bit of the aim words: re4_move_jog_press) while he walks makes him jog (the game's run routine: the
+// remake's jog) until he stops or L3 is pressed again (device report 18.11.2026: "to jog you press the left stick while
+// walking"; until then the stick pushed beyond 0.6 jogged: a stick near it switched walk and run back and forth, the
+// run looked cut and Leon went forward and back); the run key sprints (its dash, its own start, stop and the way into
+// it from the jog). aim_options.cpp re4_run_held asks re4_move_sprint.
+// The jog at kJogPace of the game's run (device report 18.11.2026: "lower the speed by at least 10 %": the jog 140 a frame
+// then, the sprint 1.1 times its pace, its own strides 1.2 times as long: 180); the sprint at the jog's pace and its own
+// longer strides (about 143 a frame, the game's run)
+const f32 kJogPace = 0.85f;
+const f32 kSprintSpeed = 1.0f;
 bool gSprintKey;  // the run key held (the sprint)
+std::atomic<int> gJogPresses(0);  // L3 presses not yet seen (any thread)
+bool gJog;                        // he jogs (L3 while walking)
+int gJogIdle;                     // frames he has stood (gJog ends after kJogIdle)
+const int kJogIdle = 6;
 Move gClip[kClips];
 int gPlaying = -1;     // the clip Leon plays (-1 none)
 int gWasMoving = 0;    // the movement he was in (1 walk, 3 run; 0 none): the stop's clip
@@ -292,6 +313,37 @@ void load()
         re4_log("move: %s is no archive of Leon's movements (%ld bytes): the game's", path, size);
         return;
     }
+    // every footstep, after the rows: "STK1", per row u8 n and n u16 (packs before 18.11.2026: none, foot[] only)
+    int nStk = 0;
+    const u8* stk = tab + 8 + n * 12;
+    const u8* const stkEnd = base + at[1];
+    if (stk + 4 <= stkEnd && memcmp(stk, "STK1", 4) == 0) {
+        const u8* q = stk + 4;
+        for (u32 i = 0; i < n && q < stkEnd; i++) {
+            const unsigned c = *q++;
+            if (q + c * 2 > stkEnd) {
+                break;
+            }
+            const u8* r = tab + 8 + i * 12;
+            Move* m = 0;
+            if (r[0] >= 0x80 && r[0] < 0x80 + kClips) {
+                m = &clips[r[0] - 0x80];
+            }
+            for (int k = 0; k < kMoves; k++) {
+                if (kSlots[k] == r[0]) {
+                    m = &found[k];
+                }
+            }
+            if (m && m->mot) {
+                m->nSteps = (u8) (c < (unsigned) kStepsMax ? c : kStepsMax);
+                for (int j = 0; j < m->nSteps; j++) {
+                    m->steps[j] = be16At(q + j * 2);
+                }
+                nStk += m->nSteps;
+            }
+            q += c * 2;
+        }
+    }
     DvdHeader h;
     memset(&h, 0, sizeof(h));
     h.type = TRANS_MRAM;
@@ -304,8 +356,10 @@ void load()
         gMove[k].last = found[k].last;
         gMove[k].foot[0] = found[k].foot[0];
         gMove[k].foot[1] = found[k].foot[1];
+        gMove[k].nSteps = found[k].nSteps;
+        memcpy(gMove[k].steps, found[k].steps, sizeof(gMove[k].steps));
         gMove[k].scale = 1.0f;
-        gMove[k].orig = gMove[k].origSeq = 0;
+        gMove[k].orig = gMove[k].origSeq = gMove[k].origH = gMove[k].origHSeq = 0;
         if (gMove[k].mot) {
             gCount++;
             re4_log("move: %s: the remake's %s, %u frames", path, kNames[k], (unsigned) gMove[k].last);
@@ -315,6 +369,8 @@ void load()
     for (int i = 0; i < kClips; i++) {
         gClip[i].mot = clips[i].mot;
         gClip[i].last = clips[i].last;
+        gClip[i].nSteps = clips[i].nSteps;
+        memcpy(gClip[i].steps, clips[i].steps, sizeof(gClip[i].steps));
         gClip[i].scale = 1.0f;
         gClip[i].time = 1.0f;
         nClips += gClip[i].mot ? 1 : 0;
@@ -322,7 +378,29 @@ void load()
     if (nClips) {
         re4_log("move: %s: %d of the remake's transitions (starts, stops, turns)", path, nClips);
     }
+    if (nStk) {
+        re4_log("move: %s: %d footsteps", path, nStk);
+    }
     gApplied = -1;
+}
+
+// The footstep sounds on a made sequence's keys (`perFrame` keys a motion frame): every strike of the pack, else the
+// right and the left foot's one (packs before 18.11.2026); se: the right foot's sound, the left one's
+void putSteps(const Move& mv, SEQUENCE_DATA* key, int keys, f32 perFrame, const u8 se[2])
+{
+    if (mv.nSteps) {
+        for (int i = 0; i < mv.nSteps; i++) {
+            const int at = (int) ((f32) (mv.steps[i] & 0x3FFF) * perFrame + 0.5f);
+            key[at >= keys ? keys - 1 : at].Se = se[(mv.steps[i] & 0x4000) ? 1 : 0];
+        }
+        return;
+    }
+    for (int foot = 0; foot < 2; foot++) {
+        if (mv.foot[foot] != 0xFFFF) {
+            const int at = (int) ((f32) mv.foot[foot] * perFrame + 0.5f);
+            key[at >= keys ? keys - 1 : at].Se = se[foot];
+        }
+    }
 }
 
 // The remake's movement k in place of the game's (`mot`, `seq`): its root motion scaled and its sequence made
@@ -339,6 +417,9 @@ void fit(int k, void* mot, void* seq)
         if (gFrames && travel((u8*) mot, &gx, &gz) && travel(mv.mot, &ox, &oz)) {
             pace = sqrtf(gx * gx + gz * gz) / (f32) gFrames;
             own = sqrtf(ox * ox + oz * oz) / frames;
+        }
+        if (k == 2) {
+            pace *= kJogPace;  // the jog slower than the game's run (the sprint is the fast one)
         }
         if (pace > 5.0f && own > 5.0f) {
             time = sqrtf(pace / own);
@@ -369,11 +450,10 @@ void fit(int k, void* mot, void* seq)
     for (int i = 0; i < keys; i++) {
         key[i].Frame = (u16) ((f32) i * frames / (f32) keys * 64.0f + 0.5f);
     }
-    for (int foot = 0; foot < 2; foot++) {
-        if (mv.foot[foot] != 0xFFFF && k != 0) {
-            int at = (int) ((f32) mv.foot[foot] * (f32) keys / frames + 0.5f);
-            key[at >= keys ? keys - 1 : at].Se = se[foot];
-        }
+    mv.se[0] = se[0];
+    mv.se[1] = se[1];
+    if (k != 0) {
+        putSteps(mv, key, keys, (f32) keys / frames, se);
     }
     re4_log("move: the remake's %s for weapon %d: the game's pace %.0f a frame, the cycle's %.0f: played at %.2f (%d "
             "frames), its steps scaled %.2f",
@@ -407,6 +487,12 @@ void fitClip(int i)
     for (int k = 0; k < keys; k++) {
         key[k].Frame = (u16) ((f32) k * frames / (f32) (keys - 1) * 64.0f + 0.5f);
     }
+    // its footsteps with the sounds of its movement (the walk's for the walk's start and stop and the turns in place,
+    // the run's for the rest; device report 18.11.2026: "no footsteps are heard" while sprinting)
+    const Move& snd = i < 2 || i == 6 || i == 7 ? gMove[1] : gMove[2];
+    if (snd.mot && snd.se[0]) {
+        putSteps(c, key, keys, (f32) (keys - 1) / frames, snd.se);
+    }
 }
 
 // The throwables (read.cpp groups them for the other characters: hand, incendiary and flash grenades, the eggs), held in
@@ -433,17 +519,25 @@ void apply(cPlayer* pl, bool fresh)
     for (int k = 0; k < kMoves; k++) {
         Move& mv = gMove[k];
         const int slot = kSlots[k];
+        const int hurt = kHurt[k];
         const bool ours = tbl[slot] == mv.mot && mv.mot;
-        if (fresh || !ours) {
-            if (!ours) {
-                mv.orig = tbl[slot];
-                mv.origSeq = tbl[slot + 1];
-            }
+        const bool oursH = tbl[hurt] == mv.mot && mv.mot;
+        if (!ours) {
+            mv.orig = tbl[slot];
+            mv.origSeq = tbl[slot + 1];
+        }
+        if (!oursH) {
+            mv.origH = tbl[hurt];
+            mv.origHSeq = tbl[hurt + 1];
         }
         if (want && mv.mot && mv.orig) {
             fit(k, mv.orig, mv.origSeq);
             tbl[slot] = mv.mot;
             tbl[slot + 1] = mv.seq;
+            if (mv.origH) {
+                tbl[hurt] = mv.mot;  // hurt too (the same movement; the game's hurt ones are slower)
+                tbl[hurt + 1] = mv.seq;
+            }
             if (kNeck[k] && (fresh || !mv.neckOut)) {
                 mv.neck[0] = tbl[kNeck[k]];
                 mv.neck[1] = tbl[kNeck[k] + 1];
@@ -452,9 +546,15 @@ void apply(cPlayer* pl, bool fresh)
             if (kNeck[k]) {
                 tbl[kNeck[k]] = tbl[kNeck[k] + 1] = 0;
             }
-        } else if (ours) {
-            tbl[slot] = mv.orig;
-            tbl[slot + 1] = mv.origSeq;
+        } else if (ours || oursH) {
+            if (ours) {
+                tbl[slot] = mv.orig;
+                tbl[slot + 1] = mv.origSeq;
+            }
+            if (oursH) {
+                tbl[hurt] = mv.origH;
+                tbl[hurt + 1] = mv.origHSeq;
+            }
             if (kNeck[k] && mv.neckOut) {
                 tbl[kNeck[k]] = mv.neck[0];
                 tbl[kNeck[k] + 1] = mv.neck[1];
@@ -574,6 +674,152 @@ void transitions(cPlayer* pl)
     }
 }
 
+// The motion frame of a movement's or a clip's first right footstep; false without one
+bool rightStrike(const Move& m, f32* at)
+{
+    for (int i = 0; i < m.nSteps; i++) {
+        if (!(m.steps[i] & 0x4000)) {
+            *at = (f32) (m.steps[i] & 0x3FFF);
+            return true;
+        }
+    }
+    if (!m.nSteps && m.foot[0] != 0xFFFF) {
+        *at = (f32) m.foot[0];
+        return true;
+    }
+    return false;
+}
+
+// Between the walk and the jog (the run key, L3 or the sprint let go) the game carries the step on: the new motion
+// starts at the old one's share of its cycle measured with the run's length for both (pl_R1_Walk / pl_R1_Run: r_no_3
+// 4, m_Frame), right for its own walk and run, not for the remake's (the walk's 33 frames, the jog's 181, eight strides,
+// the sprint's 18): the feet changed and the motion jumped. Here, before the routine sets it, the remake's motion is
+// set at the frame that has the same foot forward, as the routine would (its neck, the run's waist and breath count).
+void matchPhase(cPlayer* pl)
+{
+    if (pl->r_no_0 != 0 || !(pl->r_no_3 & 4)) {
+        return;
+    }
+    const int r1 = pl->r_no_1;
+    const int to = r1 == 1 && pl->r_no_2 == 0 ? 1 : r1 == 3 && (pl->r_no_2 == 0 || pl->r_no_2 == 2) ? 2 : 0;
+    if (!to || !gMove[to].mot) {
+        return;
+    }
+    const void* cur = (const void*) pl->Motion.pMot;
+    const Move* from = cur == (const void*) gMove[1].mot ? &gMove[1] : cur == (const void*) gMove[2].mot ? &gMove[2]
+                     : cur == (const void*) gClip[8].mot ? &gClip[8] : 0;
+    const Move& dst = gMove[to];
+    f32 rf = 0.0f, rt = 0.0f;
+    if (!from || from == &dst || !from->last || !dst.last || !rightStrike(*from, &rf) || !rightStrike(dst, &rt)) {
+        return;
+    }
+    f32 frac = ((f32) pl->Motion.Seq.Frame / 64.0f - rf) / (f32) from->last;
+    frac -= floorf(frac);
+    f32 at = rt + frac * (f32) dst.last;
+    at -= at >= (f32) dst.last ? (f32) dst.last : 0.0f;
+    const int keys = dst.seq[0];
+    int i = (int) (at * (f32) keys / (f32) dst.last + 0.5f);
+    i = i >= keys ? 0 : i;
+    MotionSetCore(pl, &pl->Motion, dst.mot, (void*) dst.seq, pl->m_Hokan, 5, i);
+    const bool own = dmMotCk() != 0;
+    if (to == 2) {
+        pl->Neck->init(own ? pl->m_MotTbl[0x41] : PL_ARC_PTR(pG->pPlayer, 0x44),
+                       own ? pl->m_MotTbl[0x42] : PL_ARC_PTR(pG->pPlayer, 0x45), i);
+        pl->Waist->reset();
+        pl->m_Work0 = 0;
+        pl->r_no_2 = 3;
+    } else {
+        pl->Neck->init(own ? pl->m_MotTbl[0x39] : PL_ARC_PTR(pG->pPlayer, 0x42),
+                       own ? pl->m_MotTbl[0x3A] : PL_ARC_PTR(pG->pPlayer, 0x43), i);
+        pl->r_no_2 = 1;
+    }
+    static int said;
+    if (said < 4) {
+        said++;
+        re4_log("move: %s into the %s at its frame %d of %d (the same foot forward)",
+                from == &gMove[1] ? "walk" : from == &gMove[2] ? "jog" : "sprint", to == 2 ? "jog" : "walk", i, keys);
+    }
+}
+
+// Big weapons (wish of DevJunior, 18.11.2026: "the movement animations do not work with the big weapons"): the
+// remake's motions are unarmed, a rifle or shotgun in both hands keeps the game's walk, run and back step; their legs
+// take the remake's (free_move.cpp re4_legs_overlay, the way "Move while aiming" walks his legs), in step with the
+// game's motion (its first right footstep, its sequence's sound, on the remake's), the hips kHeavySway of its swing.
+extern "C" int re4_legs_overlay(void* pl, void* mot, void* seq, int start, float speed, float at, float legW,
+                                float sway, float shift);
+const f32 kHeavyFade = 0.2f;
+const f32 kHeavySway = 0.6f;
+f32 gHeavyW;
+int gHeavyK = 1;
+
+// The share of its cycle where a game's sequence has its first right footstep (its sound 1, 3, 0xE; seqSeCtrl); -1 none
+f32 gameStrike(const void* seq)
+{
+    static const void* last;
+    static f32 share = -1.0f;
+    if (seq == last) {
+        return share;
+    }
+    last = seq;
+    share = -1.0f;
+    const u8* s = (const u8*) seq;
+    const unsigned n = s ? get16(s) : 0;
+    for (unsigned i = 0; i < n; i++) {
+        const u8 se = s[4 + i * 4 + 2];
+        if (se == 1 || se == 3 || se == 0xE) {
+            share = (f32) i / (f32) n;
+            break;
+        }
+    }
+    return share;
+}
+
+bool heavy(cPlayer* pl)
+{
+    if (!pl || pl != pPL || !pG || pG->pl_type != 0 || !on() || !gCount || fits() || !pl->m_MotTbl ||
+        pl->r_no_0 != 0 || pl->r_no_1 < 1 || pl->r_no_1 > 3) {
+        return false;
+    }
+    void** tbl = pl->m_MotTbl;
+    const void* cur = (const void*) pl->Motion.pMot;
+    // walk (2 / hurt 0x61), back step (8 / 0x63), run (6 / 0x65)
+    static const int kGame[3][3] = {{1, 2, 0x61}, {3, 8, 0x63}, {2, 6, 0x65}};
+    for (const auto& g : kGame) {
+        if (cur && (cur == tbl[g[1]] || cur == tbl[g[2]]) && gMove[g[0]].mot) {
+            gHeavyK = g[0];
+            return true;
+        }
+    }
+    return false;
+}
+
+// Heavy weapons' legs (after the routines): see heavy
+int heavyLegs(cPlayer* pl)
+{
+    const bool want = heavy(pl);
+    gHeavyW = want ? (gHeavyW + kHeavyFade > 1.0f ? 1.0f : gHeavyW + kHeavyFade)
+                   : (gHeavyW - kHeavyFade < 0.0f ? 0.0f : gHeavyW - kHeavyFade);
+    if (gHeavyW <= 0.0f || !pl || !pl->pList || !pl->m_MotTbl) {
+        gHeavyW = 0.0f;
+        return 0;
+    }
+    const Move& mv = gMove[gHeavyK];
+    f32 rt = 0.0f;
+    f32 share = pl->Motion.Seq_frame_num ? pl->Motion.Seq_frame / (f32) pl->Motion.Seq_frame_num : 0.0f;
+    const f32 gs = pl->Motion.pSeq_top ? gameStrike((const void*) ((const u16*) pl->Motion.pSeq_top - 2)) : -1.0f;
+    if (gs >= 0.0f && rightStrike(mv, &rt)) {
+        share += rt / (f32) mv.last - gs;
+    }
+    share -= floorf(share);
+    static bool said;
+    if (!said) {
+        said = true;
+        re4_log("move: the remake's legs under weapon %d (its %s)", (int) pG->weapon_no, kNames[gHeavyK]);
+    }
+    return re4_legs_overlay(pl, mv.mot, 0, 0, 0.0f, share * (f32) mv.last, gHeavyW, gHeavyW * kHeavySway,
+                            gHeavyW * kHeavySway);
+}
+
 // The switch or the pack changed while Leon walks: the table follows (in the field's plain routines only)
 void watch(unsigned)
 {
@@ -592,7 +838,21 @@ void watch(unsigned)
             pPL->pMotionB->Brate = 0.0f;
         }
     }
+    // the jog (L3) is a state (DevJunior, 18.11.2026: "pressed it is on, pressed again off, and it goes when you stop
+    // completely"): it ends once he has stood (the footwork routine) for a few frames; aiming or reloading on the move
+    // keep it
+    if (pPL->r_no_0 != 0 || pPL->r_no_1 != 0) {
+        gJogIdle = 0;
+    } else if (++gJogIdle > kJogIdle) {
+        gJogIdle = kJogIdle;
+        gJogPresses = 0;
+        if (gJog) {
+            gJog = false;
+            re4_log("move: L3: walk (he stopped)");
+        }
+    }
     if (gApplied == 1 && want) {
+        matchPhase(pPL);
         transitions(pPL);
     } else {
         gPlaying = -1;
@@ -663,6 +923,13 @@ int re4_move_turn(void* p, float diff, int armed)
     return 0;
 }
 
+// free_move.cpp re4_player_after_routine (after the routines, when "Move while aiming" walks no legs): the remake's
+// legs under a big weapon; 1 when they are posed
+int re4_move_heavy_legs(void* p)
+{
+    return heavyLegs((cPlayer*) p);
+}
+
 // For the tests: the movements the active archive holds
 int re4_move_count(void)
 {
@@ -671,15 +938,27 @@ int re4_move_count(void)
 }
 
 // aim_options.cpp re4_run_held (the game's run checks, patch 0156): -1 without the sprint (the game's / "Always
-// run"'s way), else whether Leon runs: the run key (the sprint) or the stick pushed beyond kJogTilt (the jog)
+// run"'s way), else whether Leon runs: the run key (the sprint) or the jog L3 started
 int re4_move_sprint(int held)
 {
     gSprintKey = held != 0;
     if (gApplied != 1 || !on() || !gClip[8].mot || !re4_free_move_on()) {
+        gJog = false;
+        gJogPresses = 0;
         return -1;
     }
-    const f32 sx = (f32) Key.stickX / 56.0f, sy = (f32) Key.stickY / 56.0f;
-    return held || sx * sx + sy * sy >= kJogTilt * kJogTilt ? 1 : 0;
+    if (gJogPresses.exchange(0) & 1) {
+        gJog = !gJog;
+        gJogIdle = 0;
+        re4_log("move: L3: %s", gJog ? "jog" : "walk");
+    }
+    return held || gJog ? 1 : 0;
+}
+
+// The app (L3, the third aim word's toggling bit 16 through re4_aim_set; any thread): jog / walk
+void re4_move_jog_press(void)
+{
+    gJogPresses.fetch_add(1);
 }
 
 // For the tests: the transitions' clips the active archive holds

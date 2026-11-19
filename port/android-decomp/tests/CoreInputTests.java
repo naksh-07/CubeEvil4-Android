@@ -63,12 +63,12 @@ public final class CoreInputTests {
     check(CoreInput.appFunction(SELECT) == CoreInput.APP_MENU);
     check(CoreInput.appFunction(R3) == CoreInput.APP_GX_DUMP);
     check(CoreInput.appFunction(A) == CoreInput.APP_NONE && !in.key(1, SELECT, true));
-    // the quick reload (reload without aiming): L1 and L3 of the layout without a mapping; L1 is the
-    // alternate controls' knife there
-    check(in.appFunctionOf(L1, false) == CoreInput.APP_RELOAD && in.appFunctionOf(L3, false) == CoreInput.APP_RELOAD);
+    // the quick reload (reload without aiming): L1 of the layout without a mapping; L1 is the alternate controls'
+    // knife there; L3 the jog (18.11.2026)
+    check(in.appFunctionOf(L1, false) == CoreInput.APP_RELOAD && in.appFunctionOf(L3, false) == CoreInput.APP_JOG);
     check(in.appFunctionOf(L1, true) == CoreInput.APP_NONE && in.appFunctionOf(A, false) == CoreInput.APP_NONE);
     in.setAlternate(true);
-    check(in.appFunctionOf(L1, false) == CoreInput.APP_NONE && in.appFunctionOf(L3, false) == CoreInput.APP_RELOAD);
+    check(in.appFunctionOf(L1, false) == CoreInput.APP_NONE && in.appFunctionOf(L3, false) == CoreInput.APP_JOG);
     in.setAlternate(false);
     // the fire key without aiming: a quick reload (takeReload). The alternate controls: R2 alone asks once,
     // with L2 (aiming) it fires; the layout without them: R2 aims

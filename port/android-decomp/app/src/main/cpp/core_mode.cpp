@@ -994,6 +994,9 @@ std::atomic<int> optRecenter{0};
 // the touch RLOAD presses (CoreBridge.requestReload): each one toggles bit 20 of the aim bits, the core reloads without
 // aiming (patch 0900)
 std::atomic<int> optReload{0};
+// L3 presses (CoreBridge.toggleJog): each one toggles bit 16 of the third aim word, the core toggles Leon's walk and
+// jog (runtime/locomotion.cpp)
+std::atomic<int> optJog{0};
 // the menu's "Field of view" (CoreBridge.setFov, -15 .. +15 degrees, patch 0205): bits 24..29 of the aim bits as
 // degrees + 32 (0: as the game; the core's runtime/aim_options.cpp)
 std::atomic<int> optFov{0};
@@ -2643,7 +2646,8 @@ bool drawGx() {
     const int knife = optKnifeSpeed.load() | (optBoxStrike.load() & 1) << 12  // bit 12 "Box strike" (patch 0916)
         | (optFinishers.load() & 1) << 13   // bit 13 "Finishers" (patch 0921)
         | (optRemakeMove.load() & 1) << 14   // bit 14 "Remake movement" (patch 0923)
-        | (optRemakeReact.load() & 1) << 15;  // bit 15 "Remake reactions" (patch 0925)
+        | (optRemakeReact.load() & 1) << 15   // bit 15 "Remake reactions" (patch 0925)
+        | (optJog.load() & 1) << 16;          // bit 16 toggled by L3 (the jog)
     if (api.setAim && knife != knifeSpeedSent) {
       api.setAim(static_cast<int>(0xC0000000u | static_cast<unsigned>(knife)));  // the third aim word
       knifeSpeedSent = knife;
@@ -3670,6 +3674,11 @@ extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setRemakeRea
 // R3 (the right stick pressed): the free camera back behind Leon (patch 0900), a toggle of bit 6 of the aim bits.
 extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_recenterCamera(JNIEnv *, jclass) {
   optRecenter.fetch_add(1);
+}
+
+// L3 (the app's "Jog"): Leon's walk and jog with the remake's movements, a toggle of bit 16 of the third aim word.
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_toggleJog(JNIEnv *, jclass) {
+  optJog.fetch_add(1);
 }
 
 // The touch RLOAD button: reload without aiming (patch 0900), a toggle of bit 20 of the aim bits.

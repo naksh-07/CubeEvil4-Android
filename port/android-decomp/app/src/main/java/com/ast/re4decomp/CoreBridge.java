@@ -232,6 +232,8 @@ public final class CoreBridge {
   public static native void recenterCamera();
   /** The touch RLOAD button: with "Move while aiming" Leon reloads without aiming, walking or running on (patch 0900). */
   public static native void requestReload();
+  /** L3 (the jog): each press toggles Leon's walk and jog with the remake's movements (runtime/locomotion.cpp). */
+  public static native void toggleJog();
   /** "Field of view" (PLAYER VIEW): the shoulder camera's vertical field of view changed by `degrees`
    *  (-15 .. +15; 0 as the game; patch 0205), sent with the aim settings. */
   public static native void setFov(int degrees);
