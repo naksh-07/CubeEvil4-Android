@@ -15,6 +15,7 @@ target_sources(re4_motion64 PRIVATE
     ports/fdlibm/ef_sqrt.cpp)
 set_target_properties(re4_motion64 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_options(re4_motion64 PRIVATE -fno-fast-math -fno-strict-aliasing -ffp-contract=off)
+target_sources(re4_platform PRIVATE studio_model.cpp)
 target_sources(re4_platform PRIVATE model_skin.cpp animation.cpp leon_preview.cpp weapon_preview.cpp follow_camera.cpp room_flow.cpp)
 target_sources(re4_platform PRIVATE room_state.cpp room_interactions.cpp scenario_collision.cpp laser_sight.cpp ladder_motion.cpp room_ladders.cpp room_jumps.cpp)
 set_source_files_properties(scenario_collision.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
@@ -87,6 +88,8 @@ if(ANDROID)
         message(FATAL_ERROR "This port supports arm64-v8a only")
     endif()
     add_library(re4decomp SHARED android_bridge.cpp scene_gl.cpp event_focus_gl.cpp foot_shadow_gl.cpp environment_gl.cpp world_effects_gl.cpp actor_gl.cpp event_actor_gl.cpp event_mirror_gl.cpp)
+    # CubeEvil4 Studio (Mods, 19.11.2026): its own viewer, without the game
+    target_sources(re4decomp PRIVATE studio_gl.cpp studio_jni.cpp)
     target_link_libraries(re4decomp PRIVATE re4_platform GLESv3 log)
     if(RE4_CORE_MODE)
         # the core in a process of its own when MEM1 is taken here (port/docs/32bit-kernprozess.md)
@@ -262,6 +265,11 @@ else()
         find_path(RE4_GLES_INCLUDE_DIR GLES3/gl3.h REQUIRED)
         find_library(RE4_EGL_LIBRARY NAMES EGL libEGL.so.1 REQUIRED)
         find_library(RE4_GLES_LIBRARY NAMES GLESv2 GL libGLESv2.so.2 libGL.so.1 REQUIRED)
+        # CubeEvil4 Studio's view (Mods, 19.11.2026): a disc archive's model posed and drawn into a PPM
+        add_executable(studio_gl_check ../../../../tools/test_studio_gl.cpp studio_gl.cpp)
+        target_include_directories(studio_gl_check PRIVATE ${RE4_GLES_INCLUDE_DIR})
+        target_link_libraries(studio_gl_check PRIVATE re4_platform ${RE4_EGL_LIBRARY} ${RE4_GLES_LIBRARY})
+        target_compile_options(studio_gl_check PRIVATE -Wall -Wextra -Werror -UNDEBUG)
         add_executable(m37_room_cloth_gl_check ../../../../tools/test_m37_room_cloth_gl.cpp room_effect_cloth_gl.cpp)
         target_include_directories(m37_room_cloth_gl_check PRIVATE ${RE4_GLES_INCLUDE_DIR})
         target_link_libraries(m37_room_cloth_gl_check PRIVATE re4_platform ${RE4_EGL_LIBRARY} ${RE4_GLES_LIBRARY})
@@ -287,7 +295,7 @@ else()
         find_package(JNI)
         if(JNI_INCLUDE_DIRS)
             enable_language(C)
-            add_library(re4decomp_link_check SHARED android_bridge.cpp scene_gl.cpp event_focus_gl.cpp foot_shadow_gl.cpp environment_gl.cpp world_effects_gl.cpp actor_gl.cpp event_actor_gl.cpp event_mirror_gl.cpp
+            add_library(re4decomp_link_check SHARED android_bridge.cpp scene_gl.cpp event_focus_gl.cpp foot_shadow_gl.cpp environment_gl.cpp world_effects_gl.cpp actor_gl.cpp event_actor_gl.cpp event_mirror_gl.cpp studio_gl.cpp studio_jni.cpp
                 core_mode.cpp core_scene.cpp gx_gl.cpp gx_core.cpp gx_renderer.cpp gx_gl_shader.cpp gx_selfcheck.cpp gx_texture.cpp
                 "${RE4_CORE_INCLUDE}/core_ipc.cpp" "${RE4_CORE_INCLUDE}/core_ipc_client.cpp" ../../../../tools/host_android/android_log.c)
             target_include_directories(re4decomp_link_check PRIVATE ${RE4_GLES_INCLUDE_DIR} "${RE4_CORE_INCLUDE}"
