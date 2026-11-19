@@ -387,6 +387,9 @@
     <string name="ingame_controller_default">التوزيع الافتراضي</string>
     <string name="ingame_controller_remake">تخطيط RE4 Remake (2023)</string>
     <string name="ingame_controller_remake_help">نوع التحكم A-1 في نسخة 2023: A فعل، R1 جري (للخلف + R1 استدارة سريعة)، L3 هرولة، L2 تصويب، R2 إطلاق، X إعادة تعبئة، L1 السكين والصد، R2 مع السكين ضربة، R3 آشلي، Y الحقيبة، B الخريطة، START الخيارات، SELECT هذه القائمة.</string>
+    <string name="ingame_diagram_move">الحركة</string>
+    <string name="ingame_diagram_camera">الكاميرا</string>
+    <string name="ingame_diagram_press" formatted="false">&#x200F;ضغط: %s</string>
     <string name="ingame_controller_help">اختر حركة، ثم اضغط زرها. الحركة ذات الزرين (إطلاق النار، إعادة التلقيم، ضربة السكين) تطلب أولًا الزر الذي يُضغط باستمرار. إذا أخذت زرًا من حركة أخرى فإنها تأخذ زرك القديم. تحتفظ قوائم اللعبة وتلميحاتها بأزرار GameCube.</string>
     <string name="ingame_controller_alternate_note">التحكم البديل مفعّل: يحتفظ بتوزيعه الخاص؛ يُطبَّق هذا التوزيع عند إيقافه.</string>
     <string name="ingame_act_menu">قائمة التطبيق (ضغط مستمر: قائمة التصحيح)</string>

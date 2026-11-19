@@ -370,6 +370,9 @@
     <string name="ingame_controller_default">डिफ़ॉल्ट लेआउट</string>
     <string name="ingame_controller_remake">RE4 Remake (2023) लेआउट</string>
     <string name="ingame_controller_remake_help">2023 रीमेक का कंट्रोल टाइप A-1: A एक्शन, R1 दौड़ (पीछे + R1 तेज़ मुड़ना), L3 जॉग, L2 निशाना, R2 फ़ायर, X रीलोड, L1 चाकू और पैरी, चाकू के साथ R2 वार, R3 ऐशली, Y इन्वेंटरी, B नक्शा, START विकल्प, SELECT यह मेनू।</string>
+    <string name="ingame_diagram_move">चलना</string>
+    <string name="ingame_diagram_camera">कैमरा</string>
+    <string name="ingame_diagram_press" formatted="false">दबाएँ: %s</string>
     <string name="ingame_controller_help">एक क्रिया चुनें, फिर उसकी कुंजी दबाएँ। दो कुंजियों वाली क्रिया (फ़ायर, रीलोड, चाकू वार) पहले पकड़ी जाने वाली कुंजी पूछती है। अगर कुंजी किसी और क्रिया से ली गई है, तो उस क्रिया को आपकी पुरानी कुंजी मिलती है। गेम के मेनू और संकेत GameCube बटन ही रखते हैं।</string>
     <string name="ingame_controller_alternate_note">वैकल्पिक नियंत्रण चालू है: वह अपना लेआउट रखता है; यह उसे बंद करने पर लागू होगा।</string>
     <string name="ingame_act_menu">ऐप मेनू (पकड़ें: डीबग मेनू)</string>

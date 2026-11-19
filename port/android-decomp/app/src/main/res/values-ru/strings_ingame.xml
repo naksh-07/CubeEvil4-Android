@@ -376,6 +376,9 @@
     <string name="ingame_controller_default">Стандартная раскладка</string>
     <string name="ingame_controller_remake">Раскладка RE4 Remake (2023)</string>
     <string name="ingame_controller_remake_help">Тип управления A-1 ремейка 2023 года: A действие, R1 бег (назад + R1 быстрый разворот), L3 трусца, L2 прицел, R2 выстрел, X перезарядка, L1 нож и парирование, R2 с ножом удар, R3 Эшли, Y инвентарь, B карта, START настройки, SELECT это меню.</string>
+    <string name="ingame_diagram_move">Движение</string>
+    <string name="ingame_diagram_camera">Камера</string>
+    <string name="ingame_diagram_press" formatted="false">Нажать: %s</string>
     <string name="ingame_controller_help">Выберите действие, затем нажмите его кнопку. Действие из двух кнопок (огонь, перезарядка, удар ножом) сначала спрашивает кнопку, которую держат. Если кнопка была у другого действия, оно получает вашу старую. Меню и подсказки игры сохраняют кнопки GameCube.</string>
     <string name="ingame_controller_alternate_note">Альтернативное управление включено: у него своя раскладка; эта действует, когда оно выключено.</string>
     <string name="ingame_act_menu">Меню приложения (держать: отладка)</string>

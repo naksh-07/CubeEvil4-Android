@@ -1410,6 +1410,11 @@ final class CoreMenu extends Dialog {
     if (keyboard) mouseSlider();
     ActionMap def = ActionMap.defaults(mapKind), m = host == null ? null : host.mapping(mapKind);
     if (m == null) m = def;
+    if (!keyboard) {
+      // the mapping as a picture of the controller (wish of DevJunior, 18.11.2026)
+      body.addView(new ControllerDiagram(getContext(), m, this::actionLabel, s(R.string.ingame_diagram_move),
+          s(R.string.ingame_diagram_camera), s(R.string.ingame_diagram_press)));
+    }
     bindingButtons = new Button[ActionMap.ACTIONS];
     // (in the page's order: the C stick's keys after the moves, 0.99.15)
     for (int a : ActionMap.PAGE) {

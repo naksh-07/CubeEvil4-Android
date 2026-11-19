@@ -56,6 +56,12 @@ public final class ActionMapTests {
     check(press(rm, R3) == CoreInput.GC_X && press(rm, Y) == CoreInput.GC_Y && press(rm, B) == CoreInput.GC_Z);
     check(rm.singleOn(L3) == ActionMap.JOG && rm.singleOn(CoreInput.KEYCODE_BUTTON_SELECT) == ActionMap.APP_MENU);
     check(ActionMap.decode(ActionMap.KIND_CONTROLLER, rm.encode()).isRemake());
+    // its picture's legends (ControllerDiagram)
+    java.util.function.IntFunction<String> nm = k -> k == L2 ? "LT" : k == L1 ? "LB" : "?";
+    check(rm.legend(R2, ActionMap.NAMES_OF, nm).equals(java.util.Arrays.asList("fire (LT +)", "slash (LB +)")));
+    check(rm.legend(X, ActionMap.NAMES_OF, nm).equals(java.util.Arrays.asList("reload (LT +)", "quick reload")));
+    check(rm.legend(L2, ActionMap.NAMES_OF, nm).equals(java.util.Arrays.asList("aim")));
+    check(rm.legend(CoreInput.KEYCODE_DPAD_UP, ActionMap.NAMES_OF, nm).isEmpty());
     check(ActionMap.defaults(ActionMap.KIND_KEYBOARD).singleOn(ActionMap.KEY_CTRL_LEFT) == ActionMap.JOG);
     check(!ActionMap.available(ActionMap.KIND_CONTROLLER, ActionMap.MOVE_FORWARD));
     check(c.assign(ActionMap.MAP, new int[] {CoreInput.KEYCODE_DPAD_LEFT}) == null);  // the D-pad stays the D-pad

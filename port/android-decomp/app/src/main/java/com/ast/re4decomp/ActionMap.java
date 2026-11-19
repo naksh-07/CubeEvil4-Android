@@ -190,6 +190,23 @@ public final class ActionMap {
     return m;
   }
 
+  /**
+   * The legend of `keyCode` for the controller's picture (ControllerDiagram), in the page's order: each single action on
+   * it by its name, each combination it ends as "name (first key +)"; a combination's first key shows its hold's
+   * single action already.
+   */
+  public java.util.List<String> legend(int keyCode, java.util.function.IntFunction<String> label,
+                                       java.util.function.IntFunction<String> keyName) {
+    java.util.List<String> l = new java.util.ArrayList<>();
+    for (int a : PAGE) {
+      if (!available(kind, a)) continue;
+      int[] k = keys[a];
+      if (k.length == 1 && k[0] == keyCode) l.add(label.apply(a));
+      else if (k.length == 2 && k[1] == keyCode) l.add(label.apply(a) + " (" + keyName.apply(k[0]) + " +)");
+    }
+    return l;
+  }
+
   /** Whether this is the remake's layout (remake). */
   public boolean isRemake() { return equals(remake(kind)); }
 
@@ -317,6 +334,9 @@ public final class ActionMap {
   static final String[] NAMES = {"forward", "back", "left", "right", "action", "run", "aim", "fire", "reload",
       "knife", "slash", "Ashley", "inventory", "map", "options", "app menu", "C up", "C down", "C left", "C right", "quick reload",
       "jog"};
+
+  /** The actions' names of the log (tests). */
+  static final java.util.function.IntFunction<String> NAMES_OF = a -> NAMES[a];
 
   /** For the log: "action = A, run = B, …, fire = R2+A" with the keys' names. */
   public String describe(java.util.function.IntFunction<String> keyName) {

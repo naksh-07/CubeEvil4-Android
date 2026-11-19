@@ -373,6 +373,9 @@
     <string name="ingame_controller_default">Configurazione predefinita</string>
     <string name="ingame_controller_remake">Configurazione di RE4 Remake (2023)</string>
     <string name="ingame_controller_remake_help">Tipo di controllo A-1 del remake del 2023: A azione, R1 correre (indietro + R1 giravolta rapida), L3 corsa leggera, L2 mirare, R2 sparare, X ricaricare, L1 coltello e parata, R2 con il coltello fendente, R3 Ashley, Y inventario, B mappa, START opzioni, SELECT questo menu.</string>
+    <string name="ingame_diagram_move">Muoversi</string>
+    <string name="ingame_diagram_camera">Telecamera</string>
+    <string name="ingame_diagram_press" formatted="false">Premere: %s</string>
     <string name="ingame_controller_help">Scegli un’azione, poi premi il suo tasto. Un’azione a due tasti (sparare, ricaricare, coltellata) chiede prima il tasto da tenere. Se prendi il tasto da un’altra azione, questa riceve il tuo tasto vecchio. I menu e i suggerimenti del gioco mantengono i tasti GameCube.</string>
     <string name="ingame_controller_alternate_note">I comandi alternativi sono attivi: mantengono la propria configurazione; questa vale quando sono disattivati.</string>
     <string name="ingame_act_menu">Menu dell’app (tenuto: menu debug)</string>
