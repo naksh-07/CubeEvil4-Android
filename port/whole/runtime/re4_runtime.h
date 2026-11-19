@@ -193,6 +193,13 @@ void re4_mod_sound_path_set(const char* path);
 const char* re4_mod_sound_path(void);
 int re4_mod_sound_play(int volume);
 void re4_mod_sound_mix(short* lr, unsigned frames);
+/* runtime/mod_music.cpp: a pack's music (mods/<pack>/music/<name>.ogg|.mp3|.wav), played as runtime/music.cpp wants */
+void re4_mod_music_add(const char* name, const char* path);
+int re4_mod_music_find(const char* name);
+int re4_mod_music_count(void);
+void re4_mod_music_want(int track, int gain);
+int re4_mod_music_level(void);
+void re4_mod_music_mix(short* lr, unsigned frames);
 /* Patch 0901, event.cpp ExePacket_SetParts: 1 = a jacket part of costume 0 takes the skin's pl000e
  * (the PC mods replace pl08, Leon without the jacket); logs each part while the player's file is a mod. */
 int re4_mod_event_part(const char* name, const char* bin, const char* tpl, const char* oya, int costume);

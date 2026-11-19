@@ -1,0 +1,25 @@
+# A music mod (wish of DevJunior, 19.11.2026: "change the battle and exploration songs, closer to the remake"): while
+# a pack's track plays (runtime/mod_music.cpp, chosen by runtime/music.cpp) the game's music sequences give way by
+# re4_music_duck() (256 = as before, 0 = silent), after the volume of patch 0153. Sound effect sequences (type 2) and
+# the streams (the rooms' ambience) stay as they are. Without a music pack the factor stays 256.
+--- a/src/game/snd_seq3.cpp
++++ b/src/game/snd_seq3.cpp
+@@ -2,6 +2,7 @@
+ // ISS play request to closing it when the last note has died.
+ #include "snd_drv.h"
+ extern "C" int re4_sound_volume(int music); /* port: runtime/sound_volume.cpp (patch 0153) */
++extern "C" int re4_music_duck(void); /* port: runtime/music.cpp (patch 0929) */
+ 
+ // Clears the 8 sequence works (numbered).
+ void Snd_seq_work_clear(void)
+@@ -125,6 +126,10 @@
+     seq->out_vol = seq->out_vol / 127 * (seq->now_vol >> 8);
+     /* port (patch 0153): the app menu's music volume (type 2: sound effects volume) */
+     seq->out_vol = (s16) (seq->out_vol * re4_sound_volume(seq->seq_type != 2) / 100);
++    /* port (patch 0929): the game's music gives way while a music mod plays (0..256, runtime/music.cpp) */
++    if (seq->seq_type != 2) {
++        seq->out_vol = (s16) (seq->out_vol * re4_music_duck() / 256);
++    }
+     seq->ax_vol = Snd_vol_syn_to_ax((s16) (seq->out_vol >> 8));
+ }
+ 

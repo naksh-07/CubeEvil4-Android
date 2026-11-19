@@ -571,6 +571,13 @@ void modFolder(Disc& d, const char* pack, const char* full, const char* rel, int
             free(names[k]);
             continue;
         }
+        if (strncmp(name, "music/", 6) == 0 && !strchr(name + 6, '/')) {
+            // a music mod's track (runtime/mod_music.cpp, runtime/music.cpp), no file of the disc either
+            re4_mod_music_add(name + 6, path);
+            re4_log("DVD: mod %s: %s is music for runtime/music.cpp", pack, name);
+            free(names[k]);
+            continue;
+        }
         if (strcmp(name, "sound/quickslot.wav") == 0) {
             // the D-pad quick slots' sound (runtime/mod_sound.cpp), no file of the disc either
             re4_mod_sound_path_set(path);

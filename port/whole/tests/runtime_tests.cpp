@@ -26,6 +26,8 @@
 #include "re4_cpu_info.h"
 #include "re4_gx_frame.h"
 #include "re4_runtime.h"
+
+#include <ctype.h>
 #include "re4_ppc.h"
 #include "re4/port/sha256.h"
 #include "yz2_fixtures.h"
@@ -2457,6 +2459,86 @@ static void testModSound()
     report("mod sound", ok);
 }
 
+// A music mod (runtime/mod_music.cpp): its tracks by name, the crossfade in and out, the loop, the level the game's
+// music gives way by. RE4_TEST_MUSIC_OGG / RE4_TEST_MUSIC_MP3: a file of that type decodes to sound as well.
+static void testModMusic()
+{
+    bool ok = true;
+    char tmpl[] = "/tmp/re4-music-test-XXXXXX";
+    const char* root = mkdtemp(tmpl);
+    CHECK(root != 0);
+    if (!root) {
+        report("mod music", false);
+        return;
+    }
+    const std::string base = root;
+    std::vector<short> mono(4000, 8000);  // 0.25 s at 16 kHz, a constant: it stays 8000 resampled
+    wavFile(base + "/Village_Explore.wav", 1, 1, 16000, 16, mono);
+    std::vector<short> stereo(2 * 11025, -6000);  // 0.25 s at 44.1 kHz
+    wavFile(base + "/battle.wav", 1, 2, 44100, 16, stereo);
+    wavFile(base + "/broken.wav", 3, 1, 16000, 16, mono);
+    re4_mod_music_add("Village_Explore.wav", (base + "/Village_Explore.wav").c_str());
+    re4_mod_music_add("battle.wav", (base + "/battle.wav").c_str());
+    re4_mod_music_add("broken.wav", (base + "/broken.wav").c_str());
+    const int explore = re4_mod_music_find("village_explore"), battle = re4_mod_music_find("battle");
+    CHECK(explore >= 0 && battle >= 0 && explore != battle && re4_mod_music_find("castle_explore") < 0);
+    short lr[160 * 2];
+    auto run = [&](int blocks) {
+        for (int b = 0; b < blocks; b++) {
+            memset(lr, 0, sizeof(lr));
+            re4_mod_music_mix(lr, 160);
+        }
+    };
+    re4_mod_music_want(explore, 256);
+    run(10);
+    CHECK(re4_mod_music_level() > 0 && re4_mod_music_level() < 16);  // fading in
+    run(400);                                                         // 2 s: past the fade, looped 8 times
+    CHECK(re4_mod_music_level() == 256 && abs(lr[0] - 8000) <= 2 && abs(lr[1] - 8000) <= 2);
+    re4_mod_music_want(explore, 128);  // half the volume: the same crossfade share
+    run(1);
+    CHECK(re4_mod_music_level() == 256 && abs(lr[0] - 4000) <= 2);
+    re4_mod_music_want(battle, 256);   // crossfade to the other
+    run(160);                          // 0.8 s: both
+    CHECK(lr[0] > -6000 && lr[0] < 8000);
+    run(240);
+    CHECK(re4_mod_music_level() == 256 && abs(lr[0] + 6000) <= 2 && abs(lr[1] + 6000) <= 2);
+    re4_mod_music_want(-1, 256);       // none: the game's music back
+    run(400);
+    CHECK(re4_mod_music_level() == 0 && lr[0] == 0 && lr[1] == 0);
+    re4_mod_music_want(re4_mod_music_find("broken"), 256);  // not 16-bit PCM: nothing plays
+    run(50);
+    CHECK(re4_mod_music_level() == 0 && lr[0] == 0);
+    for (const char* env : {"RE4_TEST_MUSIC_OGG", "RE4_TEST_MUSIC_MP3"}) {
+        const char* file = getenv(env);
+        if (!file || !*file) {
+            continue;
+        }
+        re4_mod_music_add(env, file);  // its name is the variable's (lower case)
+        std::string key = env;
+        for (char& c : key) {
+            c = (char) tolower(c);
+        }
+        re4_mod_music_want(re4_mod_music_find(key.c_str()), 256);
+        unsigned loud = 0;
+        for (int b = 0; b < 600; b++) {
+            memset(lr, 0, sizeof(lr));
+            re4_mod_music_mix(lr, 160);
+            for (int i = 0; i < 320; i++) {
+                loud += abs(lr[i]) > 1000;
+            }
+        }
+        CHECK(re4_mod_music_level() == 256 && loud > 1000);
+        re4_log("runtime-test: music %s decoded (%u loud samples in 3 s)", file, loud);
+        re4_mod_music_want(-1, 256);
+        run(400);
+    }
+    remove((base + "/Village_Explore.wav").c_str());
+    remove((base + "/battle.wav").c_str());
+    remove((base + "/broken.wav").c_str());
+    rmdir(root);
+    report("mod music", ok);
+}
+
 // The app's "Auto aim" target (runtime/lock_on.cpp, patch 0918; game_probe.cpp re4probe_lock_on)
 static void testLockOn()
 {
@@ -3212,6 +3294,7 @@ int re4_runtime_tests()
     testFreeMove();
     testQuickSlots();
     testModSound();
+    testModMusic();
     testLockOn();
     testParry();
     testWardrobe();

@@ -155,6 +155,7 @@ void play(u32 addr, u32 length)
             lr[i * 2] = block[i * 2 + 1];
             lr[i * 2 + 1] = block[i * 2];
         }
+        re4_mod_music_mix(lr, frames);  // a mod's music (runtime/mod_music.cpp) under the sound
         re4_mod_sound_mix(lr, frames);
     }
     for (u32 i = 0; i < frames; i++) {

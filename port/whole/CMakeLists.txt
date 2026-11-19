@@ -215,6 +215,9 @@ add_library(re4_platform_obj OBJECT
     runtime/log.cpp
     runtime/mem1.cpp
     runtime/mod_place.cpp
+    runtime/mod_music.cpp
+    runtime/mod_music_mp3.c
+    runtime/mod_music_ogg.c
     runtime/mod_sound.cpp
     runtime/module_loader.cpp
     runtime/newlib_ctype.c
@@ -225,6 +228,8 @@ add_library(re4_platform_obj OBJECT
     runtime/watch.cpp
     "${RE4_ROOT}/port/src/stack_context.cpp")
 target_include_directories(re4_platform_obj PUBLIC runtime PRIVATE "${RE4_ROOT}/port/src")
+# the music mod's decoders (port/third_party: stb_vorbis, minimp3), unchanged: their warnings are theirs
+set_source_files_properties(runtime/mod_music_mp3.c runtime/mod_music_ogg.c PROPERTIES COMPILE_OPTIONS "-w")
 target_compile_features(re4_platform_obj PRIVATE cxx_std_17)
 if(RE4_ARCH STREQUAL "arm64")
     # Stack switching: the Boost.Context assembly of the app's arm64 build
@@ -294,7 +299,7 @@ add_library(re4_gamehooks_obj OBJECT runtime/state_trace.cpp runtime/core_bridge
     runtime/gx_owner.cpp runtime/potato.cpp runtime/aim_options.cpp
     runtime/sound_volume.cpp runtime/minimap.cpp runtime/laser_colour.cpp runtime/benchmark.cpp
     runtime/glow_check.cpp runtime/view_distance.cpp runtime/cpu_skip.cpp runtime/free_move.cpp
-    runtime/quick_slots.cpp runtime/parry.cpp runtime/wardrobe.cpp runtime/melee.cpp runtime/finisher.cpp runtime/locomotion.cpp runtime/react.cpp runtime/ashley_gun.cpp
+    runtime/quick_slots.cpp runtime/parry.cpp runtime/wardrobe.cpp runtime/melee.cpp runtime/finisher.cpp runtime/locomotion.cpp runtime/react.cpp runtime/ashley_gun.cpp runtime/music.cpp
     runtime/lock_on.cpp runtime/blink.cpp runtime/wheel_zoom.cpp runtime/enemy_random.cpp runtime/rt_shadow.cpp)
 target_link_libraries(re4_gamehooks_obj PRIVATE re4_game_flags)
 target_include_directories(re4_gamehooks_obj PRIVATE runtime)

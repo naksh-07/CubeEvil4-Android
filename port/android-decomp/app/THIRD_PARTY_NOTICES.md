@@ -26,3 +26,10 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
+
+## stb_vorbis and minimp3 (the core's music mod)
+
+The core decodes the OGG and MP3 files of a music mod pack (`port/whole/runtime/mod_music.cpp`) with
+[stb_vorbis](https://github.com/nothings/stb) v1.24 by Sean Barrett (public domain or MIT, at the user's choice; the
+text at the end of `port/third_party/stb_vorbis/stb_vorbis.c`) and [minimp3](https://github.com/lieff/minimp3) by
+lieff (CC0 1.0, `port/third_party/minimp3/LICENSE`), both unchanged.
