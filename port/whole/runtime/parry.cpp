@@ -89,7 +89,10 @@ void noteAttacker(Vec* pos)
         const f32 dx = m->pos.x - pos->x;
         const f32 dz = m->pos.z - pos->z;
         const f32 d = dx * dx + dz * dz;
-        if (d < bestD && m->hp > 0) {
+        // enemies only (0x10..0x3F): Leon himself (id 0) is in the list too and stands nearest to the blow (device
+        // report 19.11.2026: "on a parry the camera and Leon turn right instead of toward the attack"; the log: the
+        // answer "hit the attacker, enemy id 0x0, 0 away"), Ashley (1) and the merchant as well
+        if (d < bestD && m->hp > 0 && m != (cEm*) pPL && m->id >= 0x10 && m->id < 0x40) {
             bestD = d;
             gAttacker = m;
         }
