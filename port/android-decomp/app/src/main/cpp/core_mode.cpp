@@ -1073,6 +1073,7 @@ int knifeSpeedSent = -1;
 // The menu's AUDIO page (CoreBridge.setSoundVolume, wish of the project owner, 30.10.2026): music | effects << 8 in
 // percent (the core's runtime/sound_volume.cpp).
 std::atomic<int> optSound{100 | 100 << 8};
+std::atomic<int> optModMusic{100};  // (Mods, 19.11.2026) the music mod's volume, percent: bits 16..23 (+1) of the word
 int soundSent = -1;  // what the core was told last (-1: nothing yet)
 int renderFast = -1;  // the setting the render thread runs with (-1: none yet)
 
@@ -2713,7 +2714,7 @@ bool drawGx() {
       api.setAim(static_cast<int>(0xC0000000u | static_cast<unsigned>(knife)));  // the third aim word
       knifeSpeedSent = knife;
     }
-    const int sound = optSound.load();
+    const int sound = optSound.load() | (optModMusic.load() + 1) << 16;
     if (api.setSoundVolume && sound != soundSent) {
       api.setSoundVolume(sound);
       soundSent = sound;
@@ -3815,6 +3816,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setSoundVolu
   const int m = std::clamp(static_cast<int>(music), 0, 100), e = std::clamp(static_cast<int>(effects), 0, 100);
   const int want = m | e << 8;
   if (optSound.exchange(want) != want) LOG("sound: music %d %%, sound effects %d %%", m, e);
+}
+
+// The menu's "Mod music" slider (Mods, 19.11.2026): the music mod's volume in percent (0 while the music is off).
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setModMusicVolume(JNIEnv *, jclass, jint percent) {
+  const int p = std::clamp(static_cast<int>(percent), 0, 100);
+  if (optModMusic.exchange(p) != p) LOG("sound: mod music %d %%", p);
 }
 
 // The menu's "Game language" with the European discs (decisions of the project owner, 26./27.10.2026;

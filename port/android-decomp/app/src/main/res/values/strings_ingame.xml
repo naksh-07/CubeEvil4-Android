@@ -275,6 +275,7 @@
     <string name="ingame_volume">Volume</string>
     <string name="ingame_music_volume">Music</string>
     <string name="ingame_effects_volume">Sound effects</string>
+    <string name="ingame_mod_music_volume">Mod music</string>
     <string name="ingame_volume_help">Music is the background music; sound effects are everything else (shots, voices, steps). Movies keep their sound. The two buttons switch the music or the sound effects off entirely.</string>
     <string name="ingame_smooth_help">Extra in-between pictures. The game logic stays at 30 frames/s.</string>
     <string name="ingame_smooth60_uneven">This screen runs at %1$d Hz: 60 FPS cannot be shown evenly on it and may stutter. 30 FPS (60 FPS off) runs smoother here.</string>

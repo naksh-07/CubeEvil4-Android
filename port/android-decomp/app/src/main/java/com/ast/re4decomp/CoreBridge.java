@@ -126,6 +126,8 @@ public final class CoreBridge {
    * game). The movies keep their sound as it is.
    */
   public static native void setSoundVolume(int music, int effects);
+  /** (Mods, 19.11.2026) The AUDIO page's "Mod music": the music mod's volume in percent. */
+  public static native void setModMusicVolume(int percent);
   /**
    * The menu's "Invert vertical" and "Aim speed" for aiming the knife and the guns by touch or a controller:
    * `invert` the game's own "reverse" option (kept over the system file's), `speed` the stick's turn while
@@ -210,6 +212,7 @@ public final class CoreBridge {
   static void sendSoundVolume(android.content.SharedPreferences g) {
     setSoundVolume(g.getBoolean("musicOn", true) ? g.getInt("musicVolume", 100) : 0,
         g.getBoolean("effectsOn", true) ? g.getInt("effectsVolume", 100) : 0);
+    setModMusicVolume(g.getBoolean("musicOn", true) ? g.getInt("modMusicVolume", 100) : 0);
   }
   /**
    * The menu's "Game language" with the European discs: 2 English, 3 German, 4 French, 5 Spanish,

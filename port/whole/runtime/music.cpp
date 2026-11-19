@@ -15,7 +15,8 @@
 //   audible): <zone>_explore, else explore. A room the game keeps silent stays silent.
 // - Nothing (the game's own music back) during cutscenes and movies (STA_EVENT, STA_MOVIE_ON), Leon's death and the
 //   sub screens' fade (STA_DIEDEMO, STA_SUSPEND), and when the player is not Leon.
-// The gain: the app's music volume (AUDIO page, re4_sound_volume) times kGain.
+// The gain: the app's "Mod music" volume (AUDIO page, re4_sound_volume(2); Mods, 19.11.2026, before: the game's
+// music volume) times kGain; the page's music button off silences it too.
 #include "types.h"
 #include "global.h"
 #include "main.h"
@@ -178,7 +179,7 @@ void frame(unsigned)
         gTrack = want;
         re4_log("music: track %d (room %03x)", want, pG ? (unsigned) pG->room_id : 0u);
     }
-    re4_mod_music_want(want, (int) (256.0f * kGain * (f32) re4_sound_volume(1) / 100.0f));
+    re4_mod_music_want(want, (int) (256.0f * kGain * (f32) re4_sound_volume(2) / 100.0f));
     // the game's music gives way as much as the mod's sounds (both fade over the mixer's crossfade)
     const int duck = 256 - re4_mod_music_level();
     const int clamped = duck < 0 ? 0 : duck > 256 ? 256 : duck;

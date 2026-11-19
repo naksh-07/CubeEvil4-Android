@@ -828,10 +828,15 @@ int re4_core_aim_from_game(void)
 }
 
 extern "C" void re4_sound_volume_set(int music, int effects);
+extern "C" void re4_mod_music_volume_set(int percent);
 
 void re4_core_set_sound_volume(int bits)
 {
     re4_sound_volume_set(bits & 0xFF, (bits >> 8) & 0xFF);
+    // (Mods, 19.11.2026) bits 16..23: the music mod's volume + 1 (0: an app without that slider)
+    if ((bits >> 16) & 0xFF) {
+        re4_mod_music_volume_set(((bits >> 16) & 0xFF) - 1);
+    }
 }
 
 void re4_core_gx_depth(const unsigned* cells, unsigned serial)

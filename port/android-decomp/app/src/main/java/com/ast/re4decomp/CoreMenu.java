@@ -1628,6 +1628,8 @@ final class CoreMenu extends Dialog {
     heading(R.string.ingame_volume);
     volumeSlider(R.string.ingame_music_volume, "musicVolume");
     volumeSlider(R.string.ingame_effects_volume, "effectsVolume");
+    // (Mods, 19.11.2026) the music mod's tracks (battle, exploration) on their own slider
+    volumeSlider(R.string.ingame_mod_music_volume, "modMusicVolume");
     MenuLayout.Buttons sound = buttonsRow(body);
     toggle(sound, R.string.ingame_music_volume, graphics.getBoolean("musicOn", true), on -> {
       graphics.edit().putBoolean("musicOn", on).apply(); CoreBridge.sendSoundVolume(graphics);

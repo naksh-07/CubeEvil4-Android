@@ -261,6 +261,7 @@
     <string name="ingame_volume">Volume</string>
     <string name="ingame_music_volume">Música</string>
     <string name="ingame_effects_volume">Efeitos sonoros</string>
+    <string name="ingame_mod_music_volume">Música do mod</string>
     <string name="ingame_volume_help">A música é a música de fundo; os efeitos sonoros são todo o resto (tiros, vozes, passos). Os filmes mantêm o seu som. Os dois botões desligam totalmente a música ou os efeitos sonoros.</string>
     <string name="ingame_smooth_help">Quadros intermediários extras. A lógica permanece a 30 quadros/s.</string>
     <string name="ingame_smooth60_uneven">Este ecrã funciona a %1$d Hz: 60 FPS não podem ser mostrados de forma uniforme e podem engasgar. 30 FPS (60 FPS desligado) correm mais suaves aqui.</string>

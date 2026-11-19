@@ -25,6 +25,7 @@ namespace {
 
 std::atomic<int> gMusic(100);       // percent
 std::atomic<int> gEffects(100);     // percent
+std::atomic<int> gModMusic(100);    // percent: the music mod's tracks (Mods, 19.11.2026; runtime/music.cpp)
 std::atomic<bool> gPending(false);  // recompute the playing sounds at the next game frame
 std::atomic<bool> gHooked(false);
 
@@ -74,9 +75,22 @@ void re4_sound_volume_set(int music, int effects)
     gPending.store(true);
 }
 
-// Patch 0153: the factor for a sound's output volume, music (1) or a sound effect (0), as percent 0..100.
+// The app's "Mod music" slider (Mods, 19.11.2026: DevJunior "that its volume can be controlled"). Any thread.
+void re4_mod_music_volume_set(int percent)
+{
+    percent = clampPercent(percent);
+    if (gModMusic.exchange(percent) != percent) {
+        re4_log("sound: mod music %d %%", percent);
+    }
+}
+
+// Patch 0153: the factor for a sound's output volume, music (1) or a sound effect (0), as percent 0..100;
+// 2: the music mod's own volume (runtime/music.cpp)
 int re4_sound_volume(int music)
 {
+    if (music == 2) {
+        return gModMusic.load(std::memory_order_relaxed);
+    }
     return (music ? gMusic : gEffects).load(std::memory_order_relaxed);
 }
 
