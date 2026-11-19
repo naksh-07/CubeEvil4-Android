@@ -83,8 +83,10 @@
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode" />
         <!-- the game's discs and mod packs for CubeEvil4 Studio's own APK (the flavour "studio"), read only, for apps
-             signed with the same key (StudioDataProvider checks the caller) -->
+             signed with the same key (StudioDataProvider checks the caller). A process of its own: the game's process
+             loads the core when it starts (Re4Application), and started for the Studio alone it gave no answer
+             (DevJunior's device, 19.11.2026) -->
         <provider android:name=".StudioDataProvider" android:authorities="${applicationId}.studiodata"
-            android:exported="true" />
+            android:exported="true" android:process=":studiodata" />
     </application>
 </manifest>

@@ -63,6 +63,16 @@ public final class StudioDataProvider extends ContentProvider {
 
   @Override public Cursor query(Uri uri, String[] projection, String selection, String[] args, String order) {
     allow();
+    try {
+      return list(uri);
+    } catch (RuntimeException e) {
+      // the Studio shows why (an exception of another kind reaches it without its message)
+      android.util.Log.w("RE4Studio", "data provider: " + uri, e);
+      throw new IllegalStateException(e.toString());
+    }
+  }
+
+  private Cursor list(Uri uri) {
     File dir = resolve(uri, "list");
     MatrixCursor out = new MatrixCursor(COLUMNS);
     File[] files = dir != null ? dir.listFiles() : null;

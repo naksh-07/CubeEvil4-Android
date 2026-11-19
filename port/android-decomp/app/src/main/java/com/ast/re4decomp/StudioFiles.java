@@ -79,7 +79,8 @@ final class StudioFiles {
     }
     try (Cursor cur = resolver.query(uri("list", rel), null, null, null, null)) {
       if (cur == null) {
-        lastError = app + " gave no answer";
+        lastError = app + " gave no answer (its data service did not start; open " + app
+            + " once and come back to the Studio; if it stays, send the error report of " + app + ")";
         return out;
       }
       while (cur.moveToNext()) out.add(new Item(cur.getString(0), cur.getInt(1) != 0, cur.getLong(2)));
