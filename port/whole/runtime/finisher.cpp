@@ -97,6 +97,7 @@ const char* const kKindName[5] = {"standing", "kneeling", "face-down", "face-up"
 const f32 kStealthReach = 1700.0f;
 const f32 kStealthBehind = 1.92f;  // 110 degrees
 const f32 kQuietStep = 70.0f;      // mm a frame (the walk: about 40, the run: 130)
+const f32 kSightCone = 1.0471976f;  // em10FindCk's 60 degrees
 f32 gLeonStep;                     // Leon's step of the last frame (watch)
 Vec gLeonWas;
 bool gLeonKnown;
@@ -787,17 +788,31 @@ bool behind(cEm* em, f32 reach)
     return fabsf(wrapAngle(atan2f(dx, dz) - em->ang.y)) > kStealthBehind;
 }
 
-bool stealthReady(cEm* em)
+// an unaware Ganado (alive, his normal life, has not found Leon); `kill`: and a stealth kill for him in the pack
+bool stealthReady(cEm* em, bool kill)
 {
     if (!em || !leon() || em->hp <= 0 || em->r_no_0 != 1 || em->id == 0x18) {
         return false;
     }
     FREE_EM10* w = EM10_WK(em);
-    if ((w->Be_flg & 0x100) || w->pCore || w->pParasite || (w->Be_flg & 0x80)) {
-        return false;  // he has found Leon (the sight check stops), or HUNK's rule
+    if (w->Be_flg & 0x100) {
+        return false;  // he has found Leon (the sight check stops)
+    }
+    if (!kill) {
+        return true;
+    }
+    if (w->pCore || w->pParasite || (w->Be_flg & 0x80)) {
+        return false;  // HUNK's rule
     }
     int c[kMax];
-    return candidates(4, c) > 0;
+    if (candidates(4, c) > 0) {
+        return true;
+    }
+    if (!(gSaid & (1 << 9))) {
+        gSaid |= 1 << 9;
+        re4_log("finisher: no stealth kills in the finishers pack (RE9 Finishers v18 or later has them)");
+    }
+    return false;
 }
 
 }  // namespace
@@ -809,7 +824,7 @@ void re4_stealth_prompt(void* p)
 {
     cEm* em = (cEm*) p;
     hook();
-    if (!stealthReady(em) || pPL->r_no_0 != 0 || pPL->r_no_1 > 4 || pPL->isKamae()) {
+    if (!stealthReady(em, true) || pPL->r_no_0 != 0 || pPL->r_no_1 > 4 || pPL->isKamae()) {
         return;
     }
     if (!behind(em, kStealthReach)) {
@@ -829,14 +844,26 @@ void re4_stealth_prompt(void* p)
 
 // Patch 0931 (em10.cpp em10FindCk): 1 when Leon walks behind a Ganado who has not found him and a stealth kill is
 // there for him: the sight check's "very near" (3.5 m) and footstep (5 m) rules let him come; running he is heard
+//
+// (Mods, 19.11.2026, device video: "the villagers do not let themselves be surprised") whenever Leon walks outside the
+// Ganado's sight cone (the game's 60 degrees, FREE_EM10 Pl_rot), not only behind him, and without a stealth kill in the
+// pack as well: he is found by sight, by shots and by the others' cries as in the game, not by coming near
 int re4_stealth_unheard(void* p)
 {
     cEm* em = (cEm*) p;
     hook();
-    if (!stealthReady(em) || !gLeonKnown || gLeonStep > kQuietStep) {
+    if (!stealthReady(em, false) || !gLeonKnown) {
         return 0;
     }
-    return behind(em, 5000.0f) ? 1 : 0;
+    const FREE_EM10* w = EM10_WK(em);
+    const bool quiet = gLeonStep <= kQuietStep, aside = w->Pl_rot >= kSightCone;
+    static unsigned said;
+    if ((!quiet || !aside) && em->l_pl < 12250000.0f && said++ % 30 == 0) {
+        re4_log("finisher: Ganado id 0x%x hears Leon near (%s: step %.0f mm, %.0f degrees off his sight)",
+                (unsigned) em->id, quiet ? "in his sight cone" : "too fast", (double) gLeonStep,
+                (double) (w->Pl_rot * 57.29578f));
+    }
+    return quiet && aside ? 1 : 0;
 }
 
 }  // extern "C"
