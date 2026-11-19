@@ -11,7 +11,6 @@
 #include "re4_runtime.h"
 
 #include <stdio.h>
-#include <string>
 #include <unistd.h>
 
 void DbMenuSetExecTool(const char* name);  // game/db_menu.cpp
@@ -39,11 +38,12 @@ int re4_studio_frame(void)
     if (gFree < kFreeFrames || ++gTick % kCheckEvery) {
         return 0;
     }
-    const std::string marker = std::string(re4_data_dir()) + "/studio/open-viewer";
-    if (access(marker.c_str(), F_OK) != 0) {
+    char marker[1100];  // (no std::string with the game's headers: the NDK's libc++ clashes with them)
+    snprintf(marker, sizeof(marker), "%s/studio/open-viewer", re4_data_dir());
+    if (access(marker, F_OK) != 0) {
         return 0;
     }
-    unlink(marker.c_str());
+    unlink(marker);
     if (re4_disc_retail()) {
         re4_log("studio: the motion viewer needs the debug disc (its tools); not opened");
         return 0;
