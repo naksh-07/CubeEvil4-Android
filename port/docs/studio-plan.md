@@ -24,9 +24,9 @@ TPL, FCV, SEQ …) nach der Umwandlung der Bytereihenfolge.
 
 | Schritt | Inhalt | Stand |
 |---|---|---|
-| S1 | Dateiserver auf dem Gerät (`runtime/studio_host.cpp`, Patch 0930): Ordner `game/studio`; virtuelle Einträge `@/<Datei>/eNNN` und Bewegungen `@/<Datei>/mNNN` (umgewandelt wie beim Spiel, Mod-Pakete eingeschlossen); `Room/Em/mot_tbl.txt` aus den Archiven in `em/` (ein Satz je BIN, Palette: nächste TPL danach, sonst die letzte davor; alle FCV des Archivs nummeriert). Symbol „CubeEvil4 Studio“ legt den Ordner an. | Cloud ✅, Gerät offen |
+| S1 | Dateiserver auf dem Gerät (`runtime/studio_host.cpp`, Patch 0930): Ordner `game/studio`; virtuelle Einträge `@/<Datei>/eNNN` und Bewegungen `@/<Datei>/mNNN` (umgewandelt wie beim Spiel, Mod-Pakete eingeschlossen); `Room/Em/mot_tbl.txt` aus den Archiven in `em/` (ein Satz je BIN, Palette: nächste TPL danach, sonst die letzte davor; alle FCV des Archivs nummeriert). Symbol „CubeEvil4 Studio“ legt den Ordner an. | Cloud ✅, Gerät: Debug-Menü zeigte MOT VIEWER nicht (Patch 0116 kürzte es auf zwei Werkzeuge) → S3 |
 | S2 | Auf dem Gerät prüfen: Debug-Menü → MOTION VIEWER, Modelle und Bewegungen der Disc, Fehler im Protokoll (`studio:`). Paarung BIN/TPL wo nötig verbessern (Tabelle der Figuren wie `CHARACTER_TPL_USERS`). | offen |
-| S3 | Studio-Start ohne Umweg: das Symbol startet direkt im Betrachter (Debug-Menü-Werkzeug 17 von der App aus), freie Kamera und Bildschritt mit Touch und Controller. | offen |
+| S3 | Direkt in den Betrachter (DevJunior, 19.11.2026: „debería entrar directo, para nada más seleccionar personaje“): das Studio-Symbol legt `studio/open-viewer` an und startet ein neues Spiel in r100 (Testskript START, dann A bis zum Raum); steht Leon frei im Raum, öffnet `runtime/studio_game.cpp` über Patch 0061 das Debug-Menü mit MOT VIEWER (DbMenuSetExecTool). MOT VIEWER auch im SELECT-Menü (Patch 0116). Touch und freie Kamera folgen. | Cloud ✅ (Build), Gerät offen |
 | S4 | Mod-Pakete ansehen: Sätze für `mods/<Paket>/melee/*.dat` (unsere Bewegungen: Remake-Gang, Reaktionen, Finisher) auf Leons Modell. | offen |
 | S5 | Umwandler in C++: zuerst Bewegungen (FCV aus PC-Dateien), dann Modelle (PMD/UDAS → BIN/TPL); Ausgabe als Mod-Paket in `mods/`. | offen |
 | S6 | Sequenz-Editor (`t_motseq.cpp`) speichert über den Dateiserver in `game/studio`. | offen |

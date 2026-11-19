@@ -49,18 +49,29 @@ public final class MainActivity extends Activity implements ImportManager.Listen
   private static final int REQUEST_TREE = 40, REQUEST_STORAGE = 41;
   /**
    * CubeEvil4 Studio (Mods, 19.11.2026; port/docs/studio-plan.md): its launcher icon (the alias .StudioLauncher)
-   * makes the folder game/studio, which switches the debug tools' host files on (runtime/studio_host.cpp, patch 0930):
-   * the motion viewer of the debug menu then shows the disc's models and motions. The folder stays (its files are the
-   * user's); the game's own icon starts the game as before.
+   * makes the folder game/studio, which switches the debug tools' host files on (runtime/studio_host.cpp, patch 0930),
+   * and leaves the file studio/open-viewer: once Leon stands free in a room the game opens the motion viewer
+   * (runtime/studio_game.cpp; DevJunior: "it should go in directly, only choose the character"). A game that starts now
+   * starts as a new game in r100 by itself (the test script's way: START, then A until the room is loaded); a game
+   * already running opens the viewer where it is. The game's own icon starts the game as before.
    */
   private void studioLaunch() {
     android.content.ComponentName from = getIntent().getComponent();
     if (from == null || !from.getClassName().endsWith(".StudioLauncher")) return;
     java.io.File studio = new java.io.File(new java.io.File(AppStorage.base(this), "game"), "studio");
     boolean made = studio.isDirectory() || studio.mkdirs();
-    android.util.Log.i("RE4Studio", "studio folder " + studio + (made ? ": ready" : ": cannot be made"));
-    android.widget.Toast.makeText(this, made
-        ? "Studio on: start the game, hold SELECT for the debug menu, then MOTION VIEWER"
+    boolean marked = false;
+    try {
+      marked = made && (new java.io.File(studio, "open-viewer").exists() || new java.io.File(studio, "open-viewer").createNewFile());
+    } catch (java.io.IOException e) {
+      android.util.Log.w("RE4Studio", "open-viewer: " + e);
+    }
+    String settings = getIntent().getStringExtra("coreSettings");
+    String studioSettings = "RE4_START_ROOM=100;RE4_PAD_SCRIPT=START@300 A@400-3000/40;RE4_PAD_UNTIL_ROOM=1";
+    getIntent().putExtra("coreSettings", settings == null || settings.isEmpty() ? studioSettings : settings + ";" + studioSettings);
+    android.util.Log.i("RE4Studio", "studio folder " + studio + (marked ? ": the viewer opens in the game" : ": cannot be made"));
+    android.widget.Toast.makeText(this, marked
+        ? "CubeEvil4 Studio: the motion viewer opens once Leon is in the room"
         : "Studio: the folder game/studio cannot be made", android.widget.Toast.LENGTH_LONG).show();
   }
 

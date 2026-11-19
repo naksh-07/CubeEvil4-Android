@@ -1,5 +1,5 @@
 # The tool menu (SELECT held in the app, patch 0061; DbMenuExec) shows only
-# AREA JUMP and DEBUG OPTION, in one column at the left edge, always at the
+# AREA JUMP and DEBUG OPTION (and since 19.11.2026 in the mods' fork MOT VIEWER, the CubeEvil4 Studio's viewer), in one column at the left edge, always at the
 # same place (wish of the project owner, 26.10.2026): the original lists 34
 # tools in two columns around x = 176 and moves with the C stick. Up/down
 # picks one of the two, A starts it, B or START closes the menu as before.
@@ -14,7 +14,7 @@
 +/* port: the app shows only the tools it needs, one column at the left edge, always at the same
 + * place (wish of the project owner, 26.10.2026); the sub-stick no longer moves the menu. A tool
 + * queued by DbMenuSetExecTool still starts by its name. */
-+static const char* const shownTools[] = {"AREA JUMP", "DEBUG OPTION"};
++static const char* const shownTools[] = {"AREA JUMP", "DEBUG OPTION", "MOT VIEWER"};
 +#define SHOWN_NUM ((int) (sizeof(shownTools) / sizeof(shownTools[0])))
 +#define SHOWN_X 16
 +#define SHOWN_Y 72
