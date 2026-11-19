@@ -38,6 +38,13 @@ final class StudioBridge {
   static native void setInPlace(boolean on);
   static native float[] frameModel();
   static native String info();
+  /** An .lfs file of the PC release unpacked to `out` (copied when it is not packed): "" or why not. */
+  static native String unpackLfs(String in, String out);
+  /**
+   * A PC skin (an unpacked em/plXX.udas) converted into the disc's archive `gc` (its name `gcName`), the textures
+   * from the unpacked .pack files `packs`, `tex` the largest texture side: "ok\n" + report or "error\n" + why.
+   */
+  static native String convertSkin(String gc, String gcName, String pc, String[] packs, int tex, String out);
   static native void surfaceCreated();
   static native void draw(int width, int height, float yaw, float pitch, float distance, float tx, float ty, float tz,
       int flags, float frame);

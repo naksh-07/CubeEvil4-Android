@@ -525,6 +525,7 @@
         <item quantity="other">&#x200F;%1$s: عدد الملفات %2$d</item>
     </plurals>
     <string name="ingame_mod_add">إضافة مجلد تعديل</string>
+    <string name="ingame_mod_add_zip">إضافة تعديل ‎.zip</string>
     <string name="ingame_mods_remove">إزالة كل التعديلات</string>
     <string name="ingame_mods_remove_text">ستُعاد تشغيل اللعبة وتستخدم ملفات القرص من جديد. يضيع التقدم منذ آخر حفظ.</string>
     <string name="ingame_mod_copying">جارٍ نسخ التعديل…</string>

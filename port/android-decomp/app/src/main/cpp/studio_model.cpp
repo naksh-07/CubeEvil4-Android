@@ -7,6 +7,10 @@
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
+#include <cerrno>
+#include <cstdlib>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace re4::studio {
 namespace {
@@ -17,16 +21,40 @@ std::uint32_t be32(const std::vector<std::uint8_t> &b, std::size_t p) {
 }
 
 bool readFile(const std::string &path, std::vector<std::uint8_t> &out) {
+  return ReadWhole(path, out, 96u * 1024 * 1024);
+}
+
+}  // namespace
+
+// A file of the game app (StudioFiles: /proc/self/fd/N) is read through the descriptor the provider handed over:
+// opening the link again would ask for the game app's own rights to the file (refused to the Studio's APK)
+bool ReadWhole(const std::string &path, std::vector<std::uint8_t> &out, std::size_t limit) {
+  static const char kFd[] = "/proc/self/fd/";
+  if (path.compare(0, sizeof kFd - 1, kFd) == 0) {
+    char *end = nullptr;
+    const long fd = std::strtol(path.c_str() + sizeof kFd - 1, &end, 10);
+    struct stat st {};
+    if (end && !*end && fd >= 0 && fstat(int(fd), &st) == 0 && S_ISREG(st.st_mode)) {
+      if (st.st_size <= 0 || std::uint64_t(st.st_size) > limit) return false;
+      out.resize(std::size_t(st.st_size));
+      std::size_t got = 0;
+      while (got < out.size()) {
+        const ssize_t n = pread(int(fd), out.data() + got, out.size() - got, off_t(got));
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return false;
+        got += std::size_t(n);
+      }
+      return true;
+    }
+  }
   std::ifstream in(path, std::ios::binary | std::ios::ate);
   if (!in) return false;
   const auto n = in.tellg();
-  if (n <= 0 || n > 96 * 1024 * 1024) return false;
+  if (n <= 0 || std::uint64_t(n) > limit) return false;
   out.resize(std::size_t(n));
   in.seekg(0);
   return bool(in.read(reinterpret_cast<char *>(out.data()), n));
 }
-
-}  // namespace
 
 bool Archive::open(const std::string &path, std::string *why, const std::string &name) {
   path_ = path;

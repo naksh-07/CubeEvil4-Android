@@ -155,6 +155,8 @@ final class CoreMenu extends Dialog {
     void restartGame();
     /** Mods (ModStore, wish of the project owner, 08.11.2026): pick a folder to copy into game/mods. */
     void addMod();
+    /** The same from a .zip (Mods, 19.11.2026: what CubeEvil4 Studio saves): ModStore.copyZip. */
+    void addModZip();
     /** The mod packs in game/mods, "name\tfiles\ton" each (on: 1, switched off: 0; ModSwitch). */
     String[] modPacks();
     /** Switches a pack on or off (ModSwitch.set); the packs that went off with it, null when it failed. */
@@ -2250,6 +2252,7 @@ final class CoreMenu extends Dialog {
     modsBox = buttonsRow(body);
     MenuLayout.Buttons modButtons = buttonsRow(body);
     cellAction(modButtons, s(R.string.ingame_mod_add), v -> host.addMod());
+    cellAction(modButtons, s(R.string.ingame_mod_add_zip), v -> host.addModZip());
     modsRemove = cellAction(modButtons, s(R.string.ingame_mods_remove), v -> askRemoveMods()); refreshMods();
   }
   /** "Leon's outfit" and "Weapon on the back" (wishes of DevJunior, 09.11.2026; runtime/wardrobe.cpp): the outfit

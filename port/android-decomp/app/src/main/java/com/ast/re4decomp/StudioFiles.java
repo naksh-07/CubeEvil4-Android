@@ -124,6 +124,21 @@ final class StudioFiles {
     }
   }
 
+  /** `rel` copied to `dest` (the converter's own copy): "" or why not. */
+  String copy(String rel, File dest) {
+    try (java.io.InputStream in = local != null ? new java.io.FileInputStream(new File(local, rel))
+             : resolver.openInputStream(uri("file", rel));
+         java.io.OutputStream out = new java.io.FileOutputStream(dest)) {
+      if (in == null) return app + " gave no answer";
+      byte[] buf = new byte[1 << 16];
+      for (int n; (n = in.read(buf)) > 0;) out.write(buf, 0, n);
+      return "";
+    } catch (Exception e) {
+      android.util.Log.w("RE4Studio", "copy " + rel + ": " + e);
+      return e.getMessage() != null ? e.getMessage() : e.toString();
+    }
+  }
+
   void close() {
     for (ParcelFileDescriptor p : open.values()) {
       try {

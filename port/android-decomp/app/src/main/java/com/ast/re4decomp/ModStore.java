@@ -110,6 +110,88 @@ final class ModStore {
     return new Result(name, files, ModSwitch.set(mods, name, true));
   }
 
+  /**
+   * A .zip laid out the same way (CubeEvil4 Studio saves "<name>/em/pl01.das"), to game/mods/<its folder>, or to the
+   * .zip's own name when the files are not all in one folder. Like copyTree: hidden folder first, then switched on.
+   */
+  static Result copyZip(ContentResolver resolver, Uri zip, File gameRoot) throws IOException {
+    String zipName = displayName(resolver, zip);
+    if (zipName == null) zipName = "mod";
+    if (zipName.toLowerCase(java.util.Locale.ROOT).endsWith(".zip")) zipName = zipName.substring(0, zipName.length() - 4);
+    File mods = dir(gameRoot), staging = new File(mods, ".incoming");
+    delete(staging);
+    if (!staging.mkdirs()) throw new IOException("cannot create " + staging);
+    long bytes = 0;
+    int files = 0;
+    try (InputStream raw = resolver.openInputStream(zip)) {
+      if (raw == null) throw new IOException("the file cannot be read");
+      java.util.zip.ZipInputStream in = new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(raw));
+      for (java.util.zip.ZipEntry e; (e = in.getNextEntry()) != null;) {
+        if (e.isDirectory()) continue;
+        // every part a safe name, nothing hidden, nothing outside the pack
+        StringBuilder rel = new StringBuilder();
+        boolean skip = false;
+        for (String part : e.getName().replace('\\', '/').split("/")) {
+          if (part.isEmpty() || part.equals(".")) continue;
+          if (part.equals("..") || part.startsWith(".") || part.equals("__MACOSX")) { skip = true; break; }
+          if (rel.length() > 0) rel.append('/');
+          rel.append(safeName(part));
+        }
+        if (skip || rel.length() == 0) continue;
+        File out = new File(staging, rel.toString());
+        File parent = out.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) throw new IOException("cannot create " + parent);
+        try (OutputStream o = new FileOutputStream(out)) {
+          byte[] buf = new byte[1 << 16];
+          for (int n; (n = in.read(buf)) > 0;) {
+            bytes += n;
+            if (bytes > MAX_BYTES) throw new IOException("the mod is larger than 2 GB");
+            o.write(buf, 0, n);
+          }
+        }
+        files++;
+      }
+    } catch (IOException | RuntimeException e) {
+      delete(staging);
+      throw e;
+    }
+    if (files == 0) {
+      delete(staging);
+      throw new IOException("the .zip holds no files");
+    }
+    // one folder at the top that is not one of the disc's own (em, etc, ...): that is the pack
+    File source = staging;
+    String name = safeName(zipName);
+    File[] top = staging.listFiles();
+    if (top != null && top.length == 1 && top[0].isDirectory() && !looksLikeDiscFolder(top[0].getName())) {
+      source = top[0];
+      name = safeName(top[0].getName());
+    }
+    File target = new File(mods, name);
+    delete(target);
+    File moved = source == staging ? staging : new File(mods, ".incoming-pack");
+    if (source != staging) {
+      delete(moved);
+      if (!source.renameTo(moved)) {
+        delete(staging);
+        throw new IOException("cannot create " + target);
+      }
+      delete(staging);
+    }
+    if (!moved.renameTo(target)) {
+      delete(moved);
+      throw new IOException("cannot create " + target);
+    }
+    return new Result(name, files, ModSwitch.set(mods, name, true));
+  }
+
+  // the disc's own folders (files/...): a .zip with just em/ at the top is a pack itself
+  private static boolean looksLikeDiscFolder(String n) {
+    String l = n.toLowerCase(java.util.Locale.ROOT);
+    return l.equals("em") || l.equals("files") || l.equals("etc") || l.equals("bio4") || l.matches("st\\d|r\\d{3}")
+        || l.equals("melee") || l.equals("music") || l.equals("sound") || l.equals("event") || l.equals("ss");
+  }
+
   private static String displayName(ContentResolver resolver, Uri doc) {
     try (Cursor c = resolver.query(doc, new String[] {DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null,
         null)) {

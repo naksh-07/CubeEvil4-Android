@@ -508,6 +508,7 @@
         <item quantity="other">%1$s: %2$d archivos</item>
     </plurals>
     <string name="ingame_mod_add">Añadir carpeta de mod</string>
+    <string name="ingame_mod_add_zip">Añadir mod .zip</string>
     <string name="ingame_mods_remove">Quitar todos los mods</string>
     <string name="ingame_mods_remove_text">El juego se reinicia y vuelve a usar los archivos del disco. Se pierde el progreso desde tu último guardado.</string>
     <string name="ingame_mod_copying">Copiando el mod…</string>

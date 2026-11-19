@@ -12,6 +12,9 @@
 
 namespace re4::studio {
 
+// The whole file (at most `limit` bytes); /proc/self/fd/N (a file of the game app) through that descriptor
+bool ReadWhole(const std::string &path, std::vector<std::uint8_t> &out, std::size_t limit);
+
 struct Entry {
   unsigned index{};
   std::string kind;      // "BIN", "TPL", "FCV", "SEQ" ... (the archive's tag)

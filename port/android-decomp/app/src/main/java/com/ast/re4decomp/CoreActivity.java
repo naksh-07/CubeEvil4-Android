@@ -203,7 +203,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
   /** The cheat "Random enemies" (0.99.12): its seed, 0 off (CoreBridge.setEnemyRandom). */
   static final String ENEMY_SEED = "enemySeed";
   private static final int REQUEST_EXPORT_ALL = 2, REQUEST_IMPORT = 3, REQUEST_REPORT = 4, REQUEST_MOD = 5, REQUEST_TEXTURES = 6,
-      REQUEST_EXPORT_ZIP = 7;
+      REQUEST_EXPORT_ZIP = 7, REQUEST_MOD_ZIP = 8;
   // "Import texture pack" (Cheats & Mods, TexturePacks): who hears the import, its cancel switch
   private TexturePacks.Listener textureListener;
   private final java.util.concurrent.atomic.AtomicBoolean textureCancel = new java.util.concurrent.atomic.AtomicBoolean();
@@ -1277,6 +1277,13 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
       startForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQUEST_MOD);
     }
 
+    @Override public void addModZip() {
+      Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+          .putExtra(Intent.EXTRA_MIME_TYPES, new String[] {"application/zip", "application/x-zip-compressed",
+              "application/octet-stream"});
+      startForResult(pick, REQUEST_MOD_ZIP);
+    }
+
     @Override public String[] modPacks() {
       File root = gameRoot();
       String[] packs = ModStore.packs(root);
@@ -1542,7 +1549,9 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
         }
         importNext(new StringBuilder());
       } else if (request == REQUEST_MOD && data.getData() != null) {
-        copyMod(data.getData());
+        copyMod(data.getData(), false);
+      } else if (request == REQUEST_MOD_ZIP && data.getData() != null) {
+        copyMod(data.getData(), true);
       } else if (request == REQUEST_REPORT && data.getData() != null) {
         try (OutputStream out = getContentResolver().openOutputStream(data.getData())) {
           if (out == null) throw new IOException("no stream");
@@ -1558,15 +1567,16 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
 
   private File gameRoot() { return ((Re4Application) getApplication()).imports.root; }
 
-  /** The picked folder into game/mods (ModStore), off the main thread; it counts from the next start. */
-  private void copyMod(Uri tree) {
+  /** The picked folder (or .zip) into game/mods (ModStore), off the main thread; it counts from the next start. */
+  private void copyMod(Uri tree, boolean zip) {
     Toast.makeText(this, R.string.ingame_mod_copying, Toast.LENGTH_SHORT).show();
     final File root = gameRoot();
     new Thread(() -> {
       ModStore.Result done = null;
       String failure = null;
       try {
-        done = ModStore.copyTree(getContentResolver(), tree, root);
+        done = zip ? ModStore.copyZip(getContentResolver(), tree, root)
+            : ModStore.copyTree(getContentResolver(), tree, root);
         Log.i(TAG, "mod " + done.name + ": " + done.files + " files"
             + (done.switchedOff.isEmpty() ? "" : ", switched off " + done.switchedOff));
       } catch (IOException | RuntimeException e) {

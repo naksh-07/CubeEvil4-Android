@@ -512,6 +512,7 @@
         <item quantity="other">%1$s: файлов: %2$d</item>
     </plurals>
     <string name="ingame_mod_add">Добавить папку мода</string>
+    <string name="ingame_mod_add_zip">Добавить мод .zip</string>
     <string name="ingame_mods_remove">Удалить все моды</string>
     <string name="ingame_mods_remove_text">Игра перезапустится и снова будет использовать файлы диска. Прогресс после последнего сохранения будет потерян.</string>
     <string name="ingame_mod_copying">Копирование мода…</string>

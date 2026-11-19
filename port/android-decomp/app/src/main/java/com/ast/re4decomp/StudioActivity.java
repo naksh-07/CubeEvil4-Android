@@ -462,11 +462,341 @@ public final class StudioActivity extends Activity {
     list.addView(b, item());
   }
 
+  // ---- Convert (Mods, 19.11.2026; DevJunior's choice: UHD skins of the PC release first, picked as a .zip, saved as a
+  // .zip the game imports like any mod pack). The mod is unpacked into the cache (em/plXX.udas, ImagePackHD/*.pack,
+  // .lfs unpacked), each skin is turned into the disc's own archive (cpp/studio_convert.cpp, the port of
+  // port/tools/uhd_skin_convert.py), shown here, and the results go into <mod>/em/plXX.drs (or .das) of the .zip.
+  private static final int PICK_MOD = 41, SAVE_ZIP = 42;
+  private static final String[][] CHARACTERS = {
+      {"pl00", "Leon"}, {"pl08", "Leon (jacket)"}, {"pl09", "Leon (armour)"}, {"pl10", "Leon (outfit)"},
+      {"pl01", "Ashley"}, {"pl05", "Ashley (armour)"}, {"pl11", "Ashley (outfit)"}, {"pl0b", "Ada"},
+      {"pl0c", "Ada (Separate Ways)"}, {"pl06", "HUNK"}, {"pl0a", "Krauser"}, {"pl0d", "Wesker"}};
+  private java.io.File convertDir;          // cache/convert: udas/, packs/, out/
+  private String modName = "";
+  private final List<String[]> skins = new ArrayList<>();  // stem, udas path, disc rel ("" none), disc file name
+  private final java.util.Map<String, String> results = new java.util.HashMap<>();  // stem -> converted file
+  private final StringBuilder convertLog = new StringBuilder();
+  private int convertTex = 128;
+  private volatile boolean busy;
+
   private void showConvert() {
-    content.addView(note("Coming next: import files of the PC releases (UHD .udas / .pmd, the 2023 remake's "
-        + ".motlist and .mesh) and turn them into a mod pack, with a preview here before it goes into the game."));
-    content.addView(note("Today these conversions run with the PC tools of the project (uhd_skin_convert, "
-        + "pmd_weapon_convert, re9_finisher_pack); they move into the app step by step."));
+    if (busy) {  // the worker thread fills the lists; they are shown once it is done
+      content.addView(card("Working…", "the mod's files are read and converted on the phone"), item());
+      return;
+    }
+    content.addView(note("UHD skins of the PC release (Nexus mods: em/plXX.udas with BIO4/ImagePackHD/*.pack) become "
+        + "a mod pack for CubeEvil4. Pick the mod's .zip (or its .udas and .pack files)."));
+    Button pick = card("Pick a mod (.zip)", modName.isEmpty() ? "" : "Now: " + modName);
+    pick.setOnClickListener(v -> {
+      android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+      i.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+      i.setType("*/*");
+      i.putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, true);
+      try {
+        startActivityForResult(i, PICK_MOD);
+      } catch (Exception e) {
+        toast("No file picker: " + e.getMessage());
+      }
+    });
+    content.addView(pick, item());
+    if (!skins.isEmpty()) {
+      LinearLayout sizes = row();
+      sizes.addView(text("Textures ", 12, DIM, false));
+      for (int t : new int[] {128, 256, 512}) {
+        Button b = pill(String.valueOf(t), t == convertTex);
+        b.setOnClickListener(v -> { convertTex = t; results.clear(); showTab(2); });
+        sizes.addView(b, chip());
+      }
+      content.addView(sizes);
+      if (convertTex > 128) {
+        content.addView(note("Larger textures look sharper but need more of the game's memory: try 128 first."));
+      }
+      for (String[] k : skins) {
+        String done = results.get(k[0]);
+        String detail = k[2].isEmpty() ? "not on your discs: import them in CubeEvil4 first"
+            : done != null ? "converted ✓ · tap to view" : "tap to convert into " + k[3];
+        Button b = card(k[0] + " · " + character(k[0]), detail);
+        b.setEnabled(!busy && !k[2].isEmpty());
+        b.setOnClickListener(v -> {
+          if (results.containsKey(k[0])) preview(k[0], k[3]);
+          else convert(java.util.Collections.singletonList(k), k[0]);
+        });
+        content.addView(b, item());
+      }
+      Button all = pill("Convert all", false);
+      all.setEnabled(!busy);
+      all.setOnClickListener(v -> convert(new ArrayList<>(skins), null));
+      Button save = pill("Save as .zip", !results.isEmpty());
+      save.setEnabled(!busy && !results.isEmpty());
+      save.setOnClickListener(v -> {
+        android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        i.setType("application/zip");
+        i.putExtra(android.content.Intent.EXTRA_TITLE, modName + ".zip");
+        try {
+          startActivityForResult(i, SAVE_ZIP);
+        } catch (Exception e) {
+          toast("No file picker: " + e.getMessage());
+        }
+      });
+      LinearLayout actions = row();
+      actions.addView(all, chip());
+      actions.addView(save, chip());
+      content.addView(actions);
+      if (!results.isEmpty()) {
+        content.addView(note("In CubeEvil4: menu (SELECT) › Mods › import the .zip, then switch the pack on."));
+      }
+    }
+    if (convertLog.length() > 0) {
+      TextView log = text(convertLog.toString(), 11, DIM, false);
+      log.setTypeface(android.graphics.Typeface.MONOSPACE);
+      log.setTextIsSelectable(true);
+      content.addView(log);
+    }
+  }
+
+  private static String character(String stem) {
+    for (String[] c : CHARACTERS) if (c[0].equals(stem)) return c[1];
+    return stem.startsWith("em") ? "enemy" : "character";
+  }
+
+  private void log(String s) {
+    convertLog.append(s).append('\n');
+    if (convertLog.length() > 12000) convertLog.delete(0, convertLog.length() - 12000);
+  }
+
+  @Override protected void onActivityResult(int request, int result, android.content.Intent data) {
+    super.onActivityResult(request, result, data);
+    if (result != RESULT_OK || data == null) return;
+    if (request == PICK_MOD) {
+      List<android.net.Uri> picked = new ArrayList<>();
+      if (data.getClipData() != null) {
+        for (int i = 0; i < data.getClipData().getItemCount(); i++) picked.add(data.getClipData().getItemAt(i).getUri());
+      } else if (data.getData() != null) {
+        picked.add(data.getData());
+      }
+      importMod(picked);
+    } else if (request == SAVE_ZIP && data.getData() != null) {
+      saveZip(data.getData());
+    }
+  }
+
+  private void work(String what, Runnable job) {
+    busy = true;
+    showTab(2);
+    toast(what);
+    new Thread(() -> {
+      try {
+        job.run();
+      } catch (Throwable t) {
+        Log.e(TAG, what, t);
+        log("error: " + t);
+      }
+      main.post(() -> { busy = false; showTab(2); });
+    }, "studio-convert").start();
+  }
+
+  // the picked files (a .zip, or .udas / .pack files, packed with .lfs or not) into cache/convert
+  private void importMod(List<android.net.Uri> picked) {
+    work("Reading the mod…", () -> {
+      convertDir = new java.io.File(getCacheDir(), "convert");
+      deleteTree(convertDir);
+      java.io.File udas = new java.io.File(convertDir, "udas"), packs = new java.io.File(convertDir, "packs");
+      udas.mkdirs();
+      packs.mkdirs();
+      new java.io.File(convertDir, "out").mkdirs();
+      skins.clear();
+      results.clear();
+      convertLog.setLength(0);
+      modName = "";
+      for (android.net.Uri u : picked) {
+        String name = displayName(u);
+        String low = name.toLowerCase(Locale.ROOT);
+        if (modName.isEmpty()) modName = cleanName(name);
+        if (low.endsWith(".7z") || low.endsWith(".rar")) {
+          log(name + ": .7z and .rar cannot be read here yet; unpack it and pick the .udas and .pack files, or "
+              + "repack it as .zip");
+          continue;
+        }
+        try (java.io.InputStream in = getContentResolver().openInputStream(u)) {
+          if (in == null) continue;
+          if (low.endsWith(".zip")) {
+            java.util.zip.ZipInputStream zip = new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(in));
+            int found = 0;
+            for (java.util.zip.ZipEntry e; (e = zip.getNextEntry()) != null;) {
+              if (e.isDirectory()) continue;
+              String n = e.getName().replace('\\', '/');
+              java.io.File dest = destination(n.substring(n.lastIndexOf('/') + 1), udas, packs);
+              if (dest == null) continue;
+              store(zip, dest);
+              found++;
+            }
+            log(name + ": " + found + " files to convert");
+          } else {
+            java.io.File dest = destination(name, udas, packs);
+            if (dest == null) log(name + ": not a .udas or .pack file, left out");
+            else store(in, dest);
+          }
+        } catch (Exception e) {
+          log(name + ": " + e.getMessage());
+        }
+      }
+      if (modName.isEmpty()) modName = "UHD skin";
+      // .lfs (the PC release's packing) unpacked, then the skins listed against the discs
+      java.io.File[] all = concat(udas.listFiles(), packs.listFiles());
+      for (java.io.File f : all) {
+        if (!f.getName().toLowerCase(Locale.ROOT).endsWith(".lfs")) continue;
+        java.io.File out = new java.io.File(f.getParentFile(), f.getName().substring(0, f.getName().length() - 4));
+        String why = StudioBridge.unpackLfs(f.getAbsolutePath(), out.getAbsolutePath());
+        if (!why.isEmpty()) log(f.getName() + ": " + why);
+        f.delete();
+      }
+      java.io.File[] found = udas.listFiles();
+      if (found != null) {
+        java.util.Arrays.sort(found);
+        for (java.io.File f : found) {
+          String stem = f.getName().toLowerCase(Locale.ROOT).replace(".udas", "");
+          String rel = "", file = "";
+          for (String disc : new String[] {"disc1", "disc2"}) {
+            for (String ext : new String[] {".drs", ".das"}) {
+              String r = disc + "/files/em/" + stem + ext;
+              if (rel.isEmpty() && files.size(r) >= 0) {
+                rel = r;
+                file = stem + ext;
+              }
+            }
+          }
+          skins.add(new String[] {stem, f.getAbsolutePath(), rel, file});
+        }
+      }
+      String[] packNames = packs.list();
+      log(skins.size() + " skins, " + (packNames == null ? 0 : packNames.length) + " texture packs");
+      if (skins.isEmpty()) log("No em/plXX.udas in what was picked: this converts UHD skins of the PC release.");
+    });
+  }
+
+  private static java.io.File destination(String name, java.io.File udas, java.io.File packs) {
+    String low = name.toLowerCase(Locale.ROOT);
+    if (low.matches("(pl|em)[0-9a-f]{2}\\.udas(\\.lfs)?")) return new java.io.File(udas, low);
+    if (low.endsWith(".pack") || low.endsWith(".pack.lfs")) return new java.io.File(packs, low);
+    return null;
+  }
+
+  private static void store(java.io.InputStream in, java.io.File dest) throws java.io.IOException {
+    try (java.io.OutputStream out = new java.io.FileOutputStream(dest)) {
+      byte[] buf = new byte[1 << 16];
+      for (int n; (n = in.read(buf)) > 0;) out.write(buf, 0, n);
+    }
+  }
+
+  private void convert(List<String[]> which, String preview) {
+    work("Converting…", () -> {
+      java.io.File packDir = new java.io.File(convertDir, "packs"), out = new java.io.File(convertDir, "out");
+      String[] packNames = packDir.list();
+      List<String> packs = new ArrayList<>();
+      if (packNames != null) for (String n : packNames) if (n.endsWith(".pack")) packs.add(new java.io.File(packDir, n).getAbsolutePath());
+      for (String[] k : which) {
+        if (k[2].isEmpty()) continue;
+        java.io.File disc = new java.io.File(convertDir, "disc_" + k[3]);
+        String why = files.copy(k[2], disc);
+        if (!why.isEmpty()) {
+          log(k[0] + ": the disc's " + k[3] + " cannot be read: " + why);
+          continue;
+        }
+        java.io.File dest = new java.io.File(out, k[3]);
+        String r = StudioBridge.convertSkin(disc.getAbsolutePath(), k[3], k[1], packs.toArray(new String[0]),
+            convertTex, dest.getAbsolutePath());
+        disc.delete();
+        boolean ok = r.startsWith("ok\n");
+        log("── " + k[0] + " · " + character(k[0]) + (ok ? ": converted" : ": failed"));
+        log(r.substring(r.indexOf('\n') + 1).trim());
+        if (ok) results.put(k[0], dest.getAbsolutePath());
+      }
+      if (preview != null && results.containsKey(preview)) {
+        String file = null;
+        for (String[] k : which) if (k[0].equals(preview)) file = k[3];
+        final String f = file;
+        main.post(() -> preview(preview, f));
+      }
+    });
+  }
+
+  // the converted archive on the view, as the game will put it together
+  private void preview(String stem, String file) {
+    String path = results.get(stem);
+    if (path == null) return;
+    String why = StudioBridge.openArchive(path, file);
+    if (!why.isEmpty()) {
+      toast(file + ": " + why);
+      return;
+    }
+    archivePath = null;
+    archiveName = modName + " · " + file;
+    String w = StudioBridge.loadComplete();
+    if (!w.isEmpty()) {
+      toast(file + ": " + w);
+      return;
+    }
+    modelLoaded = true;
+    length = 0;
+    frame = 0;
+    title.setText(archiveName);
+    updateInfo();
+    frameModel();
+  }
+
+  // the pack the game imports: <mod>/em/plXX.drs (Mods › import)
+  private void saveZip(android.net.Uri uri) {
+    work("Saving…", () -> {
+      String folder = modName.replaceAll("[^A-Za-z0-9 _.-]", "").trim();
+      if (folder.isEmpty()) folder = "UHD skin";
+      try (java.io.OutputStream os = getContentResolver().openOutputStream(uri, "w");
+           java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(new java.io.BufferedOutputStream(os))) {
+        for (java.util.Map.Entry<String, String> r : results.entrySet()) {
+          java.io.File f = new java.io.File(r.getValue());
+          zip.putNextEntry(new java.util.zip.ZipEntry(folder + "/em/" + f.getName()));
+          try (java.io.InputStream in = new java.io.FileInputStream(f)) {
+            byte[] buf = new byte[1 << 16];
+            for (int n; (n = in.read(buf)) > 0;) zip.write(buf, 0, n);
+          }
+          zip.closeEntry();
+        }
+        log("saved: " + folder + ".zip (" + results.size() + " archives)");
+      } catch (Exception e) {
+        log("cannot be saved: " + e.getMessage());
+      }
+    });
+  }
+
+  private String displayName(android.net.Uri u) {
+    try (android.database.Cursor c = getContentResolver().query(u,
+             new String[] {android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+      if (c != null && c.moveToFirst() && c.getString(0) != null) return c.getString(0);
+    } catch (Exception ignored) {
+    }
+    String p = u.getLastPathSegment();
+    return p == null ? "mod" : p.substring(p.lastIndexOf('/') + 1);
+  }
+
+  // "Jill as Ashley-1234-1-0-1700000000.zip" -> "Jill as Ashley" (the Nexus download's numbers dropped)
+  static String cleanName(String file) {
+    String n = file.replaceAll("(?i)\\.(zip|7z|rar|udas|lfs|pack)$", "");
+    n = n.replaceAll("(?i)\\.(udas|pack)$", "");
+    n = n.replaceAll("(-\\d+)+$", "").replace('_', ' ').replaceAll("[^A-Za-z0-9 .-]", "").trim();
+    return n.length() > 40 ? n.substring(0, 40).trim() : n;
+  }
+
+  private static java.io.File[] concat(java.io.File[] a, java.io.File[] b) {
+    List<java.io.File> out = new ArrayList<>();
+    if (a != null) out.addAll(java.util.Arrays.asList(a));
+    if (b != null) out.addAll(java.util.Arrays.asList(b));
+    return out.toArray(new java.io.File[0]);
+  }
+
+  private static void deleteTree(java.io.File f) {
+    java.io.File[] children = f.listFiles();
+    if (children != null) for (java.io.File c : children) deleteTree(c);
+    f.delete();
   }
 
   private void showEdit() {

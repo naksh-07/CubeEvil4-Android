@@ -1,6 +1,8 @@
 // CubeEvil4 Studio: the Java side (StudioBridge / StudioActivity) and the viewer (studio_model.cpp, studio_gl.cpp).
 // The UI thread opens archives, loads models and picks animations; the GL thread poses and draws. One lock for both.
+#include "studio_convert.h"
 #include "studio_gl.h"
+#include <fstream>
 #include <android/log.h>
 #include <jni.h>
 #include <mutex>
@@ -152,6 +154,52 @@ JNIEXPORT jint JNICALL STUDIO(useMotions)(JNIEnv *env, jclass, jstring path, jst
   const int n = gViewer.addMotions(a, &why);
   if (!n) gError = why;
   return n ? n : -1;
+}
+
+// ---- the converter (studio_convert.cpp): UHD skins of the PC release
+namespace {
+bool readAll(const std::string &path, convert::Bytes &out) { return ReadWhole(path, out, 512u * 1024 * 1024); }
+bool writeAll(const std::string &path, const convert::Bytes &data) {
+  std::ofstream o(path, std::ios::binary | std::ios::trunc);
+  return o && o.write(reinterpret_cast<const char *>(data.data()), std::streamsize(data.size()));
+}
+}  // namespace
+
+// An .lfs file of the PC release unpacked to `out`: "" or why not
+JNIEXPORT jstring JNICALL STUDIO(unpackLfs)(JNIEnv *env, jclass, jstring in, jstring out) {
+  convert::Bytes data;
+  if (!readAll(text(env, in), data)) return env->NewStringUTF("cannot be read");
+  try {
+    const auto unpacked = convert::IsLfs(data) ? convert::UnpackLfs(data) : data;
+    if (!writeAll(text(env, out), unpacked)) return env->NewStringUTF("cannot be written");
+  } catch (const std::exception &e) {
+    return env->NewStringUTF(e.what());
+  }
+  return env->NewStringUTF("");
+}
+
+// A PC skin (`pc`: em/plXX.udas or .udas.lfs) into the disc's archive (`gc`, its name `gcName`), the textures from the
+// .pack files `packs`, written to `out`: "ok\n" + the report, or "error\n" + why (+ the report so far)
+JNIEXPORT jstring JNICALL STUDIO(convertSkin)(JNIEnv *env, jclass, jstring gc, jstring gcName, jstring pc,
+                                             jobjectArray packs, jint tex, jstring out) {
+  convert::Bytes g, p, result;
+  if (!readAll(text(env, gc), g)) return env->NewStringUTF("error\nthe disc's archive cannot be read");
+  if (!readAll(text(env, pc), p)) return env->NewStringUTF("error\nthe mod's archive cannot be read");
+  convert::Packs pk;
+  const jsize n = packs ? env->GetArrayLength(packs) : 0;
+  for (jsize i = 0; i < n; ++i) {
+    auto s = static_cast<jstring>(env->GetObjectArrayElement(packs, i));
+    pk.add(text(env, s));
+    env->DeleteLocalRef(s);
+  }
+  convert::Options o;
+  if (tex >= 8) o.tex = tex;
+  std::string log, why;
+  if (!convert::ConvertSkin(g, text(env, gcName), p, pk, o, result, log, &why))
+    return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
+  if (!writeAll(text(env, out), result)) return env->NewStringUTF("error\nthe result cannot be written");
+  __android_log_print(ANDROID_LOG_INFO, "RE4Studio", "converted %s: %zu bytes", text(env, gcName).c_str(), result.size());
+  return env->NewStringUTF(("ok\n" + log).c_str());
 }
 
 JNIEXPORT jstring JNICALL STUDIO(lastError)(JNIEnv *env, jclass) {

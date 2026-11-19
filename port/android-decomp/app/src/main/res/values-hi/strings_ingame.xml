@@ -504,6 +504,7 @@
         <item quantity="other">%1$s: %2$d फ़ाइलें</item>
     </plurals>
     <string name="ingame_mod_add">मॉड फ़ोल्डर जोड़ें</string>
+    <string name="ingame_mod_add_zip">मॉड .zip जोड़ें</string>
     <string name="ingame_mods_remove">सभी मॉड हटाएँ</string>
     <string name="ingame_mods_remove_text">गेम रीस्टार्ट होगा और फिर से डिस्क की फ़ाइलें इस्तेमाल करेगा। पिछली सेव के बाद की प्रगति खो जाएगी।</string>
     <string name="ingame_mod_copying">मॉड कॉपी हो रहा है…</string>
