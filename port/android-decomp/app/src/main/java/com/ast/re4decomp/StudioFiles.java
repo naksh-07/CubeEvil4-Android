@@ -42,6 +42,8 @@ final class StudioFiles {
   private final String app;          // its package (for the message)
   private final ContentResolver resolver;
   private final Map<String, ParcelFileDescriptor> open = new HashMap<>();
+  /** The last failure to read the game app's files ("" none), for the screen. */
+  String lastError = "";
 
   private StudioFiles(File local, String authority, String app, ContentResolver resolver) {
     this.local = local;
@@ -76,9 +78,13 @@ final class StudioFiles {
       return out;
     }
     try (Cursor cur = resolver.query(uri("list", rel), null, null, null, null)) {
-      if (cur == null) return out;
+      if (cur == null) {
+        lastError = app + " gave no answer";
+        return out;
+      }
       while (cur.moveToNext()) out.add(new Item(cur.getString(0), cur.getInt(1) != 0, cur.getLong(2)));
     } catch (RuntimeException e) {
+      lastError = e.getMessage() != null ? e.getMessage() : e.toString();
       android.util.Log.w("RE4Studio", "list " + rel + ": " + e);
     }
     return out;
@@ -112,6 +118,7 @@ final class StudioFiles {
       open.put(rel, pfd);
       return "/proc/self/fd/" + pfd.getFd();
     } catch (Exception e) {
+      lastError = e.getMessage() != null ? e.getMessage() : e.toString();
       android.util.Log.w("RE4Studio", "open " + rel + ": " + e);
       return null;
     }

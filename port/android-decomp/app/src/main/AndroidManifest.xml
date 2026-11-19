@@ -12,6 +12,11 @@
     <uses-feature android:name="android.hardware.type.automotive" android:required="false" />
     <!-- the core mode passes the game's rumble to the device's vibrator -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- CubeEvil4 Studio's own APK must be visible to this app (Android 11 and later), else StudioDataProvider's
+         signature check of its calls fails and the Studio sees no files (DevJunior's device, 19.11.2026) -->
+    <queries>
+        <package android:name="com.ast.cubeevil4.studio" />
+    </queries>
     <!-- the in-game menu's update button (AppUpdate): asks GitHub for the newest release and opens its page in the
          browser (since 0.99.6 no download or install in the app, so no permission to install apps) -->
     <uses-permission android:name="android.permission.INTERNET" />

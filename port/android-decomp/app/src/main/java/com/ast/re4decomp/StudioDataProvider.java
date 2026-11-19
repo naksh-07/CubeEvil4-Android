@@ -35,8 +35,10 @@ public final class StudioDataProvider extends ContentProvider {
     int caller = Binder.getCallingUid();
     if (caller == Process.myUid()) return;
     PackageManager pm = getContext().getPackageManager();
-    if (pm.checkSignatures(Process.myUid(), caller) != PackageManager.SIGNATURE_MATCH) {
-      throw new SecurityException("CubeEvil4 Studio data: only for an app signed like this one");
+    int result = pm.checkSignatures(Process.myUid(), caller);
+    if (result != PackageManager.SIGNATURE_MATCH) {
+      android.util.Log.w("RE4Studio", "data provider: caller uid " + caller + " refused (signature check " + result + ")");
+      throw new SecurityException("CubeEvil4 Studio data: only for an app signed like this one (check " + result + ")");
     }
   }
 

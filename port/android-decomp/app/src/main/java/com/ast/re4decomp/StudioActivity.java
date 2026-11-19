@@ -312,7 +312,9 @@ public final class StudioActivity extends Activity {
       content.addView(hs);
       List<String[]> found = archives();
       if (found.isEmpty()) {
-        content.addView(note(source.equals("mods") ? "No mod pack holds models (em/*.drs)."
+        content.addView(note(!files.lastError.isEmpty()
+            ? "The files of " + files.from() + " cannot be read: " + files.lastError
+            : source.equals("mods") ? "No mod pack holds models (em/*.drs)."
             : "No archives here: import your discs in CubeEvil4 first."));
       }
       for (String[] f : found) {
@@ -541,6 +543,7 @@ public final class StudioActivity extends Activity {
   // the archives of the source: rel, file name, pack name ("" none), size
   private List<String[]> archives() {
     List<String[]> out = new ArrayList<>();
+    files.lastError = "";
     if (source.equals("mods")) {
       for (StudioFiles.Item p : files.list("mods")) {
         if (!p.dir) continue;
