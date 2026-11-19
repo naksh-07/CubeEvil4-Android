@@ -294,6 +294,7 @@ void load()
         if (r[0] >= 0x80 && r[0] < 0x80 + kClips && last <= kSeqMax) {
             Move& c = clips[r[0] - 0x80];
             c.mot = base + at[entry];
+            c.flags = r[1];
             c.last = last;
             c.scale = 1.0f;
             c.time = 1.0f;
@@ -368,6 +369,7 @@ void load()
     int nClips = 0;
     for (int i = 0; i < kClips; i++) {
         gClip[i].mot = clips[i].mot;
+        gClip[i].flags = clips[i].flags;
         gClip[i].last = clips[i].last;
         gClip[i].nSteps = clips[i].nSteps;
         memcpy(gClip[i].steps, clips[i].steps, sizeof(gClip[i].steps));
@@ -484,14 +486,19 @@ void fitClip(int i)
     memset(c.seq, 0, sizeof(c.seq));
     c.seq[0] = (u16) keys;
     SEQUENCE_DATA* key = (SEQUENCE_DATA*) (c.seq + 2);
+    // a loop (the sprint's, flags 1) leaves its last frame out: it is its first again, played twice it stood one
+    // frame still at every turn of the loop (device report 19.11.2026: the run "looks choppy, as if it repeats");
+    // the others end on their last frame
+    const bool loop = (c.flags & 1) || i == 8;
+    const int span = loop ? keys : keys - 1;
     for (int k = 0; k < keys; k++) {
-        key[k].Frame = (u16) ((f32) k * frames / (f32) (keys - 1) * 64.0f + 0.5f);
+        key[k].Frame = (u16) ((f32) k * frames / (f32) span * 64.0f + 0.5f);
     }
     // its footsteps with the sounds of its movement (the walk's for the walk's start and stop and the turns in place,
     // the run's for the rest; device report 18.11.2026: "no footsteps are heard" while sprinting)
     const Move& snd = i < 2 || i == 6 || i == 7 ? gMove[1] : gMove[2];
     if (snd.mot && snd.se[0]) {
-        putSteps(c, key, keys, (f32) (keys - 1) / frames, snd.se);
+        putSteps(c, key, keys, (f32) span / frames, snd.se);
     }
 }
 
@@ -502,9 +509,18 @@ bool throwable(int no)
     return no == 0x13 || no == 0x16 || no == 0x17 || no == 0x19 || no == 0x1F || no == 0x20;
 }
 
-bool fits()
+// Leon with bare hands, a handgun or a throwable: the remake's motions as they are
+bool light()
 {
     return pG && pG->pl_type == 0 && (pG->weapon_no == 0 || HandgunCk(pG->weapon_no) || throwable(pG->weapon_no));
+}
+
+// The remake's movements for every weapon of Leon's: with a big one (rifle, shotgun, TMP, launcher) its upper body is
+// the game's (heavyUpper; device report 19.11.2026: "with shotguns and long weapons he does not move well" with the
+// remake's legs under the game's walk, 18.11: the game's pace and steps, the remake's legs out of step)
+bool fits()
+{
+    return pG && pG->pl_type == 0;
 }
 
 // The table's four movements: the remake's (the game's kept aside) or the game's back
@@ -546,22 +562,27 @@ void apply(cPlayer* pl, bool fresh)
             if (kNeck[k]) {
                 tbl[kNeck[k]] = tbl[kNeck[k] + 1] = 0;
             }
-        } else if (ours || oursH) {
-            if (ours) {
-                tbl[slot] = mv.orig;
-                tbl[slot + 1] = mv.origSeq;
-            }
+        } else {
+            // the hurt pair is Leon's own (cPlLeon::setMotion, his archive): a new weapon (weaponInit refills only
+            // 0..0x5E) leaves it ours, it goes back to his
             if (oursH) {
                 tbl[hurt] = mv.origH;
                 tbl[hurt + 1] = mv.origHSeq;
             }
-            if (kNeck[k] && mv.neckOut) {
-                tbl[kNeck[k]] = mv.neck[0];
-                tbl[kNeck[k] + 1] = mv.neck[1];
+            // the walk's slot and its neck: only when they are still ours. After a new weapon the neck slots hold
+            // the new module's, the ones kept aside the old module's, unloaded (device report 19.11.2026: putting
+            // them back crashed the game in MotionMoveCore, "Invalid parts 248", on the second change to the shotgun)
+            if (ours) {
+                tbl[slot] = mv.orig;
+                tbl[slot + 1] = mv.origSeq;
+                if (kNeck[k] && mv.neckOut) {
+                    tbl[kNeck[k]] = mv.neck[0];
+                    tbl[kNeck[k] + 1] = mv.neck[1];
+                }
             }
-            mv.neckOut = false;
-        } else if (fresh) {
-            mv.neckOut = false;
+            if (ours || fresh) {
+                mv.neckOut = false;
+            }
         }
     }
     if (want) {
@@ -742,13 +763,14 @@ void matchPhase(cPlayer* pl)
 }
 
 // Big weapons (wish of DevJunior, 18.11.2026: "the movement animations do not work with the big weapons"): the
-// remake's motions are unarmed, a rifle or shotgun in both hands keeps the game's walk, run and back step; their legs
-// take the remake's (free_move.cpp re4_legs_overlay, the way "Move while aiming" walks his legs), in step with the
-// game's motion (its first right footstep, its sequence's sound, on the remake's), the hips kHeavySway of its swing.
+// remake's motions are unarmed; with a rifle or shotgun in both hands Leon moves with the remake's movements (their
+// pace, steps, starts, stops, sprint) and his upper body, from the waist up, takes the game's own walk, run, back step
+// or stand of that weapon (free_move.cpp re4_legs_overlay with `upper`), in step with the remake's (the first right
+// footsteps of both; the sequence's sound of the game's). Until 19.11.2026 the other way round (the game's walk, the
+// remake's legs on it): out of step.
 extern "C" int re4_legs_overlay(void* pl, void* mot, void* seq, int start, float speed, float at, float legW,
-                                float sway, float shift);
-const f32 kHeavyFade = 0.2f;
-const f32 kHeavySway = 0.6f;
+                                float sway, float shift, int upper);
+const f32 kHeavyFade = 0.25f;
 f32 gHeavyW;
 int gHeavyK = 1;
 
@@ -774,50 +796,66 @@ f32 gameStrike(const void* seq)
     return share;
 }
 
-bool heavy(cPlayer* pl)
+// The movement whose game motion holds the upper body now (0 stand, 1 walk, 2 run, 3 back step), -1 none: one of the
+// remake's motions or clips plays in the field's plain routines with a big weapon
+int heavy(cPlayer* pl)
 {
-    if (!pl || pl != pPL || !pG || pG->pl_type != 0 || !on() || !gCount || fits() || !pl->m_MotTbl ||
-        pl->r_no_0 != 0 || pl->r_no_1 < 1 || pl->r_no_1 > 3) {
-        return false;
+    if (!pl || pl != pPL || !pG || gApplied != 1 || light() || !on() || !gCount || !pl->m_MotTbl ||
+        pl->r_no_0 != 0 || pl->r_no_1 > 3) {
+        return -1;
     }
-    void** tbl = pl->m_MotTbl;
     const void* cur = (const void*) pl->Motion.pMot;
-    // walk (2 / hurt 0x61), back step (8 / 0x63), run (6 / 0x65)
-    static const int kGame[3][3] = {{1, 2, 0x61}, {3, 8, 0x63}, {2, 6, 0x65}};
-    for (const auto& g : kGame) {
-        if (cur && (cur == tbl[g[1]] || cur == tbl[g[2]]) && gMove[g[0]].mot) {
-            gHeavyK = g[0];
-            return true;
+    for (int k = 0; k < kMoves; k++) {
+        if (cur && cur == (const void*) gMove[k].mot) {
+            return k;
         }
     }
-    return false;
+    // the clips: the walk's start and stop, the turns in place (the stand), the rest the run's
+    static const int kClipMove[kClips] = {1, 1, 2, 2, 2, 2, 0, 0, 2, 2, 2, 2};
+    for (int i = 0; i < kClips; i++) {
+        if (cur && cur == (const void*) gClip[i].mot) {
+            return kClipMove[i];
+        }
+    }
+    return -1;
 }
 
-// Heavy weapons' legs (after the routines): see heavy
-int heavyLegs(cPlayer* pl)
+// After the routines: the big weapon's upper body (see heavy); 1 when posed
+int heavyUpper(cPlayer* pl)
 {
-    const bool want = heavy(pl);
-    gHeavyW = want ? (gHeavyW + kHeavyFade > 1.0f ? 1.0f : gHeavyW + kHeavyFade)
-                   : (gHeavyW - kHeavyFade < 0.0f ? 0.0f : gHeavyW - kHeavyFade);
-    if (gHeavyW <= 0.0f || !pl || !pl->pList || !pl->m_MotTbl) {
+    const int k = heavy(pl);
+    if (k >= 0) {
+        gHeavyK = k;
+    }
+    gHeavyW = k >= 0 ? (gHeavyW + kHeavyFade > 1.0f ? 1.0f : gHeavyW + kHeavyFade)
+                     : (gHeavyW - kHeavyFade < 0.0f ? 0.0f : gHeavyW - kHeavyFade);
+    const Move& mv = gMove[gHeavyK];
+    if (gHeavyW <= 0.0f || !pl || !pl->pList || !pl->m_MotTbl || !mv.orig || light()) {
         gHeavyW = 0.0f;
         return 0;
     }
-    const Move& mv = gMove[gHeavyK];
-    f32 rt = 0.0f;
-    f32 share = pl->Motion.Seq_frame_num ? pl->Motion.Seq_frame / (f32) pl->Motion.Seq_frame_num : 0.0f;
-    const f32 gs = pl->Motion.pSeq_top ? gameStrike((const void*) ((const u16*) pl->Motion.pSeq_top - 2)) : -1.0f;
-    if (gs >= 0.0f && rightStrike(mv, &rt)) {
-        share += rt / (f32) mv.last - gs;
+    // the game's motion at the remake's step: the remake's share of its cycle from its first right footstep, the game's
+    // from its own; the stand and the clips: the game's runs on by itself
+    f32 at = -1.0f;
+    const u8* gseq = (const u8*) mv.origSeq;
+    const unsigned gkeys = gseq ? get16(gseq) : 0;
+    if (k >= 1 && (const void*) pl->Motion.pMot == (const void*) mv.mot && gkeys && mv.last) {
+        f32 rt = 0.0f;
+        f32 share = (f32) pl->Motion.Seq.Frame / 64.0f / (f32) mv.last;
+        const f32 gs = gameStrike(mv.origSeq);
+        if (gs >= 0.0f && rightStrike(mv, &rt)) {
+            share += gs - rt / (f32) mv.last;
+        }
+        share -= floorf(share);
+        at = share * (f32) gkeys;
     }
-    share -= floorf(share);
     static bool said;
     if (!said) {
         said = true;
-        re4_log("move: the remake's legs under weapon %d (its %s)", (int) pG->weapon_no, kNames[gHeavyK]);
+        re4_log("move: weapon %d: the remake's movements, the game's upper body (its %s)", (int) pG->weapon_no,
+                kNames[gHeavyK]);
     }
-    return re4_legs_overlay(pl, mv.mot, 0, 0, 0.0f, share * (f32) mv.last, gHeavyW, gHeavyW * kHeavySway,
-                            gHeavyW * kHeavySway);
+    return re4_legs_overlay(pl, mv.orig, mv.origSeq, 0, 1.0f, at, gHeavyW, 0.0f, 0.0f, 1);
 }
 
 // The switch or the pack changed while Leon walks: the table follows (in the field's plain routines only)
@@ -927,7 +965,7 @@ int re4_move_turn(void* p, float diff, int armed)
 // legs under a big weapon; 1 when they are posed
 int re4_move_heavy_legs(void* p)
 {
-    return heavyLegs((cPlayer*) p);
+    return heavyUpper((cPlayer*) p);
 }
 
 // For the tests: the movements the active archive holds

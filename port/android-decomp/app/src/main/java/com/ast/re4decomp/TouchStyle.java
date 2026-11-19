@@ -99,8 +99,10 @@ final class TouchStyle {
   }
   static final RetroTouchColors XBOX_GREEN = letter(0xFF6FCB4E, 0xFF96E87A), XBOX_RED = letter(0xFFF0605A, 0xFFFF8E88),
       XBOX_BLUE = letter(0xFF5B8FF0, 0xFF8DB2FF), XBOX_YELLOW = letter(0xFFF2C94C, 0xFFFFDD80);
-  static final RetroTouchColors XBOX_DPAD = colours(0xFF3A3D45, 0xFF8A8D96, 0xFFE6E7EC, 0xFF52555E, 0xFFC0C3CC, 0xFFFFFFFF,
-      0xFF454850, 0xFFD0D3DC, 0xFFFFFFFF);
+  // the D-pad as the Xbox controller's (DevJunior, 19.11.2026: "make it look more like an Xbox one"): as dark as its
+  // buttons, a thin grey edge, small grey chevrons instead of white arrows (the pad's own carry none)
+  static final RetroTouchColors XBOX_DPAD = colours(0xFF1E2126, 0xFF5F636C, 0xFF9EA2AB, 0xFF353840, 0xFFB8BBC4, 0xFFFFFFFF,
+      0xFF2A2D33, 0xFFC0C3CC, 0xFFFFFFFF);
 
   // ---------------------------------------------------------------- own icons (24 x 24, the ink centred in the box)
   static final RetroTouchIcon PLUS = RetroTouchIcon.fromPaths(24f, "M12 5v14", "M5 12h14");
@@ -249,7 +251,9 @@ final class TouchStyle {
     return new RetroTouchSkin(IDS[XBOX], NAMES[XBOX], RetroTouchButtonStyle.LABELS)
         .setDefaultColors(XBOX_DARK)
         .setDpadColors(XBOX_DPAD)
-        .setDpadIcons(RetroTouchIcon.ARROW_UP, RetroTouchIcon.ARROW_DOWN, RetroTouchIcon.ARROW_LEFT, RetroTouchIcon.ARROW_RIGHT)
+        .setDpadStyle(RetroTouchDpadStyle.CROSS)
+        .setDpadIcons(RetroTouchIcon.CHEVRON_UP, RetroTouchIcon.CHEVRON_DOWN, RetroTouchIcon.CHEVRON_LEFT,
+            RetroTouchIcon.CHEVRON_RIGHT)
         .setMoveStickLook(look().withLabel("LS"))
         .setLook(CoreTouch.A, label("A", XBOX_GREEN))
         .setLook(CoreTouch.B, label("B", XBOX_RED))

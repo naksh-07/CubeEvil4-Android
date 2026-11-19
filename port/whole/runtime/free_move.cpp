@@ -150,6 +150,7 @@ bool gHipMean = false;
 MOTION_INFO gWalk;
 void* gWalkMot = 0;
 cPlayer* gWalkPl = 0;
+bool gWalkUpper;  // the parts it was found for: the upper body (overlay's `upper`), else the legs
 f32 gLegW = 0.0f;
 
 f32 wrap(f32 a)
@@ -485,12 +486,17 @@ bool weaponRoutine(cPlayer* pl)
 
 // The legs: the parts below the hips that hang off the walk motion's IK chain roots (kind 0x30, IKInit's;
 // ik.cpp), or, without them, the hips' children below the hips. gLeg[i] by the parts chain's order.
-void findLegs(cPlayer* pl, int n)
+void findLegs(cPlayer* pl, int n, bool upper)
 {
     cParts* roots[8];
     int nRoots = 0;
     cParts* hips = pl->pList;
-    for (int i = 0; i < gWalk.Joint_num && nRoots < 8; i++) {
+    if (upper) {
+        // the upper body: Leon's waist (part 1) and all under it (spine, arms, head; runtime/locomotion.cpp's big
+        // weapons), turned against the model under the routines' hips
+        roots[nRoots++] = pl->getPartsPtr(1);
+    }
+    for (int i = 0; !upper && i < gWalk.Joint_num && nRoots < 8; i++) {
         if (!(gWalk.pJoint_kind[i] & 0x30)) {
             continue;
         }
@@ -499,7 +505,7 @@ void findLegs(cPlayer* pl, int n)
             roots[nRoots++] = r;
         }
     }
-    if (nRoots == 0) {
+    if (nRoots == 0 && !upper) {
         // a motion without leg IK (a mod's remake walk, runtime/locomotion.cpp): the legs' first parts below the
         // hips, under the hips or under a part of theirs at hip height (Leon's pelvis, part 17, holds the thighs;
         // device report 13.11.2026: the legs stood still while he moved aiming or reloading)
@@ -539,12 +545,14 @@ void findLegs(cPlayer* pl, int n)
     }
 }
 
-// A walk-like motion on Leon's legs (`mot`, `seq`; from sequence frame `start` when it is new): every part as the
+// A walk-like motion on Leon's legs (`upper`: on his upper body instead, from the waist up; `mot`, `seq`; from sequence
+// frame `start` when it is new): every part as the
 // routines posed him is kept, the motion is posed on a copy (its own work gWalk and key histories), the legs take its
 // turns (`legW` of them), the hips its swing against its running mean (`swayW` of the turn, `shiftW` of the bob).
 // `at` >= 0: the motion at that sequence frame (the caller keeps it in step), else it advances by `speed`.
 // Shared by the legs while aiming (legs) and the remake's legs under a big weapon (runtime/locomotion.cpp).
-bool overlay(cPlayer* pl, void* mot, void* seq, int start, f32 speed, f32 at, f32 legW, f32 swayW, f32 shiftW)
+bool overlay(cPlayer* pl, void* mot, void* seq, int start, f32 speed, f32 at, f32 legW, f32 swayW, f32 shiftW,
+             bool upper = false)
 {
     int n = 0;
     for (cParts* p = pl->pList; p; p = p->pList) {
@@ -559,7 +567,7 @@ bool overlay(cPlayer* pl, void* mot, void* seq, int start, f32 speed, f32 at, f3
     }
     Mtx modelMat;
     PSMTXCopy(pl->mat, modelMat);
-    if (mot != gWalkMot || pl != gWalkPl) {
+    if (mot != gWalkMot || pl != gWalkPl || upper != gWalkUpper) {
         memset(&gWalk, 0, sizeof gWalk);
         // keep the model's blend motion (cMot3's pitch blend); IKInit below, on the copy only
         gWalk.Mot_flag = 0x20000000 | 0x10000000;
@@ -568,8 +576,9 @@ bool overlay(cPlayer* pl, void* mot, void* seq, int start, f32 speed, f32 at, f3
         memset(gWalkHist, 0, sizeof gWalkHist);
         gWalkMot = mot;
         gWalkPl = pl;
+        gWalkUpper = upper;
         gHipMean = false;
-        findLegs(pl, n);
+        findLegs(pl, n, upper);
     }
     i = 0;
     for (cParts* p = pl->pList; p; p = p->pList, i++) {
@@ -742,9 +751,9 @@ void re4_player_after_routine(cPlayer* pl)
 
 // runtime/locomotion.cpp (re4_move_heavy_legs): a motion on Leon's legs, see overlay
 int re4_legs_overlay(void* pl, void* mot, void* seq, int start, float speed, float at, float legW, float sway,
-                     float shift)
+                     float shift, int upper)
 {
-    return pl && mot && overlay((cPlayer*) pl, mot, seq, start, speed, at, legW, sway, shift) ? 1 : 0;
+    return pl && mot && overlay((cPlayer*) pl, mot, seq, start, speed, at, legW, sway, shift, upper != 0) ? 1 : 0;
 }
 
 // Patch 0909 (the shotgun, rifle and machine gun reload steps, the game thread): 1 when a reload without aiming
