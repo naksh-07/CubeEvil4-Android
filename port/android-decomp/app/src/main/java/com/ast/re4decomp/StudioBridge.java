@@ -45,6 +45,8 @@ final class StudioBridge {
    * from the unpacked .pack files `packs`, `tex` the largest texture side: "ok\n" + report or "error\n" + why.
    */
   static native String convertSkin(String gc, String gcName, String pc, String[] packs, int tex, String out);
+  /** A GTA San Andreas ped skin (.dff, its .txd or "") on Leon's disc archive: "ok\n" + report or "error\n" + why. */
+  static native String convertDff(String gc, String gcName, String dff, String txd, int tex, String out);
   static native void surfaceCreated();
   static native void draw(int width, int height, float yaw, float pitch, float distance, float tx, float ty, float tz,
       int flags, float frame);

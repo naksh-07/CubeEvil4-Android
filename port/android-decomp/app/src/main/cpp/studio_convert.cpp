@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -1577,6 +1578,8 @@ Bytes readFile(const std::string &path, std::uint64_t at, std::uint64_t len) {
   return b;
 }
 
+#include "studio_dff.inc"
+
 }  // namespace
 
 bool Packs::add(const std::string &path) {
@@ -1706,6 +1709,297 @@ bool ConvertSkin(const Bytes &gcData, const std::string &gcName, const Bytes &pc
     result = buildArchive(gc, body);
     log += fmt("%s: %zu bytes, data part %zu bytes (disc %zu; the game's place for Leon holds %d)\n", gcName.c_str(),
                result.size(), body.size(), gc.body.size(), 0x118000);
+    return true;
+  } catch (const std::exception &e) {
+    if (why) *why = e.what();
+    return false;
+  }
+}
+
+bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dffData, const Bytes &txdData,
+                const Options &o, Bytes &result, std::string &log, std::string *why) {
+  try {
+    const Archive gc(gcData, true);
+    std::string stem = gcName;
+    if (auto slash = stem.find_last_of("/\\"); slash != std::string::npos) stem = stem.substr(slash + 1);
+    stem = lower(stem.substr(0, stem.find('.')));
+    if (stem != "pl00" && stem != "pl08" && stem != "pl09" && stem != "pl10")
+      fail("GTA skins go on Leon for now (pl00, pl08, pl09, pl10), not on " + stem);
+    if (gc.count() < 22 || gc.kind(0) != "BIN" || gc.kind(1) != "TPL") fail("not Leon's archive");
+    const Bytes body = gc.entry(0);
+    const auto skel = discSkeleton(body);
+    for (int need : {0, 2, 3, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 40, 55})
+      if (!skel.count(need)) fail(fmt("the disc's skeleton has no bone %d", need));
+
+    DffMesh m = readDff(dffData);
+    std::vector<std::string> notes;
+    std::map<std::string, Rgba> images;
+    if (!txdData.empty()) images = readTxd(txdData, notes);
+    const std::size_t nb = m.boneAt.size(), nv = m.pos.size();
+    log += fmt("GTA skin: %zu vertices, %zu triangles, %zu materials, %zu bones, %zu textures in the .txd\n", nv,
+               m.tris.size(), m.matTex.size(), nb, images.size());
+
+    // the bones by name, each to its disc bone
+    std::map<std::string, int> byName;
+    for (std::size_t k = 0; k < nb; ++k)
+      if (!m.boneName[k].empty()) byName[gtaKey(m.boneName[k])] = int(k);
+    for (const char *need : {"pelvis", "head", "l foot", "r foot", "l upperarm", "r upperarm"})
+      if (!byName.count(need)) fail(std::string("the skin has no bone \"") + need + "\": not a GTA SA ped skeleton");
+    auto at = [&](const char *n) { return m.boneAt[std::size_t(byName.at(n))]; };
+
+    // the whole skin into the disc's space: up, forward, its left; the height of the head over the toes
+    const V3 feet = (at("l foot") + at("r foot")) * 0.5;
+    const bool toes = byName.count("l toe0") && byName.count("r toe0");
+    const V3 toeMid = toes ? (at("l toe0") + at("r toe0")) * 0.5 : feet;
+    const V3 up = unit(at("head") - feet);
+    V3 fwd = toes ? toeMid - feet : V3{};
+    if (len(fwd - up * dot(fwd, up)) < 1e-6) fwd = cross(up, at("l upperarm") - at("r upperarm"));
+    fwd = unit(fwd - up * dot(fwd, up));
+    V3 left = cross(up, fwd);
+    bool mirror = false;
+    if (dot(at("l upperarm") - at("r upperarm"), left) < 0) left = left * -1.0, mirror = true;
+    const V3 leonToe = (skel.at(21).at + skel.at(25).at) * 0.5;
+    const double gtaHeight = dot(at("head") - toeMid, up), leonHeight = skel.at(4).at.y - leonToe.y;
+    if (gtaHeight <= 0) fail("the skin's head is not above its feet");
+    const double scale = leonHeight / gtaHeight;
+    auto G = [&](V3 v) {
+      const V3 d = v - toeMid;
+      return V3{leonToe.x + scale * dot(d, left), leonToe.y + scale * dot(d, up), leonToe.z + scale * dot(d, fwd)};
+    };
+    auto Gdir = [&](V3 n) { return unit(V3{dot(n, left), dot(n, up), dot(n, fwd)}); };
+    log += fmt("into Leon's space: scale %.1f%s\n", scale, mirror ? ", mirrored (its left side was the other)" : "");
+
+    // a piece per bone: turned along its bone onto the disc bone, stretched to its length, moved to its joint
+    struct Piece {
+      bool set = false;
+      int disc = 0;
+      M3 r;
+      V3 from, to, axis{0, 1, 0};
+      double k = 1;
+      V3 apply(V3 p) const {
+        V3 q = p - from;
+        q = q + axis * ((k - 1) * dot(q, axis));
+        return to + r * q;
+      }
+    };
+    std::vector<Piece> piece(nb);
+    std::vector<V3> gj(nb);
+    for (std::size_t b = 0; b < nb; ++b) gj[b] = G(m.boneAt[b]);
+    std::vector<std::string> unknown;
+    std::function<const Piece &(std::size_t, int)> make = [&](std::size_t b, int depth) -> const Piece & {
+      Piece &pc = piece[b];
+      if (pc.set || depth > 64) return pc;
+      const std::string key = gtaKey(m.boneName[b]);
+      const BoneMap *bm = nullptr;
+      for (const auto &e : kLeon)
+        if (key == e.gta) bm = &e;
+      const int parent = m.boneParent[b];
+      if (bm && bm->discTo >= 0 && byName.count(bm->gtaTo)) {
+        const std::size_t c = std::size_t(byName.at(bm->gtaTo));
+        const V3 g = gj[c] - gj[b], l = skel.at(bm->discTo).at - skel.at(bm->disc).at;
+        pc.disc = bm->disc;
+        pc.axis = unit(g);
+        pc.r = turn(pc.axis, unit(l));
+        pc.k = std::max(0.5, std::min(2.0, len(l) / std::max(1e-6, len(g))));
+        pc.from = gj[b], pc.to = skel.at(bm->disc).at;
+      } else if (parent >= 0) {
+        // a leaf (head, toes, fingers) or a bone not known here: it moves as its parent does
+        pc = make(std::size_t(parent), depth + 1);
+        pc.disc = bm ? bm->disc : pc.disc;
+        if (!bm) unknown.push_back(m.boneName[b]);
+      } else {
+        pc.disc = bm ? bm->disc : 0;
+        pc.from = pc.to = gj[b];
+      }
+      pc.set = true;
+      return pc;
+    };
+    for (std::size_t b = 0; b < nb; ++b) make(b, 0);
+    if (!unknown.empty()) {
+      std::string list;
+      for (const auto &u : unknown) list += (list.empty() ? "" : ", ") + u;
+      log += "bones not known here, moved with their parent: " + list + "\n";
+    }
+
+    // the vertices on Leon's skeleton, their weights by his bones
+    std::vector<V3> P(nv), N(nv);
+    std::vector<Weight> W(nv);
+    for (std::size_t v = 0; v < nv; ++v) {
+      const V3 g = G(m.pos[v]), gn = Gdir(m.nrm[v]);
+      V3 p{}, n{};
+      double total = 0;
+      std::map<int, double> by;
+      for (int j = 0; j < 4; ++j) {
+        const double w = m.weight[v][std::size_t(j)];
+        const unsigned b = m.bone[v][std::size_t(j)];
+        if (w <= 0 || b >= nb) continue;
+        p = p + piece[b].apply(g) * w;
+        n = n + piece[b].r * gn * w;
+        by[piece[b].disc] += w;
+        total += w;
+      }
+      if (total <= 0) {
+        P[v] = g, N[v] = gn, W[v] = {{17, 100}};
+        continue;
+      }
+      P[v] = p * (1.0 / total), N[v] = unit(n);
+      std::vector<std::pair<int, double>> list(by.begin(), by.end());
+      std::stable_sort(list.begin(), list.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+      if (list.size() > 3) list.resize(3);
+      double sum = 0;
+      for (const auto &x : list) sum += x.second;
+      Weight e;
+      int given = 0;
+      for (std::size_t k = 0; k < list.size(); ++k) {
+        const int r = k + 1 == list.size() ? 100 - given : int(std::lround(list[k].second * 100.0 / sum));
+        if (r <= 0) continue;
+        e.push_back({list[k].first, r});
+        given += r;
+      }
+      W[v] = e;
+    }
+
+    // the triangles by material, facing as the disc's do (corners counter-clockwise round their normal)
+    long facing = 0;
+    for (const auto &t : m.tris) {
+      if (t[0] >= nv || t[1] >= nv || t[2] >= nv) continue;
+      const V3 c = cross(P[t[1]] - P[t[0]], P[t[2]] - P[t[0]]);
+      facing += dot(c, N[t[0]] + N[t[1]] + N[t[2]]) >= 0 ? 1 : -1;
+    }
+    std::map<unsigned, std::vector<std::array<unsigned, 3>>> byMat;
+    for (const auto &t : m.tris) {
+      if (t[0] >= nv || t[1] >= nv || t[2] >= nv || t[0] == t[1] || t[1] == t[2] || t[0] == t[2]) continue;
+      const unsigned mat = t[3] < m.matTex.size() ? t[3] : 0;
+      byMat[mat].push_back(facing >= 0 ? std::array<unsigned, 3>{t[0], t[1], t[2]} : std::array<unsigned, 3>{t[0], t[2], t[1]});
+    }
+    std::size_t corners = 0;
+    for (const auto &[mat, list] : byMat) corners += list.size() * 3;
+    if (corners > 0xFFFF) fail(fmt("%zu triangles: at most 21845 fit one model", corners / 3));
+
+    // textures behind Leon's own in the body's TPL; a material without one gets its colour
+    const Bytes tpl = gc.entry(1);
+    const std::uint32_t n0 = be32(tpl, 4);
+    std::vector<std::tuple<unsigned, unsigned, unsigned, Bytes>> add;
+    std::map<std::string, unsigned> slotOf;
+    std::map<unsigned, unsigned> matSlot;
+    for (const auto &[mat, list] : byMat) {
+      const std::string name = m.matTex[mat];
+      const auto c = m.matColour[mat];
+      const std::string key = images.count(name) ? name : fmt("#%02x%02x%02x", c[0], c[1], c[2]);
+      auto it = slotOf.find(key);
+      if (it == slotOf.end()) {
+        Rgba img;
+        if (images.count(name)) {
+          img = images.at(name);
+        } else {
+          img.w = img.h = 8;
+          img.px.assign(8 * 8 * 4, 255);
+          for (std::size_t q = 0; q < img.px.size(); q += 4) img.px[q] = c[0], img.px[q + 1] = c[1], img.px[q + 2] = c[2];
+          if (!name.empty()) notes.push_back("  " + name + ": not in the .txd, the material's colour");
+        }
+        const double sc = std::min(1.0, double(o.tex) / double(std::max(img.w, img.h)));
+        const int tw = std::max(8, 1 << int(pyround(std::log2(std::max(1.0, img.w * sc)))));
+        const int th = std::max(8, 1 << int(pyround(std::log2(std::max(1.0, img.h * sc)))));
+        const Rgba scaled = resize(img, tw, th);
+        add.push_back({unsigned(tw), unsigned(th), 0xEu, encCmpr(scaled)});
+        it = slotOf.emplace(key, unsigned(n0 + add.size() - 1)).first;
+        log += fmt("  texture %u: %s %dx%d -> %dx%d\n", it->second, key.c_str(), img.w, img.h, tw, th);
+      }
+      matSlot[mat] = it->second;
+    }
+    for (const auto &nt : notes) log += nt + "\n";
+    if (n0 + add.size() > 0xF7) fail("too many textures for one model");
+
+    // the model in the PC release's layout, then the disc's (convertModel, Leon's skeleton kept)
+    std::map<Weight, unsigned> wIndex;
+    std::vector<Weight> wList;
+    Bytes vtx, nrm, tex, clr, vidx;
+    for (const auto &[mat, list] : byMat)
+      for (const auto &t : list)
+        for (unsigned v : t) {
+          lefw(vtx, float(P[v].x)), lefw(vtx, float(P[v].y)), lefw(vtx, float(P[v].z));
+          lefw(nrm, float(N[v].x)), lefw(nrm, float(N[v].y)), lefw(nrm, float(N[v].z));
+          lefw(tex, float(m.uv[v][0])), lefw(tex, float(m.uv[v][1]));
+          le32w(clr, 0xFFFFFFFFu);
+          auto wi = wIndex.find(W[v]);
+          if (wi == wIndex.end()) wi = wIndex.emplace(W[v], unsigned(wList.size())).first, wList.push_back(W[v]);
+          le16w(vidx, wi->second);
+        }
+    Bytes wgt;
+    for (const auto &e : wList) {
+      for (std::size_t k = 0; k < 3; ++k) wgt.push_back(std::uint8_t(k < e.size() ? e[k].first : 0));
+      wgt.push_back(std::uint8_t(e.size()));
+      for (std::size_t k = 0; k < 3; ++k) wgt.push_back(std::uint8_t(k < e.size() ? e[k].second : 0));
+      wgt.push_back(0);
+    }
+    Bytes parts;
+    const std::uint32_t partsAt0 = be32(body, 0x1C);
+    Bytes raw(body.begin() + long(partsAt0), body.begin() + long(partsAt0 + 0x18));
+    raw[0xB] = 0, raw[0xD] = raw[0xE] = raw[0xF] = 0xFF, raw[0x17] = 0xFF;
+    for (std::size_t k = 0x10; k < 0x17; ++k) raw[k] = 0;
+    for (const auto &[mat, list] : byMat) {
+      Bytes r = raw;
+      r[0xC] = std::uint8_t(matSlot[mat]);
+      parts.insert(parts.end(), r.begin(), r.end());
+      std::vector<unsigned> runs;
+      for (std::size_t left = list.size() * 3; left;) {
+        const std::size_t c = std::min<std::size_t>(left, 65535 - 65535 % 3);
+        runs.push_back(unsigned(c));
+        left -= c;
+      }
+      le32w(parts, std::uint32_t(4 + runs.size() * 4)), le32w(parts, std::uint32_t(list.size()));
+      le32w(parts, std::uint32_t(runs.size()));
+      for (unsigned c : runs) le16w(parts, 5), le16w(parts, c);
+    }
+    Bytes blob(0x50, 0);
+    auto section = [&](const Bytes &d) {
+      while (blob.size() % 32) blob.push_back(0);
+      const std::uint32_t at2 = std::uint32_t(blob.size());
+      blob.insert(blob.end(), d.begin(), d.end());
+      return at2;
+    };
+    Bytes head;
+    for (const auto &rec : gcBoneRecords(body)) {
+      head.insert(head.end(), rec.begin(), rec.begin() + 4);
+      for (int k = 0; k < 3; ++k) lefw(head, bef32(rec, std::size_t(4 + k * 4)));
+    }
+    const std::uint32_t oHead = section(head), oVtx = section(vtx), oNrm = section(nrm), oTex = section(tex),
+                        oClr = section(clr), oWgt = section(wgt), oVidx = section(vidx), oParts = section(parts);
+    le32at(blob, 0x00, oHead), le32at(blob, 0x04, be32(body, 4)), le32at(blob, 0x08, be32(body, 8));
+    le32at(blob, 0x0C, oClr), le32at(blob, 0x10, oTex), le32at(blob, 0x14, oWgt);
+    blob[0x18] = std::uint8_t(wList.size() <= 0xFF ? wList.size() : 0), blob[0x19] = body[0x19];
+    le16at(blob, 0x1A, unsigned(byMat.size())), le32at(blob, 0x1C, oParts);
+    le32at(blob, 0x20, be32(body, 0x20) | 0x80000000u), le32at(blob, 0x24, std::uint32_t(n0 + add.size()));
+    blob[0x28] = 0, blob[0x29] = body[0x29], le16at(blob, 0x2A, unsigned(wList.size() > 0xFF ? wList.size() : 0));
+    le32at(blob, 0x2C, 0), le32at(blob, 0x30, oVtx), le32at(blob, 0x34, oNrm);
+    le16at(blob, 0x38, unsigned(corners)), le16at(blob, 0x3A, unsigned(corners)), le32at(blob, 0x3C, 0x20030818u);
+    le32at(blob, 0x40, 0), le32at(blob, 0x44, 0), le32at(blob, 0x48, oVidx), le32at(blob, 0x4C, 0);
+    const Converted conv = convertModel(blob, std::size_t(o.palette), &body);
+    log += "entry   0 BIN: " + conv.stats + "\n";
+
+    // the archive: the new body and TPL, Leon's head, face, hair, outfit, wound and hands folded away
+    std::set<std::size_t> fold = {2, 4, 5, 6, 10};
+    if (stem != "pl00") fold.insert(12);
+    for (std::size_t i = 14; i <= 21; ++i) fold.insert(i);
+    std::vector<Bytes> entries;
+    std::string folded;
+    for (std::size_t i = 0; i < gc.count(); ++i) {
+      if (i == 0) entries.push_back(conv.blob);
+      else if (i == 1) entries.push_back(appendTpl(tpl, add));
+      else if (fold.count(i) && gc.kind(i) == "BIN" && !gc.entry(i).empty()) {
+        entries.push_back(foldModel(gc.entry(i), skel));
+        folded += (folded.empty() ? "" : ", ") + std::to_string(i);
+      } else {
+        entries.push_back(gc.entry(i));
+      }
+    }
+    log += "Leon's own models folded away: " + folded + "\n";
+    const Bytes newBody = buildBody(entries, gc.types);
+    result = buildArchive(gc, newBody);
+    log += fmt("%s: %zu bytes, data part %zu bytes (disc %zu; the game's place for Leon holds %d)\n", gcName.c_str(),
+               result.size(), newBody.size(), gc.body.size(), 0x118000);
+    if (newBody.size() > 0x118000) fail(fmt("too large for the game's place for Leon (%zu bytes): pick smaller textures",
+                                            newBody.size()));
     return true;
   } catch (const std::exception &e) {
     if (why) *why = e.what();

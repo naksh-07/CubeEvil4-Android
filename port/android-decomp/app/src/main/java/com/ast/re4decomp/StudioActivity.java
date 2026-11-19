@@ -474,6 +474,8 @@ public final class StudioActivity extends Activity {
   // PC archives the discs do not have, and the disc's archives they go into (uhd_skin_convert.py: Separate Ways' Ada,
   // pl16, over Ada's pl0b; DevJunior's "Ada remake by kreed", 19.11.2026)
   private static final String[][] PC_ONLY = {{"pl16", "pl0b", "pl0c"}};
+  // GTA San Andreas ped skins (.dff + .txd; DevJunior, 19.11.2026: "this model over Leon"): Leon's outfits
+  private static final String[] GTA_ON = {"pl00", "pl08", "pl09", "pl10"};
   private java.io.File convertDir;          // cache/convert: udas/, packs/, out/
   private String modName = "";
   private final List<String[]> skins = new ArrayList<>();  // PC stem, udas path, disc rel ("" none), disc file, disc stem
@@ -488,8 +490,9 @@ public final class StudioActivity extends Activity {
       content.addView(card("Working…", "the mod's files are read and converted on the phone"), item());
       return;
     }
-    content.addView(note("UHD skins of the PC release (Nexus mods: em/plXX.udas with BIO4/ImagePackHD/*.pack) become "
-        + "a mod pack for CubeEvil4. Pick the mod's .zip (or its .udas and .pack files)."));
+    content.addView(note("UHD skins of the PC release (Nexus mods: em/plXX.udas with BIO4/ImagePackHD/*.pack) and GTA San "
+        + "Andreas ped skins (.dff with its .txd, on Leon) become a mod pack for CubeEvil4. Pick the mod's .zip (or its "
+        + "files)."));
     Button pick = card("Pick a mod (.zip)", modName.isEmpty() ? "" : "Now: " + modName);
     pick.setOnClickListener(v -> {
       android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
@@ -609,6 +612,7 @@ public final class StudioActivity extends Activity {
       convertDir = new java.io.File(getCacheDir(), "convert");
       deleteTree(convertDir);
       java.io.File udas = new java.io.File(convertDir, "udas"), packs = new java.io.File(convertDir, "packs");
+      new java.io.File(convertDir, "gta").mkdirs();
       udas.mkdirs();
       packs.mkdirs();
       new java.io.File(convertDir, "out").mkdirs();
@@ -667,10 +671,18 @@ public final class StudioActivity extends Activity {
           udasFiles.add(new String[] {f.getName().toLowerCase(Locale.ROOT).replace(".udas", ""), f.getAbsolutePath()});
         }
       }
+      java.io.File[] gta = new java.io.File(convertDir, "gta").listFiles();
+      if (gta != null) {
+        java.util.Arrays.sort(gta);
+        for (java.io.File f : gta) if (f.getName().endsWith(".dff")) udasFiles.add(new String[] {f.getName(), f.getAbsolutePath()});
+      }
       listSkins();
       String[] packNames = packs.list();
       log(skins.size() + " skins, " + (packNames == null ? 0 : packNames.length) + " texture packs");
-      if (skins.isEmpty()) log("No em/plXX.udas in what was picked: this converts UHD skins of the PC release.");
+      if (skins.isEmpty()) {
+        log("No em/plXX.udas or .dff in what was picked: this converts UHD skins of the PC release and GTA San Andreas "
+            + "ped skins.");
+      }
     });
   }
 
@@ -680,7 +692,8 @@ public final class StudioActivity extends Activity {
     List<String[]> out = new ArrayList<>();
     for (String[] u : udasFiles) {
       List<String> targets = new ArrayList<>();
-      targets.add(u[0]);
+      if (u[0].endsWith(".dff")) targets.addAll(java.util.Arrays.asList(GTA_ON));
+      else targets.add(u[0]);
       for (String[] alt : PC_ONLY) {
         if (alt[0].equals(u[0])) {
           targets.clear();
@@ -708,8 +721,21 @@ public final class StudioActivity extends Activity {
   private static java.io.File destination(String name, java.io.File udas, java.io.File packs) {
     String low = name.toLowerCase(Locale.ROOT);
     if (low.matches("(pl|em)[0-9a-f]{2}\\.udas(\\.lfs)?")) return new java.io.File(udas, low);
+    if (low.endsWith(".dff") || low.endsWith(".txd")) return new java.io.File(new java.io.File(udas.getParentFile(), "gta"), low);
     if (low.endsWith(".pack") || low.endsWith(".pack.lfs")) return new java.io.File(packs, low);
     return null;
+  }
+
+  // the .txd of a .dff: the one of the same name, else the only one picked ("" none)
+  private static String txdFor(String dffPath) {
+    java.io.File dff = new java.io.File(dffPath);
+    java.io.File same = new java.io.File(dff.getParentFile(), dff.getName().replaceAll("\\.dff$", ".txd"));
+    if (same.isFile()) return same.getAbsolutePath();
+    String[] all = dff.getParentFile().list();
+    String only = "";
+    int n = 0;
+    if (all != null) for (String a : all) if (a.endsWith(".txd")) { only = a; n++; }
+    return n == 1 ? new java.io.File(dff.getParentFile(), only).getAbsolutePath() : "";
   }
 
   private static void store(java.io.InputStream in, java.io.File dest) throws java.io.IOException {
@@ -734,8 +760,10 @@ public final class StudioActivity extends Activity {
           continue;
         }
         java.io.File dest = new java.io.File(out, k[3]);
-        String r = StudioBridge.convertSkin(disc.getAbsolutePath(), k[3], k[1], packs.toArray(new String[0]),
-            convertTex, dest.getAbsolutePath());
+        String r = k[0].endsWith(".dff")
+            ? StudioBridge.convertDff(disc.getAbsolutePath(), k[3], k[1], txdFor(k[1]), convertTex, dest.getAbsolutePath())
+            : StudioBridge.convertSkin(disc.getAbsolutePath(), k[3], k[1], packs.toArray(new String[0]), convertTex,
+                dest.getAbsolutePath());
         disc.delete();
         boolean ok = r.startsWith("ok\n");
         log("── " + k[0] + " → " + k[3] + " · " + character(k[4]) + (ok ? ": converted" : ": failed"));

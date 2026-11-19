@@ -202,6 +202,24 @@ JNIEXPORT jstring JNICALL STUDIO(convertSkin)(JNIEnv *env, jclass, jstring gc, j
   return env->NewStringUTF(("ok\n" + log).c_str());
 }
 
+// A GTA San Andreas ped skin (`dff`, its textures `txd`: "" none) on Leon's archive of the disc (`gc`, its name
+// `gcName`), written to `out`: "ok\n" + the report, or "error\n" + why (+ the report so far)
+JNIEXPORT jstring JNICALL STUDIO(convertDff)(JNIEnv *env, jclass, jstring gc, jstring gcName, jstring dff, jstring txd,
+                                            jint tex, jstring out) {
+  convert::Bytes g, d, t, result;
+  if (!readAll(text(env, gc), g)) return env->NewStringUTF("error\nthe disc's archive cannot be read");
+  if (!readAll(text(env, dff), d)) return env->NewStringUTF("error\nthe .dff cannot be read");
+  const std::string txdPath = text(env, txd);
+  if (!txdPath.empty() && !readAll(txdPath, t)) return env->NewStringUTF("error\nthe .txd cannot be read");
+  convert::Options o;
+  if (tex >= 8) o.tex = tex;
+  std::string log, why;
+  if (!convert::ConvertDff(g, text(env, gcName), d, t, o, result, log, &why))
+    return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
+  if (!writeAll(text(env, out), result)) return env->NewStringUTF("error\nthe result cannot be written");
+  return env->NewStringUTF(("ok\n" + log).c_str());
+}
+
 JNIEXPORT jstring JNICALL STUDIO(lastError)(JNIEnv *env, jclass) {
   std::lock_guard<std::mutex> lock(gLock);
   return env->NewStringUTF(gError.c_str());

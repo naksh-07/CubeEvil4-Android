@@ -61,4 +61,10 @@ struct Options {
 bool ConvertSkin(const Bytes &gc, const std::string &gcName, const Bytes &pc, const Packs &packs, const Options &o,
                  Bytes &out, std::string &log, std::string *why);
 
+// A GTA San Andreas ped skin (.dff, its textures in the .txd: may be empty) put on Leon's archive of the disc (`gc`,
+// pl00 / pl08 / pl09 / pl10): the mesh moved onto his skeleton, his own head, face, hair, outfit and hands folded
+// away (studio_dff.inc). `log` gets the report; false and `why` when it cannot be done.
+bool ConvertDff(const Bytes &gc, const std::string &gcName, const Bytes &dff, const Bytes &txd, const Options &o,
+                Bytes &out, std::string &log, std::string *why);
+
 }  // namespace re4::studio::convert
