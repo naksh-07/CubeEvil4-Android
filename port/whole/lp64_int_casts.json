@@ -1,7 +1,7 @@
 [
  {
   "file": "src/Sscrn/ss_pzzl.cpp",
-  "line": 2006,
+  "line": 2030,
   "text": "(pzlBoard*) n",
   "operand": "n",
   "type": "int",
@@ -9,7 +9,7 @@
  },
  {
   "file": "src/em10/em10.cpp",
-  "line": 10253,
+  "line": 10288,
   "text": "(void*) m1",
   "operand": "m1",
   "type": "int",
@@ -17,7 +17,7 @@
  },
  {
   "file": "src/em10/em10.cpp",
-  "line": 24430,
+  "line": 24485,
   "text": "(void*) hit",
   "operand": "hit",
   "type": "int",
@@ -25,7 +25,7 @@
  },
  {
   "file": "src/em10/em10.cpp",
-  "line": 24432,
+  "line": 24487,
   "text": "(void*) hit",
   "operand": "hit",
   "type": "int",
@@ -33,7 +33,7 @@
  },
  {
   "file": "src/em10/em10.cpp",
-  "line": 25490,
+  "line": 25545,
   "text": "(void*) a",
   "operand": "a",
   "type": "int",
@@ -41,7 +41,7 @@
  },
  {
   "file": "src/em10/em10.cpp",
-  "line": 25499,
+  "line": 25554,
   "text": "(void*) seq",
   "operand": "seq",
   "type": "int",
@@ -57,7 +57,7 @@
  },
  {
   "file": "src/em2b/em2b.cpp",
-  "line": 972,
+  "line": 973,
   "text": "(cObj16*) zero",
   "operand": "zero",
   "type": "int",
@@ -65,7 +65,7 @@
  },
  {
   "file": "src/em2b/em2b.cpp",
-  "line": 3127,
+  "line": 3128,
   "text": "(void*) end",
   "operand": "end",
   "type": "int",
@@ -73,7 +73,7 @@
  },
  {
   "file": "src/em2b/em2b.cpp",
-  "line": 4088,
+  "line": 4089,
   "text": "(void*) a",
   "operand": "a",
   "type": "int",
@@ -81,7 +81,7 @@
  },
  {
   "file": "src/em2b/em2b.cpp",
-  "line": 4097,
+  "line": 4098,
   "text": "(void*) arg",
   "operand": "arg",
   "type": "int",
@@ -89,7 +89,7 @@
  },
  {
   "file": "src/em2b/em2b.cpp",
-  "line": 5392,
+  "line": 5393,
   "text": "(void*) a",
   "operand": "a",
   "type": "int",
@@ -97,7 +97,7 @@
  },
  {
   "file": "src/em2b/em2b.cpp",
-  "line": 5394,
+  "line": 5395,
   "text": "(void*) b",
   "operand": "b",
   "type": "int",
@@ -281,7 +281,7 @@
  },
  {
   "file": "src/em32/em32.cpp",
-  "line": 2057,
+  "line": 2058,
   "text": "(void*) hit",
   "operand": "hit",
   "type": "int",
@@ -289,7 +289,7 @@
  },
  {
   "file": "src/em32/em32.cpp",
-  "line": 2519,
+  "line": 2520,
   "text": "(void*) act",
   "operand": "act",
   "type": "int",
@@ -297,7 +297,7 @@
  },
  {
   "file": "src/em32/em32.cpp",
-  "line": 2522,
+  "line": 2523,
   "text": "(void*) act",
   "operand": "act",
   "type": "int",
@@ -305,7 +305,7 @@
  },
  {
   "file": "src/em32/em32.cpp",
-  "line": 3771,
+  "line": 3772,
   "text": "(void*) arg",
   "operand": "arg",
   "type": "int",
@@ -329,7 +329,7 @@
  },
  {
   "file": "src/em39/em39.cpp",
-  "line": 775,
+  "line": 776,
   "text": "(cEmWep*) z0",
   "operand": "z0",
   "type": "int",
@@ -337,7 +337,7 @@
  },
  {
   "file": "src/em39/em39.cpp",
-  "line": 6286,
+  "line": 6287,
   "text": "(cEmWep*) end",
   "operand": "end",
   "type": "int",
@@ -345,7 +345,7 @@
  },
  {
   "file": "src/em39/em39.cpp",
-  "line": 7344,
+  "line": 7347,
   "text": "(EmiEntry*) st",
   "operand": "st",
   "type": "int",
@@ -369,7 +369,7 @@
  },
  {
   "file": "src/game/event.cpp",
-  "line": 2457,
+  "line": 2477,
   "text": "(void*) addr",
   "operand": "addr",
   "type": "int",
@@ -393,7 +393,7 @@
  },
  {
   "file": "src/game/game.cpp",
-  "line": 1537,
+  "line": 1575,
   "text": "(void*) pG->prim_cnt",
   "operand": "pG->prim_cnt",
   "type": "s32",
@@ -401,7 +401,7 @@
  },
  {
   "file": "src/game/game.cpp",
-  "line": 1544,
+  "line": 1582,
   "text": "(void*) pG->prim_cnt",
   "operand": "pG->prim_cnt",
   "type": "s32",
@@ -433,7 +433,7 @@
  },
  {
   "file": "src/game/sscrn.cpp",
-  "line": 454,
+  "line": 456,
   "text": "(OSModuleHeader*) wk->relAddr",
   "operand": "wk->relAddr",
   "type": "s32",
@@ -441,7 +441,7 @@
  },
  {
   "file": "src/game/trans.cpp",
-  "line": 333,
+  "line": 339,
   "text": "(u8*) pG->prim_base",
   "operand": "pG->prim_base",
   "type": "s32",
@@ -449,7 +449,7 @@
  },
  {
   "file": "src/game/trans.cpp",
-  "line": 375,
+  "line": 387,
   "text": "(u8*) pG->prim_base",
   "operand": "pG->prim_base",
   "type": "s32",
@@ -457,7 +457,7 @@
  },
  {
   "file": "src/game/trans.cpp",
-  "line": 916,
+  "line": 937,
   "text": "(void*) -1",
   "operand": "-1",
   "type": "int",
@@ -465,7 +465,7 @@
  },
  {
   "file": "src/game/trans.cpp",
-  "line": 917,
+  "line": 938,
   "text": "(void*) -1",
   "operand": "-1",
   "type": "int",
@@ -473,7 +473,7 @@
  },
  {
   "file": "src/game/trans.cpp",
-  "line": 2462,
+  "line": 2478,
   "text": "(u8*) pG->prim_cnt",
   "operand": "pG->prim_cnt",
   "type": "s32",
@@ -489,7 +489,7 @@
  },
  {
   "file": "src/pl02/pl02.cpp",
-  "line": 250,
+  "line": 267,
   "text": "(void*) no",
   "operand": "no",
   "type": "int",
@@ -505,7 +505,7 @@
  },
  {
   "file": "src/pl0a/pl_klauser.cpp",
-  "line": 323,
+  "line": 331,
   "text": "(void*) no",
   "operand": "no",
   "type": "int",
@@ -569,7 +569,7 @@
  },
  {
   "file": "src/pl0f/pl0f.cpp",
-  "line": 3197,
+  "line": 3198,
   "text": "(void*) a",
   "operand": "a",
   "type": "int",
@@ -577,7 +577,7 @@
  },
  {
   "file": "src/pl0f/pl0f.cpp",
-  "line": 3206,
+  "line": 3207,
   "text": "(void*) f",
   "operand": "f",
   "type": "int",
@@ -585,7 +585,7 @@
  },
  {
   "file": "src/pl0f/pl0f.cpp",
-  "line": 3226,
+  "line": 3227,
   "text": "(void*) a",
   "operand": "a",
   "type": "int",
@@ -593,7 +593,7 @@
  },
  {
   "file": "src/pl0f/pl0f.cpp",
-  "line": 3235,
+  "line": 3236,
   "text": "(void*) f",
   "operand": "f",
   "type": "int",
@@ -601,7 +601,7 @@
  },
  {
   "file": "src/st1/r100.cpp",
-  "line": 947,
+  "line": 958,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -609,7 +609,7 @@
  },
  {
   "file": "src/st1/r101.cpp",
-  "line": 819,
+  "line": 825,
   "text": "(void*) side",
   "operand": "side",
   "type": "int",
@@ -673,7 +673,7 @@
  },
  {
   "file": "src/st2/r20e.cpp",
-  "line": 369,
+  "line": 371,
   "text": "(void*) sw",
   "operand": "sw",
   "type": "int",
@@ -753,7 +753,7 @@
  },
  {
   "file": "src/st2/r226.cpp",
-  "line": 595,
+  "line": 596,
   "text": "(void*) side",
   "operand": "side",
   "type": "int",
@@ -761,7 +761,7 @@
  },
  {
   "file": "src/st2/r226.cpp",
-  "line": 1436,
+  "line": 1437,
   "text": "(void*) smdNo",
   "operand": "smdNo",
   "type": "int",
@@ -785,7 +785,7 @@
  },
  {
   "file": "src/st3/r318.cpp",
-  "line": 846,
+  "line": 848,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -793,7 +793,7 @@
  },
  {
   "file": "src/st3/r318.cpp",
-  "line": 876,
+  "line": 878,
   "text": "(void*) mode",
   "operand": "mode",
   "type": "int",
@@ -801,7 +801,7 @@
  },
  {
   "file": "src/st3/r31b.cpp",
-  "line": 518,
+  "line": 526,
   "text": "(void*) no",
   "operand": "no",
   "type": "int",
@@ -809,7 +809,7 @@
  },
  {
   "file": "src/st3/r31b.cpp",
-  "line": 596,
+  "line": 604,
   "text": "(void*) room",
   "operand": "room",
   "type": "int",
@@ -817,7 +817,7 @@
  },
  {
   "file": "src/st3/r31b.cpp",
-  "line": 679,
+  "line": 687,
   "text": "(void*) no",
   "operand": "no",
   "type": "int",
@@ -825,7 +825,7 @@
  },
  {
   "file": "src/st3/r31b.cpp",
-  "line": 800,
+  "line": 808,
   "text": "(void*) no",
   "operand": "no",
   "type": "int",
@@ -833,7 +833,7 @@
  },
  {
   "file": "src/st3/r31b.cpp",
-  "line": 842,
+  "line": 850,
   "text": "(void*) no",
   "operand": "no",
   "type": "int",
@@ -841,7 +841,7 @@
  },
  {
   "file": "src/st3/r31b.cpp",
-  "line": 974,
+  "line": 982,
   "text": "(void*) no",
   "operand": "no",
   "type": "int",
@@ -849,7 +849,7 @@
  },
  {
   "file": "src/st3/r31b.cpp",
-  "line": 1002,
+  "line": 1010,
   "text": "(void*) no",
   "operand": "no",
   "type": "int",
@@ -857,7 +857,7 @@
  },
  {
   "file": "src/st3/r31b.cpp",
-  "line": 1612,
+  "line": 1620,
   "text": "(void*) dir",
   "operand": "dir",
   "type": "int",
@@ -865,7 +865,7 @@
  },
  {
   "file": "src/st3/r31b.cpp",
-  "line": 1868,
+  "line": 1876,
   "text": "(void*) no",
   "operand": "no",
   "type": "int",
@@ -921,7 +921,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 1585,
+  "line": 1586,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -929,7 +929,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 1608,
+  "line": 1609,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -937,7 +937,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 1631,
+  "line": 1632,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -945,7 +945,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 1928,
+  "line": 1929,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -953,7 +953,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 2002,
+  "line": 2003,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -961,7 +961,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 2059,
+  "line": 2060,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -969,7 +969,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 2091,
+  "line": 2092,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -977,7 +977,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 2130,
+  "line": 2131,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -985,7 +985,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 2164,
+  "line": 2165,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
@@ -993,7 +993,7 @@
  },
  {
   "file": "src/st3/r320.cpp",
-  "line": 2493,
+  "line": 2494,
   "text": "(void*) zero",
   "operand": "zero",
   "type": "int",
