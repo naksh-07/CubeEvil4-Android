@@ -560,6 +560,7 @@ public:
         const auto manager = reinterpret_cast<Manager>(dlsym(lib, "APerformanceHint_getManager"));
         const auto create = reinterpret_cast<Create>(dlsym(lib, "APerformanceHint_createSession"));
         report_ = reinterpret_cast<int (*)(void*, int64_t)>(dlsym(lib, "APerformanceHint_reportActualWorkDuration"));
+        update_ = reinterpret_cast<int (*)(void*, int64_t)>(dlsym(lib, "APerformanceHint_updateTargetWorkDuration"));
         close_ = reinterpret_cast<void (*)(void*)>(dlsym(lib, "APerformanceHint_closeSession"));
         if (!manager || !create || !report_) {
             *why = "not on this Android (before 13)";
@@ -572,6 +573,7 @@ public:
             ids[i] = tids[i];
         }
         session_ = m ? create(m, ids, static_cast<size_t>(n), targetNs) : nullptr;
+        target_ = targetNs;
         *why = session_ ? "on" : "the system gave no session";
         return session_ != nullptr;
     }
@@ -583,6 +585,17 @@ public:
             report_(session_, ns);
         }
     }
+
+    // (Mods, 19.11.2026) a new target for one picture's work: with 60 FPS a picture every 16.7 ms, not 33.3
+    // (a target twice the real one let Android lower the clocks until pictures came late)
+    void Target(long long ns)
+    {
+        if (session_ && update_ && ns > 0 && ns != target_ && update_(session_, ns) == 0) {
+            target_ = ns;
+        }
+    }
+
+    long long TargetNs() const { return session_ ? target_ : 0; }
 
     bool On() const { return session_ != nullptr; }
 
@@ -597,6 +610,8 @@ public:
 private:
     void* session_ = nullptr;
     int (*report_)(void*, int64_t) = nullptr;
+    int (*update_)(void*, int64_t) = nullptr;
+    long long target_ = 0;
     void (*close_)(void*) = nullptr;
 };
 

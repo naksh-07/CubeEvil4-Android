@@ -2644,6 +2644,15 @@ bool drawGx() {
       gxHitShotsLeft--;
     }
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - now).count();
+    // (Mods, 19.11.2026) the target follows the pictures' pace: 60 FPS makes one every 16.7 ms
+    {
+      const long long target = smoothOn ? 16666667LL : 33333333LL;
+      if (renderHint.On() && renderHint.TargetNs() != target) {
+        renderHint.Target(target);
+        if (renderHint.TargetNs() == target)
+          LOG("performance hint: the render thread's target now %.1f ms a picture", target / 1e6);
+      }
+    }
     renderHint.Report(static_cast<long long>(ms * 1e6));
     // (1.0.0) the pictures' times for the line when 60 FPS gives up (SmoothPacer)
     if (smoothOn && !benchForcing())

@@ -278,6 +278,14 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
   private int uiShownVsyncs;
   // the screen was asked for 60 Hz (preferSixtyHz): the surface too, once it exists
   private boolean askSixty;
+  // (Mods, 19.11.2026) the 60 Hz mode asked for, the picture's surface and the requests again: HyperOS (the project
+  // owner's POCO F7) kept 120 Hz after the first one and took 60 Hz only after the window had its focus back
+  private int sixtyModeId;
+  private Surface pictureSurface;
+  private int sixtyRetries;
+  private static final int SIXTY_RETRIES = 4;
+  private static final long SIXTY_RETRY_MS = 4000;
+  private final Runnable sixtyAgain = this::askSixtyAgain;
   // rumble: the game's motor (CoreBridge.rumble) on the device's vibrator or, since 0.99.2, a controller's motors
   // (the menu's "Vibration", RumbleTarget; chooseRumble)
   private Vibrator vibrator;
@@ -2829,6 +2837,12 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     Log.i(TAG, "window focus: " + (focus ? "on" : "off"));
     if (!focus) releaseAll();
     else main.post(this::updateMouseCapture);
+    // (Mods, 19.11.2026) the focus back: 60 Hz asked again while the screen stays faster (askSixtyAgain)
+    if (focus && askSixty && pacing.every() > 1) {
+      sixtyRetries = 0;
+      main.removeCallbacks(sixtyAgain);
+      main.post(sixtyAgain);
+    }
     // a car's panel (climate, notifications) closed again: its bars hidden again where the car allows it
     if (focus && CarDisplay.is(this)) {
       hideSystemUi();
@@ -3240,6 +3254,42 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     CoreBridge.setPictureEvery(every);
     Log.i(TAG, String.format(Locale.ROOT, "display at %.1f Hz: the picture drawn %s", pacing.hz(),
         every > 1 ? "at every " + every + " vsyncs (the screen stayed faster than 60 Hz)" : "at each vsync"));
+    if (every > 1 && askSixty) {
+      main.removeCallbacks(sixtyAgain);
+      main.postDelayed(sixtyAgain, SIXTY_RETRY_MS);
+    }
+  }
+
+  /**
+   * (Mods, 19.11.2026) The screen still faster than 60 Hz a while after the request: asked again, the window's mode
+   * cleared and set (the system weighs it anew) and the surface's frame rate again, at most SIXTY_RETRIES times
+   * (the window's focus back allows as many more). At 120 Hz a 60 FPS picture that comes a little late waits a third
+   * vsync (25 ms): the project owner's report of 19.11.2026 had more than half of the pictures off the even 16.7 ms,
+   * and few once HyperOS had switched to 60 Hz.
+   */
+  private void askSixtyAgain() {
+    if (!askSixty || isFinishing() || pacing.every() <= 1 || sixtyRetries >= SIXTY_RETRIES) return;
+    sixtyRetries++;
+    if (sixtyModeId != 0) {
+      WindowManager.LayoutParams attributes = getWindow().getAttributes();
+      attributes.preferredDisplayModeId = 0;
+      getWindow().setAttributes(attributes);
+      attributes.preferredDisplayModeId = sixtyModeId;
+      attributes.preferredRefreshRate = 60f;
+      getWindow().setAttributes(attributes);
+    }
+    if (Build.VERSION.SDK_INT >= 30 && pictureSurface != null && pictureSurface.isValid()) {
+      try {
+        pictureSurface.setFrameRate(0f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+      } catch (RuntimeException e) {
+        Log.w(TAG, "surface frame rate: " + e);
+      }
+      surfaceSixtyHz(pictureSurface);
+    }
+    Log.i(TAG, String.format(Locale.ROOT, "display at %.1f Hz: 60 Hz asked again (%d of %d)", pacing.hz(),
+        sixtyRetries, SIXTY_RETRIES));
+    main.removeCallbacks(sixtyAgain);
+    main.postDelayed(sixtyAgain, SIXTY_RETRY_MS);
   }
 
   /**
@@ -3265,6 +3315,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
       if (Math.abs(m.getRefreshRate() - 60f) < 1.5f) sixty = m;
     }
     askSixty = fastest > 65f;
+    sixtyModeId = sixty != null ? sixty.getModeId() : 0;
     if (askSixty && sixty != null) {
       WindowManager.LayoutParams attributes = getWindow().getAttributes();
       attributes.preferredDisplayModeId = sixty.getModeId();
@@ -3284,7 +3335,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
    * device that still stays faster is measured as before (FramePacing), the core locks to it where it can (vi.cpp).
    */
   private void surfaceSixtyHz(Surface s) {
-    if (!askSixty || Build.VERSION.SDK_INT < 30) return;
+    if (!askSixty || Build.VERSION.SDK_INT < 30 || s == null || !s.isValid()) return;
     try {
       if (Build.VERSION.SDK_INT >= 31)
         s.setFrameRate(60f, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE, Surface.CHANGE_FRAME_RATE_ALWAYS);
@@ -3318,13 +3369,15 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     view.getHolder().addCallback(new SurfaceHolder.Callback() {
       @Override public void surfaceCreated(SurfaceHolder holder) {
         Log.i(TAG, "picture surface (" + kind + "): made");
-        surfaceSixtyHz(holder.getSurface());
+        pictureSurface = holder.getSurface();
+        surfaceSixtyHz(pictureSurface);
       }
       @Override public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
         Log.i(TAG, "picture surface (" + kind + "): " + w + "x" + h + ", format " + format);
       }
       @Override public void surfaceDestroyed(SurfaceHolder holder) {
         Log.i(TAG, "picture surface (" + kind + "): gone");
+        pictureSurface = null;
       }
     });
     // the surface takes the fingers beside the touch controls: Android gives the further fingers
