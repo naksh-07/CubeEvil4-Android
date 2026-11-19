@@ -4,9 +4,12 @@
 // as much as the track sounds (patch 0929, re4_music_duck). Without a music folder in the mods nothing changes.
 //
 // - The zone: the stage of the room (pG->room_id >> 8): 1 village, 2 castle, 3 island, others "other".
-// - Battle: an enemy within kNear of Leon for kBattleIn frames; it lasts until none has been within kFar for
-//   kBattleOut frames. Enemies: ids 0x10..0x3F, alive, active; not the merchant (0x18), the chickens (0x28) and the
-//   truck / mine carts (0x3B). The track: <zone>_battle, else battle.
+// - Battle (DevJunior, 19.11.2026: "it should come in as soon as the enemies see me, not while I sneak"): a Ganado
+//   (cEm10: ids 0x10..0x20, not the merchant 0x18) who has found Leon (FREE_EM10 Be_flg 0x100, the end of his sight
+//   check) within kSeenFar, or another enemy within kNear (the dogs, the bosses: they have no such flag), for
+//   kBattleIn frames; it lasts until none of that for kBattleOut frames. Not enemies: the village dog that runs off
+//   (0x21), crows (0x23), fish (0x27), chickens (0x28), traps (0x2A, the log's "enemy 0x2a" of r100), helicopters,
+//   carts, targets (0x3A, 0x3B, 0x3D, 0x3E). The track: <zone>_battle, else battle.
 // - Exploration: in a room where an enemy was seen since it was entered (the save rooms, the merchant's and the
 //   rooms cleared before keep the game's music), while the game itself plays room music (a BGM slot running and
 //   audible): <zone>_explore, else explore. A room the game keeps silent stays silent.
@@ -19,6 +22,7 @@
 #include "re4_runtime.h"
 #include "player.h"
 #include "em.h"
+#include "em10.h"
 #include "snd.h"
 #include "snd_drv.h"
 
@@ -36,6 +40,7 @@ namespace {
 
 const f32 kNear = 12000.0f;   // mm
 const f32 kFar = 20000.0f;
+const f32 kSeenFar = 30000.0f;
 const int kBattleIn = 15;     // frames (half a second)
 const int kBattleOut = 240;   // frames (eight seconds)
 const f32 kGain = 0.85f;
@@ -51,10 +56,29 @@ int gNearFrames, gCalmFrames;
 int gTrack = -1;
 int gBlocked;
 
+bool ganado(const cEm* m)
+{
+    return m->id >= 0x10 && m->id <= 0x20 && m->id != 0x18;
+}
+
 bool threat(const cEm* m)
 {
     const int id = m->id;
-    return id >= 0x10 && id < 0x40 && id != 0x18 && id != 0x28 && id != 0x3B && m->hp > 0;
+    if (m->hp <= 0 || id < 0x10 || id >= 0x40 || id == 0x18) {
+        return false;
+    }
+    switch (id) {
+    case 0x21: case 0x23: case 0x27: case 0x28: case 0x2A: case 0x3A: case 0x3B: case 0x3D: case 0x3E: case 0x3F:
+        return false;
+    default:
+        return true;
+    }
+}
+
+// the Ganado has found Leon (his sight check stops then: em10FindCk)
+bool seen(cEm* m)
+{
+    return ganado(m) && m->r_no_0 != 3 && (EM10_WK(m)->Be_flg & 0x100);
 }
 
 const char* zone(int room)
@@ -122,18 +146,19 @@ void frame(unsigned)
             gHostile = true;
             const f32 dx = m->pos.x - pPL->pos.x, dy = m->pos.y - pPL->pos.y, dz = m->pos.z - pPL->pos.z;
             const f32 d = sqrtf(dx * dx + dy * dy + dz * dz);
-            if (d < kNear && !near) {
+            const bool alert = ganado(m) ? seen(m) && d < kSeenFar : d < kNear;
+            if (alert && !near) {
                 near = true;
                 nearId = m->id;
             }
-            far = far || d < kFar;
+            far = far || (ganado(m) ? seen(m) && d < kSeenFar : d < kFar);
         }
         gNearFrames = near ? gNearFrames + 1 : 0;
         if (!gBattle && gNearFrames >= kBattleIn) {
             gBattle = true;
             gCalmFrames = 0;
-            re4_log("music: battle (enemy id 0x%x within %.0f m, room %03x)", nearId, (double) (kNear / 1000.0f),
-                    (unsigned) pG->room_id);
+            re4_log("music: battle (enemy id 0x%x %s, room %03x)", nearId,
+                    nearId >= 0x10 && nearId <= 0x20 ? "has seen Leon" : "near", (unsigned) pG->room_id);
         }
         if (gBattle) {
             gCalmFrames = far ? 0 : gCalmFrames + 1;
