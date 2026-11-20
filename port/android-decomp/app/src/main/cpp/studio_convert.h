@@ -82,4 +82,14 @@ bool ConvertDff(const Bytes &gc, const std::string &gcName, const Bytes &dff, co
 bool ConvertReMod(const Bytes &gc, const std::string &gcName, const std::map<std::string, Bytes> &files,
                   const Options &o, Bytes &out, std::string &log, std::string *why);
 
+// An RE4 Remake weapon mod (its meshes under natives/STM/_Chainsaw/Character/wp/wpNN/`wp`, "" the first) put into the
+// disc's weapon archive (`gc`, em/wepNN.drs): every model of the weapon anew, as long as the disc's plain one with the
+// muzzles on each other, each piece rigid on the disc bone nearest to it, the textures behind the weapon's palette;
+// reduced until it fits the weapon's place (0x70000 bytes).
+bool ConvertReWeapon(const Bytes &gc, const std::string &gcName, const std::map<std::string, Bytes> &files,
+                     const std::string &wp, const Options &o, Bytes &out, std::string &log, std::string *why);
+
+// The disc's weapon archive an RE4 Remake weapon (its folder name, wp4000 ...) replaces; "" none known
+const char *ReWeaponTarget(const std::string &wp);
+
 }  // namespace re4::studio::convert

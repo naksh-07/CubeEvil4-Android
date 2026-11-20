@@ -102,6 +102,7 @@ struct DffMesh {
   std::vector<std::array<unsigned, 4>> tris;  // a, b, c, material
   std::vector<std::string> matTex;            // per material: its texture's name ("" none)
   std::vector<std::array<std::uint8_t, 4>> matColour;
+  std::vector<std::string> matName;           // per material: its own name (RE4 Remake mods; "" unknown)
   std::vector<std::array<std::uint8_t, 4>> bone;  // per vertex: skin bone indices
   std::vector<std::array<float, 4>> weight;
   std::vector<std::string> boneName;  // per skin bone

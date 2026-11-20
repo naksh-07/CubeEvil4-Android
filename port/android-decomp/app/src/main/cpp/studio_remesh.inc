@@ -282,18 +282,31 @@ const char *reBoneAsGta(const std::string &n) {
 
 // The mod's files (their paths below natives/STM in lower case with '/', the variant's laid over the base) as one
 // skinned mesh in the GTA skins' terms, and its textures
+// The meshes of an RE4 Remake mod in one piece: a character's (`weapon` false: natives/.../character/ch/cha0/chaNNN,
+// Leon's cha000 first) or a weapon's (true: .../character/wp/wpNN/wpNNNN; `want` that one, "" the first). A weapon
+// keeps its muzzle bones (vfx_muzzle*, no vertex on them) for the placing.
 DffMesh readReMod(const std::map<std::string, Bytes> &files, std::map<std::string, Rgba> &images,
-                  std::vector<std::string> &notes, std::string &log) {
-  // the meshes, by their character folder
+                  std::vector<std::string> &notes, std::string &log, bool weapon = false, const std::string &want = "",
+                  std::string *picked = nullptr) {
+  // the meshes, by their character (weapon) folder
   std::map<std::string, std::vector<std::string>> byChar;
   for (const auto &[path, data] : files) {
     const auto dot = path.find(".mesh.");
-    const auto ch = path.find("character/ch/cha0/");
-    if (dot == std::string::npos || ch == std::string::npos) continue;
-    byChar[path.substr(ch + 18, 6)].push_back(path);
+    if (dot == std::string::npos) continue;
+    if (!weapon) {
+      const auto ch = path.find("character/ch/cha0/");
+      if (ch != std::string::npos) byChar[path.substr(ch + 18, 6)].push_back(path);
+    } else {
+      const auto wp = path.find("character/wp/wp");
+      if (wp != std::string::npos && path.size() > wp + 24 && path[wp + 17] == '/') byChar[path.substr(wp + 18, 6)].push_back(path);
+    }
   }
-  if (byChar.empty()) fail("no character meshes of the RE4 Remake (natives/STM/_Chainsaw/Character/ch/cha0/...)");
-  const std::string chr = byChar.count("cha000") ? "cha000" : byChar.begin()->first;
+  if (byChar.empty())
+    fail(weapon ? "no weapon meshes of the RE4 Remake (natives/STM/_Chainsaw/Character/wp/wpNN/wpNNNN/...)"
+                : "no character meshes of the RE4 Remake (natives/STM/_Chainsaw/Character/ch/cha0/...)");
+  if (!want.empty() && !byChar.count(want)) fail("the mod has no meshes of " + want);
+  const std::string chr = !want.empty() ? want : byChar.count("cha000") ? "cha000" : byChar.begin()->first;
+  if (picked) *picked = chr;
   DffMesh m;
   std::map<std::string, unsigned> boneOf;  // by the Remake's name
   std::map<std::string, unsigned> matOf;   // by the colour map's path, or the material's name without one
@@ -321,6 +334,7 @@ DffMesh readReMod(const std::map<std::string, Bytes> &files, std::map<std::strin
         it = matOf.emplace(key, unsigned(m.matTex.size())).first;
         m.matTex.push_back(key);
         m.matColour.push_back({160, 160, 160, 255});
+        m.matName.push_back(name);
         if (!tex.empty() && !images.count(key)) {
           bool found = false;
           for (const auto &[fp, fd] : files)
@@ -350,7 +364,7 @@ DffMesh readReMod(const std::map<std::string, Bytes> &files, std::map<std::strin
       for (int j = 0; j < 8; ++j)
         if (p.weight[v][std::size_t(j)] > 0 && p.bone[v][std::size_t(j)] < need.size()) need[p.bone[v][std::size_t(j)]] = 1;
     for (std::size_t i = 0; i < p.boneName.size(); ++i)
-      if (reBoneAsGta(p.boneName[i])) need[i] = 1;
+      if (weapon ? p.boneName[i].rfind("vfx_muzzle", 0) == 0 : reBoneAsGta(p.boneName[i]) != nullptr) need[i] = 1;
     for (std::size_t i = 0; i < p.boneName.size(); ++i)
       if (need[i])
         for (int q = p.boneParent[i], hops = 0; q >= 0 && std::size_t(q) < need.size() && hops < 256; q = p.boneParent[std::size_t(q)], ++hops)
@@ -362,7 +376,7 @@ DffMesh readReMod(const std::map<std::string, Bytes> &files, std::map<std::strin
       auto it = boneOf.find(n);
       if (it == boneOf.end()) {
         it = boneOf.emplace(n, unsigned(m.boneName.size())).first;
-        const char *gta = reBoneAsGta(n);
+        const char *gta = weapon ? nullptr : reBoneAsGta(n);
         m.boneName.push_back(gta ? gta : n);
         m.boneAt.push_back(p.boneAt[i]);
         m.boneParent.push_back(-1);
@@ -402,6 +416,6 @@ DffMesh readReMod(const std::map<std::string, Bytes> &files, std::map<std::strin
   if (m.pos.empty()) fail("the mod's meshes of " + chr + " are empty");
   std::string list;
   for (const auto &u : used) list += (list.empty() ? "" : ", ") + u;
-  log += "RE4 Remake mod, character " + chr + ": " + list + "\n";
+  log += std::string("RE4 Remake mod, ") + (weapon ? "weapon " : "character ") + chr + ": " + list + "\n";
   return m;
 }

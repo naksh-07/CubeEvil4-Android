@@ -476,6 +476,10 @@ public final class StudioActivity extends Activity {
   private static final String[][] PC_ONLY = {{"pl16", "pl0b", "pl0c"}};
   // GTA San Andreas ped skins (.dff + .txd; DevJunior, 19.11.2026: "this model over Leon"): Leon's outfits
   private static final String[] GTA_ON = {"pl00", "pl08", "pl09", "pl10"};
+  // the disc's handguns (DevJunior, 20.11.2026: "replace weapons or make weapon packs"): the choice for an RE4 Remake
+  // weapon the converter does not know (the Sentinel Nine ...); the known ones go where StudioBridge.reWeaponTarget says
+  private static final String[][] WEAPONS = {
+      {"wep04", "Handgun"}, {"wep01", "Blacktail"}, {"wep02", "Punisher"}, {"wep03", "Red9"}, {"wep17", "Matilda"}};
   private java.io.File convertDir;          // cache/convert: udas/, packs/, out/
   private String modName = "";
   private final List<String[]> skins = new ArrayList<>();  // PC stem, udas path, disc rel ("" none), disc file, disc stem
@@ -492,8 +496,8 @@ public final class StudioActivity extends Activity {
       return;
     }
     content.addView(note("UHD skins of the PC release (Nexus mods: em/plXX.udas with BIO4/ImagePackHD/*.pack), GTA San "
-        + "Andreas ped skins (.dff with its .txd, on Leon) and Leon outfits of the RE4 Remake (natives/STM/..., .mesh with "
-        + "its .mdf2 and .tex) become a mod pack for CubeEvil4. Pick the mod's .zip (or its files)."));
+        + "Andreas ped skins (.dff with its .txd, on Leon), Leon outfits and handguns of the RE4 Remake (natives/STM/..., "
+        + ".mesh with its .mdf2 and .tex) become a mod pack for CubeEvil4. Pick the mod's .zip (or its files)."));
     Button pick = card("Pick a mod (.zip)", modName.isEmpty() ? "" : "Now: " + modName);
     pick.setOnClickListener(v -> {
       android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
@@ -542,7 +546,8 @@ public final class StudioActivity extends Activity {
         Button b = card(head, detail);
         b.setEnabled(!busy && !k[2].isEmpty());
         b.setOnClickListener(v -> {
-          if (results.containsKey(k[4])) preview(k[4], k[3]);
+          if (results.containsKey(k[4]) && k[0].endsWith(REMAKE_WEAPON)) toast(k[3] + " is converted; the view shows characters only");
+          else if (results.containsKey(k[4])) preview(k[4], k[3]);
           else convert(java.util.Collections.singletonList(k), k[4]);
         });
         content.addView(b, item());
@@ -581,6 +586,7 @@ public final class StudioActivity extends Activity {
 
   private static String character(String stem) {
     for (String[] c : CHARACTERS) if (c[0].equals(stem)) return c[1];
+    for (String[] w : WEAPONS) if (w[0].equals(stem)) return w[1];
     return stem.startsWith("em") ? "enemy" : "character";
   }
 
@@ -706,20 +712,45 @@ public final class StudioActivity extends Activity {
         java.util.Arrays.sort(gta);
         for (java.io.File f : gta) if (f.getName().endsWith(".dff")) udasFiles.add(new String[] {f.getName(), f.getAbsolutePath()});
       }
-      // RE4 Remake mods: the folder with the meshes, and each colour variant laid over it
+      // RE4 Remake mods: the folder with the character meshes, and each colour variant laid over it; weapons (meshes
+      // under Character/wp/wpNN/wpNNNN) each on its own, a folder with only textures of a weapon as its variant
       java.io.File[] tops = remake.listFiles();
       if (tops != null) {
         java.util.Arrays.sort(tops);
         java.io.File base = null;
-        for (java.io.File t : tops) if (base == null && hasMesh(t)) base = t;
+        java.util.Map<String, java.io.File> weaponBase = new java.util.TreeMap<>();
+        java.util.Map<java.io.File, java.util.Set<String>> weaponTex = new java.util.LinkedHashMap<>();
+        for (java.io.File t : tops) {
+          if (!t.isDirectory()) continue;
+          java.util.Set<String> meshes = new java.util.TreeSet<>(), any = new java.util.TreeSet<>();
+          weaponIds(t, meshes, any);
+          if (!meshes.isEmpty()) {
+            for (String wp : meshes) {
+              udasFiles.add(new String[] {t.getName() + " · " + wp + REMAKE_WEAPON, t.getAbsolutePath(), wp});
+              if (!weaponBase.containsKey(wp)) weaponBase.put(wp, t);
+            }
+          } else if (!any.isEmpty()) {
+            weaponTex.put(t, any);
+          } else if (base == null && hasMesh(t)) {
+            base = t;
+          }
+        }
+        for (java.util.Map.Entry<java.io.File, java.util.Set<String>> v : weaponTex.entrySet()) {
+          for (String wp : v.getValue()) {
+            java.io.File b = weaponBase.get(wp);
+            if (b == null) continue;
+            udasFiles.add(new String[] {v.getKey().getName() + " · " + wp + REMAKE_WEAPON,
+                b.getAbsolutePath() + "\n" + v.getKey().getAbsolutePath(), wp});
+          }
+        }
         if (base != null) {
           udasFiles.add(new String[] {base.getName() + REMAKE, base.getAbsolutePath()});
           for (java.io.File t : tops) {
-            if (t.equals(base) || !t.isDirectory()) continue;
+            if (t.equals(base) || !t.isDirectory() || weaponTex.containsKey(t) || weaponBase.containsValue(t)) continue;
             udasFiles.add(new String[] {t.getName() + REMAKE, base.getAbsolutePath() + "\n" + t.getAbsolutePath()});
           }
-        } else if (tops.length > 0) {
-          log("RE4 Remake files without a .mesh: only Leon outfits with their meshes are converted here");
+        } else if (tops.length > 0 && weaponBase.isEmpty()) {
+          log("RE4 Remake files without a .mesh: only Leon outfits and weapons with their meshes are converted here");
         }
       }
       listSkins();
@@ -739,7 +770,11 @@ public final class StudioActivity extends Activity {
     for (String[] u : udasFiles) {
       List<String> targets = new ArrayList<>();
       if (u[0].endsWith(".dff") || u[0].endsWith(REMAKE)) targets.addAll(java.util.Arrays.asList(GTA_ON));
-      else targets.add(u[0]);
+      else if (u[0].endsWith(REMAKE_WEAPON)) {
+        String known = StudioBridge.reWeaponTarget(u[2]);
+        if (!known.isEmpty()) targets.add(known);
+        else for (String[] w : WEAPONS) targets.add(w[0]);
+      } else targets.add(u[0]);
       for (String[] alt : PC_ONLY) {
         if (alt[0].equals(u[0])) {
           targets.clear();
@@ -757,7 +792,7 @@ public final class StudioActivity extends Activity {
             }
           }
         }
-        out.add(new String[] {u[0], u[1], rel, file, target});
+        out.add(new String[] {u[0], u[1], rel, file, target, u.length > 2 ? u[2] : ""});
       }
     }
     skins.clear();
@@ -774,6 +809,25 @@ public final class StudioActivity extends Activity {
 
   // RE4 Remake mods (Leon outfits of the PC release, RE Engine): an entry's name ends with this
   private static final String REMAKE = " (RE4 Remake)";
+  // RE4 Remake weapon mods (natives/STM/_Chainsaw/Character/wp/wpNN/wpNNNN): an entry's name ends with this
+  private static final String REMAKE_WEAPON = " (RE4 Remake weapon)";
+
+  // the weapons (wpNNNN) a folder of an RE4 Remake mod holds files of: with a .mesh in `meshes`, any file in `any`
+  private static void weaponIds(java.io.File dir, java.util.Set<String> meshes, java.util.Set<String> any) {
+    java.io.File[] in = dir.listFiles();
+    if (in == null) return;
+    for (java.io.File f : in) {
+      if (f.isDirectory()) {
+        weaponIds(f, meshes, any);
+        continue;
+      }
+      String p = f.getAbsolutePath().replace('\\', '/').toLowerCase(Locale.ROOT);
+      java.util.regex.Matcher m = java.util.regex.Pattern.compile("/character/wp/wp[0-9]{2}/(wp[0-9]{4})/").matcher(p);
+      if (!m.find()) continue;
+      any.add(m.group(1));
+      if (f.getName().toLowerCase(Locale.ROOT).contains(".mesh.")) meshes.add(m.group(1));
+    }
+  }
 
   private static boolean hasMesh(java.io.File dir) {
     java.io.File[] in = dir.listFiles();
@@ -818,7 +872,10 @@ public final class StudioActivity extends Activity {
           continue;
         }
         java.io.File dest = new java.io.File(out, k[3]);
-        String r = k[0].endsWith(REMAKE)
+        String r = k[0].endsWith(REMAKE_WEAPON)
+            ? StudioBridge.convertReWeapon(disc.getAbsolutePath(), k[3], k[1].split("\n"), k[5], convertTex,
+                dest.getAbsolutePath())
+            : k[0].endsWith(REMAKE)
             ? StudioBridge.convertReMod(disc.getAbsolutePath(), k[3], k[1].split("\n"), convertTex, keepHead,
                 dest.getAbsolutePath())
             : k[0].endsWith(".dff")

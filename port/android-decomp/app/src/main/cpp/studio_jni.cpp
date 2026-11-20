@@ -273,6 +273,32 @@ JNIEXPORT jstring JNICALL STUDIO(convertReMod)(JNIEnv *env, jclass, jstring gc, 
   return env->NewStringUTF(("ok\n" + log).c_str());
 }
 
+// An RE4 Remake weapon mod (its folders `dirs`, the weapon `wp`: wp4000 ...; "" the first) into the disc's weapon
+// archive (`gc`, em/wepNN.drs), written to `out`: "ok\n" + the report, or "error\n" + why
+JNIEXPORT jstring JNICALL STUDIO(convertReWeapon)(JNIEnv *env, jclass, jstring gc, jstring gcName, jobjectArray dirs,
+                                                 jstring wp, jint tex, jstring out) {
+  convert::Bytes g, result;
+  if (!readAll(text(env, gc), g)) return env->NewStringUTF("error\nthe disc's archive cannot be read");
+  std::map<std::string, convert::Bytes> files;
+  for (jsize i = 0; i < env->GetArrayLength(dirs); ++i) {
+    auto *s = static_cast<jstring>(env->GetObjectArrayElement(dirs, i));
+    readReFolder(text(env, s), "", files);
+    env->DeleteLocalRef(s);
+  }
+  convert::Options o;
+  if (tex >= 8) o.tex = tex;
+  std::string log, why;
+  if (!convert::ConvertReWeapon(g, text(env, gcName), files, text(env, wp), o, result, log, &why))
+    return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
+  if (!writeAll(text(env, out), result)) return env->NewStringUTF("error\nthe result cannot be written");
+  return env->NewStringUTF(("ok\n" + log).c_str());
+}
+
+// The disc's weapon archive (wep04 ...) an RE4 Remake weapon replaces (its folder wp4000 ...); "" none known
+JNIEXPORT jstring JNICALL STUDIO(reWeaponTarget)(JNIEnv *env, jclass, jstring wp) {
+  return env->NewStringUTF(convert::ReWeaponTarget(text(env, wp)));
+}
+
 JNIEXPORT jstring JNICALL STUDIO(lastError)(JNIEnv *env, jclass) {
   std::lock_guard<std::mutex> lock(gLock);
   return env->NewStringUTF(gError.c_str());

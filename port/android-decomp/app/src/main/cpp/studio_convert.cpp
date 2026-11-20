@@ -1813,6 +1813,83 @@ namespace {
 
 // A skinned mesh (a GTA skin's, an RE4 Remake mod's: its bones named as a GTA ped's, kLeon) with its textures, onto
 // Leon's archive `gcData`: the work of ConvertDff below the reading.
+// A new model in the PC release's layout on a disc model's skeleton and settings (`body`: its header, bone records
+// and first part record), then the disc's (convertModel): the triangles by material (`byMat`, corners into P, N, uv,
+// W), each material's texture index (`matSlot`), the palette's size (`texCount`, header 0x24). GTA skins, RE4 Remake
+// outfits and weapons.
+Converted buildModel(const Bytes &body, const std::map<unsigned, std::vector<std::array<unsigned, 3>>> &byMat,
+                     const std::vector<V3> &P, const std::vector<V3> &N, const std::vector<std::array<double, 2>> &uv,
+                     const std::vector<Weight> &W, const std::map<unsigned, unsigned> &matSlot, std::size_t texCount,
+                     std::size_t palette) {
+    const Bytes &posed = body;
+    std::size_t corners = 0;
+    for (const auto &[mat, list] : byMat) corners += list.size() * 3;
+    std::map<Weight, unsigned> wIndex;
+    std::vector<Weight> wList;
+    Bytes vtx, nrm, tex, clr, vidx;
+    for (const auto &[mat, list] : byMat)
+      for (const auto &t : list)
+        for (unsigned v : t) {
+          lefw(vtx, float(P[v].x)), lefw(vtx, float(P[v].y)), lefw(vtx, float(P[v].z));
+          lefw(nrm, float(N[v].x)), lefw(nrm, float(N[v].y)), lefw(nrm, float(N[v].z));
+          lefw(tex, float(uv[v][0])), lefw(tex, float(uv[v][1]));
+          le32w(clr, 0xFFFFFFFFu);
+          auto wi = wIndex.find(W[v]);
+          if (wi == wIndex.end()) wi = wIndex.emplace(W[v], unsigned(wList.size())).first, wList.push_back(W[v]);
+          le16w(vidx, wi->second);
+        }
+    Bytes wgt;
+    for (const auto &e : wList) {
+      for (std::size_t k = 0; k < 3; ++k) wgt.push_back(std::uint8_t(k < e.size() ? e[k].first : 0));
+      wgt.push_back(std::uint8_t(e.size()));
+      for (std::size_t k = 0; k < 3; ++k) wgt.push_back(std::uint8_t(k < e.size() ? e[k].second : 0));
+      wgt.push_back(0);
+    }
+    Bytes parts;
+    const std::uint32_t partsAt0 = be32(body, 0x1C);
+    Bytes raw(body.begin() + long(partsAt0), body.begin() + long(partsAt0 + 0x18));
+    raw[0xB] = 0, raw[0xD] = raw[0xE] = raw[0xF] = 0xFF, raw[0x17] = 0xFF;
+    for (std::size_t k = 0x10; k < 0x17; ++k) raw[k] = 0;
+    for (const auto &[mat, list] : byMat) {
+      Bytes r = raw;
+      r[0xC] = std::uint8_t(matSlot.at(mat));
+      parts.insert(parts.end(), r.begin(), r.end());
+      std::vector<unsigned> runs;
+      for (std::size_t left = list.size() * 3; left;) {
+        const std::size_t c = std::min<std::size_t>(left, 65535 - 65535 % 3);
+        runs.push_back(unsigned(c));
+        left -= c;
+      }
+      le32w(parts, std::uint32_t(4 + runs.size() * 4)), le32w(parts, std::uint32_t(list.size()));
+      le32w(parts, std::uint32_t(runs.size()));
+      for (unsigned c : runs) le16w(parts, 5), le16w(parts, c);
+    }
+    Bytes blob(0x50, 0);
+    auto section = [&](const Bytes &d) {
+      while (blob.size() % 32) blob.push_back(0);
+      const std::uint32_t at2 = std::uint32_t(blob.size());
+      blob.insert(blob.end(), d.begin(), d.end());
+      return at2;
+    };
+    Bytes head;
+    for (const auto &rec : gcBoneRecords(posed)) {
+      head.insert(head.end(), rec.begin(), rec.begin() + 4);
+      for (int k = 0; k < 3; ++k) lefw(head, bef32(rec, std::size_t(4 + k * 4)));
+    }
+    const std::uint32_t oHead = section(head), oVtx = section(vtx), oNrm = section(nrm), oTex = section(tex),
+                        oClr = section(clr), oWgt = section(wgt), oVidx = section(vidx), oParts = section(parts);
+    le32at(blob, 0x00, oHead), le32at(blob, 0x04, be32(body, 4)), le32at(blob, 0x08, be32(body, 8));
+    le32at(blob, 0x0C, oClr), le32at(blob, 0x10, oTex), le32at(blob, 0x14, oWgt);
+    blob[0x18] = std::uint8_t(wList.size() <= 0xFF ? wList.size() : 0), blob[0x19] = body[0x19];
+    le16at(blob, 0x1A, unsigned(byMat.size())), le32at(blob, 0x1C, oParts);
+    le32at(blob, 0x20, be32(body, 0x20) | 0x80000000u), le32at(blob, 0x24, std::uint32_t(texCount));
+    blob[0x28] = 0, blob[0x29] = body[0x29], le16at(blob, 0x2A, unsigned(wList.size() > 0xFF ? wList.size() : 0));
+    le32at(blob, 0x2C, 0), le32at(blob, 0x30, oVtx), le32at(blob, 0x34, oNrm);
+    le16at(blob, 0x38, unsigned(corners)), le16at(blob, 0x3A, unsigned(corners)), le32at(blob, 0x3C, 0x20030818u);
+    le32at(blob, 0x40, 0), le32at(blob, 0x44, 0), le32at(blob, 0x48, oVidx), le32at(blob, 0x4C, 0);
+    return convertModel(blob, palette, &posed);
+}
+
 void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const std::map<std::string, Rgba> &images,
                 std::vector<std::string> notes, const Options &o, Bytes &result, std::string &log, const char *what,
                 bool shoulderFit = false) {
@@ -2210,70 +2287,7 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
     if (n0 + add.size() > 0xF7) fail("too many textures for one model");
 
     // the model in the PC release's layout, then the disc's (convertModel, Leon's skeleton kept)
-    std::map<Weight, unsigned> wIndex;
-    std::vector<Weight> wList;
-    Bytes vtx, nrm, tex, clr, vidx;
-    for (const auto &[mat, list] : byMat)
-      for (const auto &t : list)
-        for (unsigned v : t) {
-          lefw(vtx, float(P[v].x)), lefw(vtx, float(P[v].y)), lefw(vtx, float(P[v].z));
-          lefw(nrm, float(N[v].x)), lefw(nrm, float(N[v].y)), lefw(nrm, float(N[v].z));
-          lefw(tex, float(m.uv[v][0])), lefw(tex, float(m.uv[v][1]));
-          le32w(clr, 0xFFFFFFFFu);
-          auto wi = wIndex.find(W[v]);
-          if (wi == wIndex.end()) wi = wIndex.emplace(W[v], unsigned(wList.size())).first, wList.push_back(W[v]);
-          le16w(vidx, wi->second);
-        }
-    Bytes wgt;
-    for (const auto &e : wList) {
-      for (std::size_t k = 0; k < 3; ++k) wgt.push_back(std::uint8_t(k < e.size() ? e[k].first : 0));
-      wgt.push_back(std::uint8_t(e.size()));
-      for (std::size_t k = 0; k < 3; ++k) wgt.push_back(std::uint8_t(k < e.size() ? e[k].second : 0));
-      wgt.push_back(0);
-    }
-    Bytes parts;
-    const std::uint32_t partsAt0 = be32(body, 0x1C);
-    Bytes raw(body.begin() + long(partsAt0), body.begin() + long(partsAt0 + 0x18));
-    raw[0xB] = 0, raw[0xD] = raw[0xE] = raw[0xF] = 0xFF, raw[0x17] = 0xFF;
-    for (std::size_t k = 0x10; k < 0x17; ++k) raw[k] = 0;
-    for (const auto &[mat, list] : byMat) {
-      Bytes r = raw;
-      r[0xC] = std::uint8_t(matSlot[mat]);
-      parts.insert(parts.end(), r.begin(), r.end());
-      std::vector<unsigned> runs;
-      for (std::size_t left = list.size() * 3; left;) {
-        const std::size_t c = std::min<std::size_t>(left, 65535 - 65535 % 3);
-        runs.push_back(unsigned(c));
-        left -= c;
-      }
-      le32w(parts, std::uint32_t(4 + runs.size() * 4)), le32w(parts, std::uint32_t(list.size()));
-      le32w(parts, std::uint32_t(runs.size()));
-      for (unsigned c : runs) le16w(parts, 5), le16w(parts, c);
-    }
-    Bytes blob(0x50, 0);
-    auto section = [&](const Bytes &d) {
-      while (blob.size() % 32) blob.push_back(0);
-      const std::uint32_t at2 = std::uint32_t(blob.size());
-      blob.insert(blob.end(), d.begin(), d.end());
-      return at2;
-    };
-    Bytes head;
-    for (const auto &rec : gcBoneRecords(posed)) {
-      head.insert(head.end(), rec.begin(), rec.begin() + 4);
-      for (int k = 0; k < 3; ++k) lefw(head, bef32(rec, std::size_t(4 + k * 4)));
-    }
-    const std::uint32_t oHead = section(head), oVtx = section(vtx), oNrm = section(nrm), oTex = section(tex),
-                        oClr = section(clr), oWgt = section(wgt), oVidx = section(vidx), oParts = section(parts);
-    le32at(blob, 0x00, oHead), le32at(blob, 0x04, be32(body, 4)), le32at(blob, 0x08, be32(body, 8));
-    le32at(blob, 0x0C, oClr), le32at(blob, 0x10, oTex), le32at(blob, 0x14, oWgt);
-    blob[0x18] = std::uint8_t(wList.size() <= 0xFF ? wList.size() : 0), blob[0x19] = body[0x19];
-    le16at(blob, 0x1A, unsigned(byMat.size())), le32at(blob, 0x1C, oParts);
-    le32at(blob, 0x20, be32(body, 0x20) | 0x80000000u), le32at(blob, 0x24, std::uint32_t(n0 + add.size()));
-    blob[0x28] = 0, blob[0x29] = body[0x29], le16at(blob, 0x2A, unsigned(wList.size() > 0xFF ? wList.size() : 0));
-    le32at(blob, 0x2C, 0), le32at(blob, 0x30, oVtx), le32at(blob, 0x34, oNrm);
-    le16at(blob, 0x38, unsigned(corners)), le16at(blob, 0x3A, unsigned(corners)), le32at(blob, 0x3C, 0x20030818u);
-    le32at(blob, 0x40, 0), le32at(blob, 0x44, 0), le32at(blob, 0x48, oVidx), le32at(blob, 0x4C, 0);
-    const Converted conv = convertModel(blob, std::size_t(o.palette), &posed);
+    const Converted conv = buildModel(body, byMat, P, N, m.uv, W, matSlot, n0 + add.size(), std::size_t(o.palette));
     log += "entry   0 BIN: " + conv.stats + "\n";
 
     // the archive: the new body and TPL, Leon's head, face, hair, outfit, wound and hands folded away
@@ -2328,6 +2342,339 @@ bool ConvertReMod(const Bytes &gcData, const std::string &gcName, const std::map
     DffMesh m = readReMod(files, images, notes, log);
     skinOnLeon(gcData, gcName, std::move(m), images, std::move(notes), o, result, log, "RE4 Remake mod", true);
     return true;
+  } catch (const std::exception &e) {
+    if (why) *why = e.what();
+    return false;
+  }
+}
+
+// RE4 Remake weapon -> the disc's weapon archive it replaces (wish of DevJunior, 20.11.2026: "replace weapons or make
+// weapon packs"; the pistols of the Remake, its ids as its folders name them). "" none known (the user picks).
+const char *ReWeaponTarget(const std::string &wp) {
+  static const std::map<std::string, const char *> kMap = {
+      {"wp4000", "wep04"},  // SG-09 R -> the handgun
+      {"wp4001", "wep02"},  // Punisher
+      {"wp4002", "wep03"},  // Red9
+      {"wp4003", "wep01"},  // Blacktail
+      {"wp4004", "wep17"},  // Matilda
+  };
+  auto it = kMap.find(wp);
+  return it == kMap.end() ? "" : it->second;
+}
+
+namespace {
+
+// The disc weapon model's vertices (its space: -x the barrel's way, +z up) with each one's heaviest bone
+struct WepVert {
+  V3 p;
+  int bone;
+};
+std::vector<WepVert> weaponVertices(const Bytes &model) {
+  std::vector<WepVert> out;
+  if (model.size() < 0x60) return out;
+  const unsigned shift = model[0x28], nv = be16(model, 0x38);
+  const std::uint32_t vtx = be32(model, 0x30), wgt = be32(model, 0x14);
+  const unsigned ext = be16(model, 0x2A), n = ext > 0xFF ? ext : model[0x18];
+  const bool big = ext > 0xFF;
+  std::vector<int> heaviest(n, 0);
+  for (unsigned k = 0; k < n; ++k) {
+    const std::size_t e = wgt + std::size_t(k) * (big ? 12 : 8);
+    if (e + (big ? 12 : 8) > model.size()) break;
+    const unsigned cnt = std::min<unsigned>(big ? be16(model, e + 6) : model.at(e + 3), 3);
+    int best = -1;
+    for (unsigned j = 0; j < cnt; ++j) {
+      const int r = model.at(e + (big ? 8 : 4) + j);
+      if (r > best) best = r, heaviest[k] = big ? int(be16(model, e + j * 2)) : int(model.at(e + j));
+    }
+  }
+  const double s = 1.0 / double(1 << shift);
+  for (unsigned i = 0; i < nv; ++i) {
+    const std::size_t q = vtx + std::size_t(i) * 8;
+    if (q + 8 > model.size()) break;
+    const unsigned wi = be16(model, q + 6);
+    out.push_back({V3{double(std::int16_t(be16(model, q))) * s, double(std::int16_t(be16(model, q + 2))) * s,
+                      double(std::int16_t(be16(model, q + 4))) * s},
+                   wi < heaviest.size() ? heaviest[wi] : 0});
+  }
+  return out;
+}
+
+}  // namespace
+
+bool ConvertReWeapon(const Bytes &gcData, const std::string &gcName, const std::map<std::string, Bytes> &files,
+                     const std::string &wp, const Options &o, Bytes &result, std::string &log, std::string *why) {
+  try {
+    const Archive gc(gcData, true);
+    std::vector<std::string> notes;
+    std::map<std::string, Rgba> images;
+    std::string picked;
+    DffMesh m = readReMod(files, images, notes, log, true, wp, &picked);
+
+    // the weapon's own pieces: not the loose round its reload shows (material "Bullet")
+    {
+      std::vector<std::array<unsigned, 4>> keep;
+      std::size_t dropped = 0;
+      for (const auto &t : m.tris) {
+        const std::string name = t[3] < m.matName.size() ? lower(m.matName[t[3]]) : "";
+        if (name.find("bullet") != std::string::npos) ++dropped;
+        else keep.push_back(t);
+      }
+      if (keep.empty()) fail("the weapon's meshes hold only rounds");
+      if (dropped) log += fmt("the loose round left out (%zu triangles)\n", dropped);
+      m.tris = std::move(keep);
+    }
+
+    // the disc's models of this weapon: the first BIN entry on a skeleton of a few bones at the weapon's place (not the
+    // shell, the magazine dropped in the case's space) is the plain weapon; the later ones on the same skeleton vary it
+    // (a silencer, a stock); others (another weapon's copy in the Matilda's archive) stay
+    struct Target {
+      std::size_t entry;
+      std::map<int, DiscBone> skel;
+      double lo = 1e30, hi = -1e30;
+    };
+    std::vector<Target> targets;
+    for (std::size_t e = 0; e < gc.count(); ++e) {
+      if (gc.kind(e) != "BIN" || gc.entry(e).size() < 0x60) continue;
+      const Bytes model = gc.entry(e);
+      Target t{e, discSkeleton(model)};
+      bool sane = t.skel.size() >= 2 && t.skel.size() <= 64;
+      for (const auto &[id, b] : t.skel) sane = sane && id < 64 && std::fabs(b.at.x) < 2000 && std::fabs(b.at.z) < 2000;
+      if (!sane) continue;
+      for (const auto &v : weaponVertices(model)) t.lo = std::min(t.lo, v.p.x), t.hi = std::max(t.hi, v.p.x);
+      if (t.hi - t.lo < 60) continue;
+      if (!targets.empty()) {
+        bool same = t.skel.size() == targets[0].skel.size();
+        for (const auto &[id, b] : t.skel) {
+          auto it = targets[0].skel.find(id);
+          same = same && it != targets[0].skel.end() && len(it->second.at - b.at) < 0.5;
+        }
+        if (!same) continue;
+      }
+      targets.push_back(std::move(t));
+    }
+    if (targets.empty()) fail(gcName + " has no weapon model to replace");
+    const Target &ref = targets[0];
+    // its muzzle: the bone farthest along the barrel (the flash comes out there)
+    V3 gcMuzzle{0, 0, 0};
+    double front = 1e30;
+    for (const auto &[id, b] : ref.skel)
+      if (id != 0 && b.at.x < front) front = b.at.x, gcMuzzle = b.at;
+
+    // the Remake's weapon: +z the barrel's way, +y up, metres; its muzzle bone vfx_muzzle1 (else the front)
+    double reLo = 1e30, reHi = -1e30;
+    std::vector<char> used(m.pos.size(), 0);
+    for (const auto &t : m.tris)
+      for (int c = 0; c < 3; ++c) used[t[std::size_t(c)]] = 1;
+    for (std::size_t v = 0; v < m.pos.size(); ++v)
+      if (used[v]) reLo = std::min(reLo, m.pos[v].z), reHi = std::max(reHi, m.pos[v].z);
+    V3 reMuzzle{0, 0, reHi};
+    bool muzzle = false;
+    for (std::size_t b = 0; b < m.boneName.size(); ++b)
+      if (lower(m.boneName[b]) == "vfx_muzzle1") reMuzzle = m.boneAt[b], muzzle = true;
+    if (!muzzle) {  // the middle of the front
+      double ylo = 1e30, yhi = -1e30;
+      for (std::size_t v = 0; v < m.pos.size(); ++v)
+        if (used[v] && m.pos[v].z > reHi - 0.01) ylo = std::min(ylo, m.pos[v].y), yhi = std::max(yhi, m.pos[v].y);
+      reMuzzle = V3{0, (ylo + yhi) * 0.5, reHi};
+    }
+    // Placed on the disc's plain weapon (the hand's grip, the motions and the flash are the disc's): first as high as it
+    // with the muzzles on each other, then moved and scaled (the axes kept) until the two shapes lie best on each other
+    // (both ways nearest points, 30 rounds): the grip goes into the hand even where the barrel or the back differ
+    // (DevJunior's Halo magnum: a long back; the muzzles alone left the grip 8 cm off the hand)
+    auto R = [](V3 d) { return V3{-d.z, -d.x, d.y}; };  // the Remake's axes -> the disc's
+    // the first size: as high as the disc's (the grip fits the hand; the barrels differ more: a Red9's is twice a
+    // magnum's)
+    double gzLo = 1e30, gzHi = -1e30, ryLo = 1e30, ryHi = -1e30;
+    for (const auto &g : weaponVertices(gc.entry(ref.entry))) gzLo = std::min(gzLo, g.p.z), gzHi = std::max(gzHi, g.p.z);
+    for (std::size_t v = 0; v < m.pos.size(); ++v)
+      if (used[v]) ryLo = std::min(ryLo, m.pos[v].y), ryHi = std::max(ryHi, m.pos[v].y);
+    double scale = (gzHi - gzLo) / std::max(1e-6, ryHi - ryLo);
+    V3 shift = gcMuzzle - R(reMuzzle) * scale;
+    {
+      std::vector<V3> a, b;
+      for (std::size_t v = 0; v < m.pos.size(); v += 1 + m.pos.size() / 3000)
+        if (used[v]) a.push_back(R(m.pos[v]));
+      for (const auto &g : weaponVertices(gc.entry(ref.entry))) b.push_back(g.p);
+      const double s0 = scale;
+      for (int it = 0; it < 30 && !a.empty() && !b.empty(); ++it) {
+        std::vector<std::pair<V3, V3>> pairs;  // (rotated Remake point, disc point)
+        for (const auto &p : a) {
+          const V3 q = p * scale + shift;
+          double best = 1e30;
+          V3 hit{};
+          for (const auto &g : b) {
+            const V3 d = g - q;
+            const double dd = dot(d, d);
+            if (dd < best) best = dd, hit = g;
+          }
+          pairs.push_back({p, hit});
+        }
+        for (const auto &g : b) {
+          double best = 1e30;
+          V3 hit{};
+          for (const auto &p : a) {
+            const V3 d = p * scale + shift - g;
+            const double dd = dot(d, d);
+            if (dd < best) best = dd, hit = p;
+          }
+          // as many as the Remake's side: both shapes count the same
+          for (std::size_t k = 0; k < std::max<std::size_t>(1, a.size() / b.size()); ++k) pairs.push_back({hit, g});
+        }
+        V3 ma{}, mb{};
+        for (const auto &[p, g] : pairs) ma = ma + p, mb = mb + g;
+        ma = ma * (1.0 / double(pairs.size())), mb = mb * (1.0 / double(pairs.size()));
+        double num = 0, den = 0;
+        for (const auto &[p, g] : pairs) num += dot(p - ma, g - mb), den += dot(p - ma, p - ma);
+        if (den > 0) scale = std::min(s0 * 1.25, std::max(s0 * 0.8, num / den));
+        shift = mb - ma * scale;
+      }
+      // then the grips on each other along the barrel (the hand holds the disc's): the middle of the lowest 40 % of each
+      auto gripX = [](const std::vector<V3> &pts) {
+        double lo = 1e30, hi = -1e30, sum = 0;
+        std::size_t n = 0;
+        for (const auto &p : pts) lo = std::min(lo, p.z), hi = std::max(hi, p.z);
+        for (const auto &p : pts)
+          if (p.z < lo + 0.4 * (hi - lo)) sum += p.x, ++n;
+        return n ? sum / double(n) : 0.0;
+      };
+      std::vector<V3> placed;
+      for (const auto &p : a) placed.push_back(p * scale + shift);
+      if (!a.empty() && !b.empty()) {
+        const double dx = gripX(b) - gripX(placed);
+        shift.x += dx;
+        log += fmt("the grip moved %.0f mm along the barrel onto the disc's\n", dx);
+      }
+    }
+    auto G = [&](V3 p) { return R(p) * scale + shift; };
+    auto Gdir = [&](V3 n) { return unit(R(n)); };
+    {
+      const V3 mz = G(reMuzzle);
+      log += fmt("into %s (entry %zu, %.0f mm long): scale %.1f, its muzzle %.0f mm from the disc's%s\n", gcName.c_str(),
+                 ref.entry, ref.hi - ref.lo, scale, len(mz - gcMuzzle), muzzle ? "" : " (no muzzle bone: the front's middle)");
+    }
+
+    // the texture palette the weapon's models draw with: the TPL entry nearest the plain model (the one before on a tie)
+    std::size_t tplEntry = gc.count();
+    for (std::size_t e = 0; e < gc.count(); ++e) {
+      if (gc.kind(e) != "TPL" || gc.entry(e).empty()) continue;
+      auto dist = [&](std::size_t a) { return a > ref.entry ? 2 * (a - ref.entry) : 2 * (ref.entry - a) - 1; };
+      if (tplEntry == gc.count() || dist(e) < dist(tplEntry)) tplEntry = e;
+    }
+    if (tplEntry == gc.count()) fail(gcName + " has no texture palette");
+    const Bytes tpl = gc.entry(tplEntry);
+    const std::uint32_t n0 = be32(tpl, 4);
+
+    // sizes down until the data part fits the weapon's place (ReadWepData, read.cpp: WEAPON_DATA_MAX 0x70000)
+    const std::size_t kBudget = 0x70000 - 0x1000;
+    std::size_t tris = std::min<std::size_t>(m.tris.size(), 4000);
+    int tex = std::max(32, o.tex);
+    for (int round = 0;; ++round) {
+      std::string rlog;
+      DffMesh r = m;
+      reduceSkin(r, tris, rlog);
+      const std::size_t nv = r.pos.size();
+      // rigid on the disc's bones: each of the Remake's bones (a slide, a trigger, a magazine) on the disc bone most of
+      // its vertices lie nearest to (in the plain model), so a piece moves whole
+      std::vector<V3> P(nv), N(nv);
+      for (std::size_t v = 0; v < nv; ++v) P[v] = G(r.pos[v]), N[v] = Gdir(r.nrm[v]);
+      const auto gv = weaponVertices(gc.entry(ref.entry));
+      std::map<unsigned, std::map<int, int>> votes;
+      std::vector<unsigned> own(nv, 0);
+      for (std::size_t v = 0; v < nv; ++v) {
+        unsigned b = r.bone[v][0];
+        float w = r.weight[v][0];
+        for (int j = 1; j < 4; ++j)
+          if (r.weight[v][std::size_t(j)] > w) w = r.weight[v][std::size_t(j)], b = r.bone[v][std::size_t(j)];
+        own[v] = b;
+        double best = 1e30;
+        int bone = 0;
+        for (const auto &g : gv) {
+          const V3 d = g.p - P[v];
+          const double dd = dot(d, d);
+          if (dd < best) best = dd, bone = g.bone;
+        }
+        ++votes[b][bone];
+      }
+      std::map<unsigned, int> boneOf;
+      for (const auto &[b, tally] : votes)
+        boneOf[b] = std::max_element(tally.begin(), tally.end(), [](const auto &a, const auto &c) { return a.second < c.second; })->first;
+      std::vector<Weight> W(nv);
+      for (std::size_t v = 0; v < nv; ++v) W[v] = Weight{{boneOf[own[v]], 100}};
+
+      // the triangles by material, facing as the disc's do
+      long facing = 0;
+      for (const auto &t : r.tris) {
+        const V3 c = cross(P[t[1]] - P[t[0]], P[t[2]] - P[t[0]]);
+        facing += dot(c, N[t[0]] + N[t[1]] + N[t[2]]) >= 0 ? 1 : -1;
+      }
+      std::map<unsigned, std::vector<std::array<unsigned, 3>>> byMat;
+      for (const auto &t : r.tris) {
+        if (t[0] == t[1] || t[1] == t[2] || t[0] == t[2]) continue;
+        byMat[t[3]].push_back(facing >= 0 ? std::array<unsigned, 3>{t[0], t[1], t[2]} : std::array<unsigned, 3>{t[0], t[2], t[1]});
+      }
+      // the textures behind the palette's own
+      std::vector<std::tuple<unsigned, unsigned, unsigned, Bytes>> add;
+      std::map<std::string, unsigned> slotOf;
+      std::map<unsigned, unsigned> matSlot;
+      std::string texLog;
+      for (const auto &[mat, list] : byMat) {
+        const std::string name = r.matTex[mat];
+        auto it = slotOf.find(name);
+        if (it == slotOf.end()) {
+          Rgba img;
+          if (images.count(name)) {
+            img = images.at(name);
+          } else {
+            img.w = img.h = 8;
+            img.px.assign(8 * 8 * 4, 160);
+            for (std::size_t q = 3; q < img.px.size(); q += 4) img.px[q] = 255;
+          }
+          const double sc = std::min(1.0, double(tex) / double(std::max(img.w, img.h)));
+          const int tw = std::max(8, 1 << int(pyround(std::log2(std::max(1.0, img.w * sc)))));
+          const int th = std::max(8, 1 << int(pyround(std::log2(std::max(1.0, img.h * sc)))));
+          add.push_back({unsigned(tw), unsigned(th), 0xEu, encCmpr(resize(img, tw, th))});
+          it = slotOf.emplace(name, unsigned(n0 + add.size() - 1)).first;
+          texLog += fmt("  texture %u: %s %dx%d -> %dx%d\n", it->second, name.c_str(), img.w, img.h, tw, th);
+        }
+        matSlot[mat] = it->second;
+      }
+      if (n0 + add.size() > 0xF7) fail("too many textures for one model");
+      // every model of the weapon anew (the variants too: the Remake's weapon has no silencer or stock of the disc's)
+      std::vector<Bytes> entries;
+      std::string modelLog;
+      std::set<std::size_t> replaced;
+      for (const auto &t : targets) replaced.insert(t.entry);
+      for (std::size_t e = 0; e < gc.count(); ++e) {
+        if (e == tplEntry) {
+          entries.push_back(appendTpl(tpl, add));
+        } else if (replaced.count(e)) {
+          const Converted conv = buildModel(gc.entry(e), byMat, P, N, r.uv, W, matSlot, n0 + add.size(),
+                                            std::size_t(o.palette));
+          modelLog += fmt("entry %3zu BIN: %s\n", e, conv.stats.c_str());
+          entries.push_back(conv.blob);
+        } else {
+          entries.push_back(gc.entry(e));
+        }
+      }
+      const Bytes body = buildBody(entries, gc.types);
+      if (body.size() <= kBudget || (tris <= 300 && tex <= 32)) {
+        log += rlog;
+        std::string bones;
+        for (const auto &[b, d] : boneOf)
+          bones += fmt("%s%s -> %d", bones.empty() ? "" : ", ", b < r.boneName.size() ? r.boneName[b].c_str() : "?", d);
+        log += "pieces on the disc's bones: " + bones + "\n" + texLog + modelLog;
+        for (const auto &nt : notes) log += nt + "\n";
+        if (body.size() > kBudget) fail(fmt("too large for the weapon's place even at its smallest (%zu bytes)", body.size()));
+        result = buildArchive(gc, body);
+        log += fmt("%s: %zu bytes, data part %zu bytes of %zu (round %d: %zu triangles, textures at most %d)\n",
+                   gcName.c_str(), result.size(), body.size(), kBudget, round, r.tris.size(), tex);
+        return true;
+      }
+      // smaller: the triangles first, the textures once the models are under 1500
+      if (tris > 1500) tris = std::max<std::size_t>(1500, tris * 4 / 5);
+      else if (tex > 32) tex /= 2;
+      else tris = std::max<std::size_t>(300, tris * 4 / 5);
+    }
   } catch (const std::exception &e) {
     if (why) *why = e.what();
     return false;

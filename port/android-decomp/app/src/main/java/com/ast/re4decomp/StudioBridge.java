@@ -53,6 +53,13 @@ final class StudioBridge {
    * then a colour variant laid over it): "ok\n" + report or "error\n" + why.
    */
   static native String convertReMod(String gc, String gcName, String[] dirs, int tex, boolean keepHead, String out);
+  /**
+   * An RE4 Remake (PC) weapon mod into the disc's weapon archive (em/wepNN.drs): `dirs` its folders (natives/STM/...
+   * inside; the base, then a colour variant), `wp` the weapon's folder (wp4000 ...): "ok\n" + report or "error\n" + why.
+   */
+  static native String convertReWeapon(String gc, String gcName, String[] dirs, String wp, int tex, String out);
+  /** The disc's weapon archive (wep04 ...) an RE4 Remake weapon (wp4000 ...) replaces; "" none known. */
+  static native String reWeaponTarget(String wp);
   static native void surfaceCreated();
   static native void draw(int width, int height, float yaw, float pitch, float distance, float tx, float ty, float tz,
       int flags, float frame);
