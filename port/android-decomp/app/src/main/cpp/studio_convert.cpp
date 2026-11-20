@@ -2218,8 +2218,9 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
     // Leon's build (DevJunior, 20.11.2026, the Remake's Master Chief: "make it Leon's size and proportions, it looks too
     // fat and big"): around each of Leon's bones the skin is made no thicker than his own body there (his body, head and
     // hands of the disc, with his jacket in pl00): for each bone the distance of its outer vertices from the bone (the
-    // segment to its child; the joint for an end bone) is measured on both, and the skin's distances are scaled down to
-    // his (0.6 at most), each vertex by its weights, so the joints stay smooth. Only thinner, never thicker.
+    // segment to its child; for an end bone the middle of his vertices on it) is measured on both; the skin's distances are
+    // scaled down by one factor for all (0.7 at most), each vertex by its weights, so the joints stay smooth. Only
+    // thinner, never thicker.
     if (o.fitBody > 0) {
       std::map<int, int> childOf;
       for (const auto &[id, b] : skel) {
@@ -2230,12 +2231,14 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
         if (it == childOf.end() || std::fabs(unit(d).y) > std::fabs(unit(skel.at(it->second).at - skel.at(b.parent).at).y))
           childOf[b.parent] = id;
       }
+      std::map<int, V3> hisMiddle;  // an end bone (the head, a hand): the middle of Leon's own vertices on it
       auto radial = [&](int bone, const V3 &p, V3 &foot) {
         const V3 j = skel.at(bone).at;
         auto c = childOf.find(bone);
         if (c == childOf.end()) {
-          foot = j;
-          return p - j;
+          auto m = hisMiddle.find(bone);
+          foot = m != hisMiddle.end() ? m->second : j;
+          return p - foot;
         }
         const V3 seg = skel.at(c->second).at - j;
         const double t = std::max(0.0, std::min(1.0, dot(p - j, seg) / std::max(1e-9, dot(seg, seg))));
@@ -2253,6 +2256,15 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
       for (std::size_t e : {0, 2, 4, 6, 14, 17})
         if (e < gc.count() && gc.kind(e) == "BIN" && !gc.entry(e).empty()) collectSkin(gc.entry(e), skel, leon);
       std::map<int, std::vector<double>> his, its;  // bone -> the distances of its vertices
+      {
+        std::map<int, std::pair<V3, int>> acc;
+        for (const auto &sv : leon) {
+          const int b = heaviest(sv.w);
+          if (b >= 0) acc[b].first = acc[b].first + sv.p, ++acc[b].second;
+        }
+        for (const auto &[b, a] : acc)
+          if (!childOf.count(b) && a.second > 0) hisMiddle[b] = a.first * (1.0 / a.second);
+      }
       for (const auto &sv : leon) {
         const int b = heaviest(sv.w);
         if (b < 0 || !skel.count(b)) continue;
@@ -2267,22 +2279,36 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
         V3 f;
         its[b].push_back(len(radial(b, P[v], f)));
       }
-      std::map<int, double> k;
-      std::string ks;
       // the outer surface: the distance 85 % of the vertices stay within (armour plates and pouches count, the inside
       // of a sleeve less)
       auto outer = [](std::vector<double> d) {
         std::sort(d.begin(), d.end());
         return d[std::min(d.size() - 1, d.size() * 85 / 100)];
       };
+      // one factor for the whole skin (DevJunior, 20.11.2026, with a factor per bone: "the torso and the body look
+      // very out of proportion": a small head and thin limbs on the broad chest): the middle of the bones' own (each
+      // by its vertices), so the skin keeps its proportions, only slimmer
+      std::vector<std::pair<double, std::size_t>> wants;
+      std::size_t all = 0;
       for (const auto &[b, sc] : its) {
         auto h = his.find(b);
         if (h == his.end() || h->second.size() < 8 || sc.size() < 8) continue;
-        const double mine = outer(sc), him = outer(h->second);
-        const double want = std::max(0.6, std::min(1.0, him / std::max(1e-6, mine)));
-        k[b] = 1.0 - o.fitBody * (1.0 - want);
-        if (k[b] < 0.995) ks += fmt("%s%d %.2f", ks.empty() ? "" : ", ", b, k[b]);
+        wants.push_back({outer(h->second) / std::max(1e-6, outer(sc)), sc.size()});
+        all += sc.size();
       }
+      std::sort(wants.begin(), wants.end());
+      double want = 1.0;
+      std::size_t seen = 0;
+      for (const auto &[wq, n] : wants)
+        if ((seen += n) * 2 >= all) {
+          want = wq;
+          break;
+        }
+      want = std::max(0.7, std::min(1.0, want));
+      const double kAll = 1.0 - o.fitBody * (1.0 - want);
+      std::map<int, double> k;
+      for (const auto &[b, sc] : its) k[b] = kAll;
+      const std::string ks = fmt("%.2f", kAll);
       double lo = 1e30, hi = -1e30, lo2 = 1e30, hi2 = -1e30;
       for (std::size_t v = 0; v < nv; ++v) {
         V3 moved{0, 0, 0};
@@ -2299,7 +2325,7 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
         if (total > 0) P[v] = moved * (1.0 / total);
         lo2 = std::min(lo2, P[v].y), hi2 = std::max(hi2, P[v].y);
       }
-      log += fmt("Leon's build: thinner round his bones (bone factor: %s); %.0f..%.0f mm high, now %.0f..%.0f\n",
+      log += fmt("Leon's build: thinner round his bones (factor %s); %.0f..%.0f mm high, now %.0f..%.0f\n",
                  ks.empty() ? "none" : ks.c_str(), lo, hi, lo2, hi2);
     }
 
