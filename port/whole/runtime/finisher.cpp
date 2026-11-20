@@ -116,6 +116,13 @@ cEm* gStab;  // the Ganado on the floor Leon's blow hurts without the pair (0 no
 bool gLive;                // Leon's routine runs: the knife out / the gun hidden to restore
 void* gKick;               // the game's kick on a kneeling enemy (plFinishStart's way back)
 bool gGround;              // the finisher was asked on the floor (re4_ground_prompt): no kick to fall back on
+// the Ganado a finisher on the floor killed (DevJunior, 19.11.2026: "they stay lying in an odd pose and do not
+// vanish"): once dead (Die_Cramp, R0 3 / R1 0) he dissolves (Die_Lost, R1 3) after kFloorFade frames, as the game's
+// corpses do, whatever the room's rule (em10_R1_Die_Cramp keeps them in r100 and a few others)
+cEm* gFloorBody;
+int gFloorFrames;
+u32 gFloorRoom;
+const int kFloorFade = 150;
 u32 gSeed = 0x9E3779B9u;
 int gSaid;
 
@@ -496,6 +503,20 @@ void watch(unsigned)
     } else {
         gLeonKnown = false;
     }
+    if (gFloorBody) {
+        cEm* em = gFloorBody;
+        if (!pG || pG->room_id != gFloorRoom || !em->isAlive() || em->id < 0x10 || em->id > 0x20) {
+            gFloorBody = 0;
+        } else if (em->r_no_0 == 3 && em->r_no_1 == 0) {
+            if (++gFloorFrames >= kFloorFade) {
+                em->setRno(3, 3, 0, 0);
+                re4_log("finisher: the Ganado killed on the floor (id %#x) dissolves", (unsigned) em->id);
+                gFloorBody = 0;
+            }
+        } else if (em->r_no_0 == 3) {
+            gFloorBody = 0;  // the game's own death went on (dissolving, burning)
+        }
+    }
     if (gLive && pPL &&
         (pPL->r_no_0 != 4 || (Pl_func_tbl[4] != plFinish && Pl_func_tbl[4] != plFinishStart))) {
         re4_log("finisher: cut short (routine %d): knife away, gun shown", (int) pPL->r_no_0);
@@ -706,6 +727,8 @@ int re4_finish_catch(void* p)
         pPL->pEmCatch = em;
         pPL->subArc = em->subArc;
         SetPlDamage(em, plFinish);
+        gFloorBody = em, gFloorFrames = 0, gFloorRoom = pG->room_id;
+        hook();
         re4_log("finisher: on the floor: the body's line %.0f deg, Leon %.0f mm away, to turn %.0f deg",
                 (double) (em->ang.y * 57.29578f), (double) sqrtf(pPL->Catch_pos_adj.x * pPL->Catch_pos_adj.x +
                                                                    pPL->Catch_pos_adj.z * pPL->Catch_pos_adj.z),

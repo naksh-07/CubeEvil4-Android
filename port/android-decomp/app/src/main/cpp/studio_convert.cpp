@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <functional>
@@ -1953,11 +1954,12 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
                  nv, src.size(), far);
     }
 
-    // Rigid plates (DevJunior, 19.11.2026: the armour's crotch plate "looks very bad when running"): a separate small
-    // piece of the mesh (its triangles joined by shared vertices, at most kPlate across) is armour, not cloth: all its
-    // vertices take the piece's average weights, so it moves as one, without stretching between the bones it spans.
+    // Rigid plates round the hips (DevJunior, 19.11.2026: the armour's crotch plate "looks very bad when running"): a
+    // separate small piece of the mesh there (its triangles joined by shared vertices, at most kPlate across) is
+    // armour, not cloth: all its vertices take the piece's average weights, so it moves as one, without stretching
+    // between the thighs.
     {
-      const double kPlate = 320.0;
+      const double kPlate = 540.0;  // the hip guards and thigh plates of a suit of armour are this large
       std::vector<std::size_t> root(nv);
       for (std::size_t v = 0; v < nv; ++v) root[v] = v;
       std::function<std::size_t(std::size_t)> find = [&](std::size_t x) {
@@ -1978,6 +1980,10 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
           lo = {std::min(lo.x, P[v].x), std::min(lo.y, P[v].y), std::min(lo.z, P[v].z)},
           hi = {std::max(hi.x, P[v].x), std::max(hi.y, P[v].y), std::max(hi.z, P[v].z)};
         if (len(hi - lo) > kPlate) continue;
+        // only round the hips (the crotch plate, the hip guards): plates on the shoulders and limbs opened gaps at
+        // the joints (DevJunior, 19.11.2026: "the model now shows breaks")
+        const V3 mid = (lo + hi) * 0.5, h = skel.at(17).at;
+        if (mid.y < h.y - 320 || mid.y > h.y + 120 || std::fabs(mid.x - h.x) > 230) continue;
         std::map<int, double> acc;
         for (auto v : vs)
           for (const auto &[bone, rate] : W[v]) acc[bone] += rate;
