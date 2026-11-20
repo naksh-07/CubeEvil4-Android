@@ -18,3 +18,9 @@ extern "C" void re4_quick_pickup_log(int id, int num, int kind)
             kind == 8 ? "money" : kind == 2 ? "ammunition" : kind == 5 || kind == 0xC ? "treasure" : kind == 3 ? "grenade"
             : kind == 6 ? "healing" : kind == 9 ? "weapon part" : "item");
 }
+
+// patch 0943 (game/cockpit.cpp BulletInfo::move): the reserve rounds beside the loaded ones in the HUD, as the remake
+extern "C" int re4_ammo_reserve_on(void)
+{
+    return re4_move_on();
+}

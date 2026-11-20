@@ -1,0 +1,161 @@
+# Port patch (mods; wish of DevJunior, 20.11.2026: "the total rounds of each weapon beside the magazine's"): the HUD
+# shows the rounds of the equipped weapon's ammunition in the case beside the loaded rounds, as the 2023 remake does.
+# Three copies of the life meter's units digit (unit 0xB) in the free id classes 54..56 under the digits' own parent,
+# a size smaller, right of the loaded rounds, which move left by half a digit step; hidden with the counter (knife,
+# thrown weapons, empty, endless ammo). On with the app's "Remake movement" (runtime/quick_pickup.cpp
+# re4_ammo_reserve_on).
+--- a/src/game/cockpit.cpp
++++ b/src/game/cockpit.cpp
+@@ -556,6 +556,132 @@
+ // Per-frame ammo display: the equipped weapon's loaded count as three digit ids (leading zeros
+ // hidden; the "empty" id when 0), and the bullet type icon (IDC_BLLT_ICON) for the weapon, parented
+ // to the HUD frame; hidden for weapons without a counter (knife, infinite launchers).
++/* port (patch 0943, mods; wish of DevJunior, 20.11.2026: "the total rounds of each weapon beside the magazine's"): the
++   rounds of the weapon's ammunition in the case, as the 2023 remake shows them, in the HUD's own digits a size smaller
++   to the right of the loaded rounds (one more step of the digit row), which move left by half a step to make room.
++   Three copies of the units digit (life meter unit 0xB) in the free id classes 54..56, hung under the digits' own
++   parent, so they show and hide with the meter (as the bullet icon, IDC_BLLT_ICON, under unit 0x30); made again
++   when the meter is (a new room, a continue). On with the app's "Remake movement" (runtime/quick_pickup.cpp). */
++extern "C" int re4_ammo_reserve_on(void);
++enum { RESERVE_CLASS = 54 };
++static ID_UNIT* reserveUnit[3];
++static ID_UNIT* reserveParent;
++static ID_UNIT* reserveShifted[3];
++static f32 reserveBaseX[3];
++
++static void bulletReserveRestore()
++{
++    int k;
++
++    for (k = 0; k < 3; k++) {
++        if (reserveShifted[k] != 0 && reserveShifted[k]->be_flag != 0xFF && reserveShifted[k]->classNo == IDC_LIFE_METER) {
++            reserveShifted[k]->pos0.x = reserveBaseX[k];
++        }
++        reserveShifted[k] = 0;
++    }
++}
++
++static void bulletReserve(ID_UNIT** u, int show, u16 reserve)
++{
++    ID_UNIT* par = u[0]->pParent;
++    int ok = par != 0 && reserveParent == par;
++    int k;
++
++    for (k = 0; ok && k < 3; k++) {
++        ID_UNIT* r = reserveUnit[k];
++        ok = r->be_flag != 0xFF && r->classNo == RESERVE_CLASS + k && r->pParent == par;
++    }
++    if (!ok) {
++        if (reserveParent != 0) {
++            for (k = 0; k < 3; k++) {
++                IdSys.kill(0xFF, (ID_CLASS) (RESERVE_CLASS + k));
++            }
++            reserveParent = 0;
++        }
++        if (!show || par == 0) {
++            bulletReserveRestore();
++            return;
++        }
++        bulletReserveRestore();
++        for (k = 0; k < 3; k++) {
++            IdSys.set((ID_FILE_HEADER*) CORE_ARC(CORE_LIFE_METER_ID), 0xB, (ID_CLASS) (RESERVE_CLASS + k), 0x13, 5, 0);
++            reserveUnit[k] = IdSys.unitPtr(0xB, (ID_CLASS) (RESERVE_CLASS + k));
++            if (reserveUnit[k]->classNo != RESERVE_CLASS + k) { /* the id work is full */
++                for (k = 0; k < 3; k++) {
++                    IdSys.kill(0xFF, (ID_CLASS) (RESERVE_CLASS + k));
++                }
++                return;
++            }
++            IdSys.unitParent(par, reserveUnit[k]);
++        }
++        reserveParent = par;
++        for (k = 0; k < 3; k++) { /* the loaded rounds' digits as the meter made them */
++            reserveShifted[k] = u[k];
++            reserveBaseX[k] = u[k]->pos0.x;
++        }
++    }
++    if (reserveShifted[0] != u[0]) { /* the meter's digits are new units: take their places again */
++        for (k = 0; k < 3; k++) {
++            reserveShifted[k] = u[k];
++            reserveBaseX[k] = u[k]->pos0.x;
++        }
++    }
++    {
++        const f32 s = 0.62f;
++        f32 pitch = reserveBaseX[0] - reserveBaseX[1];
++        f32 minX = u[0]->ver[0].x, maxX = minX, minY = u[0]->ver[0].y;
++        f32 shift;
++        f32 cx;
++        u8 d[3];
++        int n;
++        int v;
++
++        if (pitch <= 0.0f) {
++            pitch = u[0]->size_W;
++        }
++        for (v = 1; v < 4; v++) {
++            minX = u[0]->ver[v].x < minX ? u[0]->ver[v].x : minX;
++            maxX = u[0]->ver[v].x > maxX ? u[0]->ver[v].x : maxX;
++            minY = u[0]->ver[v].y < minY ? u[0]->ver[v].y : minY;
++        }
++        cx = (minX + maxX) * 0.5f;
++        shift = show ? -0.5f * pitch : 0.0f;
++        for (k = 0; k < 3; k++) {
++            u[k]->pos0.x = reserveBaseX[k] + shift;
++        }
++        if (reserve > 999) {
++            reserve = 999;
++        }
++        n = reserve >= 100 ? 3 : reserve >= 10 ? 2 : 1;
++        d[0] = reserve / 100;
++        d[1] = reserve / 10 % 10;
++        d[2] = reserve % 10;
++        for (k = 0; k < 3; k++) {
++            ID_UNIT* r = reserveUnit[k];
++            const int i = k - (3 - n); /* its place from the left, <0 not shown */
++
++            if (!show || i < 0) {
++                r->be_flag &= ~8;
++                continue;
++            }
++            r->be_flag |= 8;
++            r->tex_flag |= 2;
++            r->texNo = d[k];
++            r->size_W = u[0]->size_W * s;
++            r->size_H = u[0]->size_H * s;
++            for (v = 0; v < 4; v++) {
++                r->ver[v].x = u[0]->ver[v].x * s;
++                r->ver[v].y = u[0]->ver[v].y * s;
++                r->ver[v].z = u[0]->ver[v].z;
++            }
++            /* centre: one step and a half small step right of the units digit; bottom on the digits' line */
++            r->pos0.x = u[0]->pos0.x + cx + pitch * (0.5f + 0.5f * s) + (f32) i * pitch * s - s * cx;
++            r->pos0.y = u[0]->pos0.y + (1.0f - s) * minY;
++            r->pos0.z = u[0]->pos0.z;
++        }
++    }
++}
++
+ void BulletInfo::move()
+ {
+     u8 digit[3];
+@@ -671,6 +797,19 @@
+     if (digit[2] == 0) {
+         u[2]->be_flag &= ~8;
+     }
++    /* port (patch 0943, mods): the reserve beside the loaded rounds, as in the remake */
++    {
++        u16 bid;
++
++        if (itemType(im->weaponId()) == 1) {
++            bid = WeaponId2BulletId(im->weapon()->id, im->weapon()->getBulletType());
++        } else {
++            bid = WeaponId2BulletId(im->weaponId(), 0);
++        }
++        bulletReserve(u, re4_ammo_reserve_on() && dispBulletDigit(wepNo) == 1 && noBullet == 0 && digit[0] != 13
++                             && (u[0]->be_flag & 8) && bid != 0,
++                      bid != 0 ? ItemMgr.num(bid) : 0);
++    }
+ }
+ 
+ // 1 when weapon number `no` shows an ammo count (guns), 0 for the knife / thrown / special
