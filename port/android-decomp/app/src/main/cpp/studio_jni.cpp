@@ -216,7 +216,7 @@ JNIEXPORT jstring JNICALL STUDIO(convertDff)(JNIEnv *env, jclass, jstring gc, js
   convert::Options o;
   if (tex >= 8) o.tex = tex;
   o.keepHead = keepHead;
-  o.fitBody = fitLeon ? 1.0 : 0.0;
+  o.fitBody = fitLeon ? 0.6 : 0.0;
   std::string log, why;
   if (!convert::ConvertDff(g, text(env, gcName), d, t, o, result, log, &why))
     return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
@@ -267,7 +267,8 @@ JNIEXPORT jstring JNICALL STUDIO(convertReMod)(JNIEnv *env, jclass, jstring gc, 
   convert::Options o;
   if (tex >= 8) o.tex = tex;
   o.keepHead = keepHead;
-  o.fitBody = fitLeon ? 1.0 : 0.0;
+  o.fitBody = fitLeon ? 0.6 : 0.0;
+  o.trunkToHead = fitLeon;  // with the slimmer build: the GTA skins' smaller trunk and head
   std::string log, why;
   if (!convert::ConvertReMod(g, text(env, gcName), files, o, result, log, &why))
     return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());

@@ -1944,6 +1944,9 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
       const V3 th = (at("l thigh") + at("r thigh")) * 0.5, sh = (at("l upperarm") + at("r upperarm")) * 0.5;
       gtaTrunk = dot(sh - th, up), leonTrunk = (skel.at(13).at.y + skel.at(7).at.y - skel.at(22).at.y - skel.at(18).at.y) * 0.5;
       hips = th, h = (skel.at(22).at + skel.at(18).at) * 0.5;
+      if (o.trunkToHead) {  // the thighs to the head joint as his: a smaller trunk and head, as the GTA skins come out
+        gtaTrunk = dot(at("head") - th, up), leonTrunk = skel.at(4).at.y - h.y;
+      }
     } else {
       gtaTrunk = dot(at("head") - at("pelvis"), up), leonTrunk = skel.at(4).at.y - skel.at(17).at.y;
       hips = at("pelvis"), h = skel.at(17).at;
@@ -2233,19 +2236,28 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
       }
       // an end bone (the head, a hand): round the middle of the skin's own vertices on it (round Leon's pulled the
       // helmet forward and down onto the chest: "it looks like a dinosaur", DevJunior, 20.11.2026)
-      std::map<int, V3> hisMiddle;
-      auto radial = [&](int bone, const V3 &p, V3 &foot) {
+      std::map<int, V3> hisMiddle, refMiddle;  // the skin's, the reference skin's
+      auto radialAt = [&](int bone, const V3 &p, V3 &foot, const std::map<int, V3> &middle) {
         const V3 j = skel.at(bone).at;
         auto c = childOf.find(bone);
         if (c == childOf.end()) {
-          auto m = hisMiddle.find(bone);
-          foot = m != hisMiddle.end() ? m->second : j;
+          auto m = middle.find(bone);
+          foot = m != middle.end() ? m->second : j;
           return p - foot;
         }
         const V3 seg = skel.at(c->second).at - j;
         const double t = std::max(0.0, std::min(1.0, dot(p - j, seg) / std::max(1e-9, dot(seg, seg))));
         foot = j + seg * t;
         return p - foot;
+      };
+      auto radial = [&](int bone, const V3 &p, V3 &foot) { return radialAt(bone, p, foot, hisMiddle); };
+      // measured only along the middle of a bone (a knee or a hip of the other bone's vertices would count as girth)
+      auto inMiddle = [&](int bone, const V3 &p) {
+        auto c = childOf.find(bone);
+        if (c == childOf.end()) return true;
+        const V3 j = skel.at(bone).at, seg = skel.at(c->second).at - j;
+        const double t = dot(p - j, seg) / std::max(1e-9, dot(seg, seg));
+        return t >= 0.15 && t <= 0.85;
       };
       auto heaviest = [](const std::vector<std::pair<int, double>> &w) {
         int b = -1;
@@ -2257,8 +2269,24 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
       // his body without the jacket (pl00's entry 6) and without the outfits' extras: an armour is measured against
       // his build, not his coat
       std::vector<SrcVert> leon;
-      for (std::size_t e : {0, 2, 4, 14, 17})
-        if (e < gc.count() && gc.kind(e) == "BIN" && !gc.entry(e).empty()) collectSkin(gc.entry(e), skel, leon);
+      const bool byRef = !o.fitRef.empty();
+      if (byRef) {
+        // another skin's proportions (DevJunior, 20.11.2026: "the Remake's with the same proportions as the GTA one"):
+        // its converted archive's body (entry 0, on Leon's skeleton as this one), each bone measured on it
+        const Archive ref(o.fitRef, true);
+        if (ref.count() == 0 || ref.kind(0) != "BIN") fail("the reference skin is not a converted player archive");
+        collectSkin(ref.entry(0), skel, leon);
+        std::map<int, std::pair<V3, int>> acc;
+        for (const auto &sv : leon) {
+          const int b = heaviest(sv.w);
+          if (b >= 0) acc[b].first = acc[b].first + sv.p, ++acc[b].second;
+        }
+        for (const auto &[b, a] : acc)
+          if (!childOf.count(b) && a.second > 0) refMiddle[b] = a.first * (1.0 / a.second);
+      } else {
+        for (std::size_t e : {0, 2, 4, 14, 17})
+          if (e < gc.count() && gc.kind(e) == "BIN" && !gc.entry(e).empty()) collectSkin(gc.entry(e), skel, leon);
+      }
       std::map<int, std::vector<double>> his, its;  // bone -> the distances of its vertices
       {
         std::map<int, std::pair<V3, int>> acc;
@@ -2275,7 +2303,7 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
         const int b = heaviest(sv.w);
         if (b < 0 || !skel.count(b)) continue;
         V3 f;
-        his[b].push_back(len(radial(b, sv.p, f)));
+        if (inMiddle(b, sv.p)) his[b].push_back(len(radialAt(b, sv.p, f, refMiddle)));
       }
       for (std::size_t v = 0; v < nv; ++v) {
         int b = -1, best = -1;
@@ -2283,7 +2311,7 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
           if (r > best) best = r, b = bone;
         if (b < 0 || !skel.count(b)) continue;
         V3 f;
-        its[b].push_back(len(radial(b, P[v], f)));
+        if (inMiddle(b, P[v])) its[b].push_back(len(radial(b, P[v], f)));
       }
       // the outer surface: the distance 85 % of the vertices stay within (armour plates and pouches count, the inside
       // of a sleeve less)
@@ -2314,9 +2342,40 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
       want = std::max(0.7, std::min(1.0, want));
       const double kAll = 1.0 - o.fitBody * (1.0 - want);
       std::map<int, double> k;
-      // the head half as much (a helmet is part of the look; the hands and feet as the rest)
-      for (const auto &[b, sc] : its) k[b] = b == 4 ? (1.0 + kAll) * 0.5 : kAll;
-      const std::string ks = fmt("%.2f", kAll);
+      std::string ks = fmt("%.2f", kAll);
+      if (byRef) {
+        // like the reference by body part (the trunk, the head, the arms, the legs: a bone alone depends on how each
+        // skin's weights share the vertices), each part the middle of its bones' ratios by their vertices
+        ks.clear();
+        auto part = [](int b) { return b == 4 ? 5 : chainOf(b) == 0 ? 0 : chainOf(b) <= 2 ? 1 : 3; };
+        static const char *kPart[] = {"trunk", "arms", "", "legs", "", "head"};
+        std::map<int, std::vector<std::pair<double, std::size_t>>> byPart;
+        for (const auto &[b, sc] : its) {
+          auto h = his.find(b);
+          if (h == his.end() || h->second.size() < 8 || sc.size() < 8) continue;
+          byPart[part(b)].push_back({outer(h->second) / std::max(1e-6, outer(sc)), sc.size()});
+        }
+        std::map<int, double> partK;
+        for (auto &[pt, list] : byPart) {
+          std::sort(list.begin(), list.end());
+          std::size_t total = 0, seen2 = 0;
+          for (const auto &x : list) total += x.second;
+          double w = 1.0;
+          for (const auto &x : list)
+            if ((seen2 += x.second) * 2 >= total) {
+              w = x.first;
+              break;
+            }
+          w = std::max(0.6, std::min(1.25, w));
+          partK[pt] = 1.0 - o.fitBody * (1.0 - w);
+          ks += fmt("%s%s %.2f", ks.empty() ? "" : ", ", kPart[pt], partK[pt]);
+        }
+        for (const auto &[b, sc] : its)
+          if (partK.count(part(b))) k[b] = partK.at(part(b));
+      } else {
+        // the head half as much (a helmet is part of the look; the hands and feet as the rest)
+        for (const auto &[b, sc] : its) k[b] = b == 4 ? (1.0 + kAll) * 0.5 : kAll;
+      }
       double lo = 1e30, hi = -1e30, lo2 = 1e30, hi2 = -1e30;
       for (std::size_t v = 0; v < nv; ++v) {
         V3 moved{0, 0, 0};

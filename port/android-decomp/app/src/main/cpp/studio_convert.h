@@ -66,6 +66,11 @@ struct Options {
   std::size_t maxSkinTris = 0;
   // GTA skins and RE4 Remake mods: how much the skin is made as thin as Leon round each bone (1 all, 0 its own build)
   double fitBody = 0.0;
+  // with fitBody: another converted skin (its archive) whose build round each bone this one takes instead of Leon's
+  std::vector<std::uint8_t> fitRef;
+  // RE4 Remake mods: the trunk sized by the thighs to the head joint (as the GTA skins by the hips to the head) instead
+  // of the thighs to the shoulders
+  bool trunkToHead = false;
   // the PC HUD (ConvertCoreHud): a picture this close to the disc's (mean difference per pixel, 0..255) is not the
   // mod's and stays the disc's
   double hudSame = 14.0;

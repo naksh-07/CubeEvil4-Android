@@ -557,12 +557,13 @@ public final class StudioActivity extends Activity {
         LinearLayout build = row();
         build.addView(text("Build ", 12, DIM, false));
         for (boolean on : new boolean[] {true, false}) {
-          Button b = pill(on ? "Leon's" : "Its own", fitLeon == on);
+          Button b = pill(on ? "Slim" : "Its own", fitLeon == on);
           b.setOnClickListener(v -> { fitLeon = on; results.clear(); showTab(2); });
           build.addView(b, chip());
         }
         content.addView(build);
-        content.addView(note("Leon's: the skin made no thicker than Leon round each bone (armour, a big helmet)."));
+        content.addView(note("Slim: the skin a little slimmer, an RE4 Remake outfit also with a smaller trunk and head, "
+            + "as the GTA skins come out."));
       }
       if (convertTex > 128) {
         content.addView(note("Larger textures look sharper but need more of the game's memory: try 128 first."));
