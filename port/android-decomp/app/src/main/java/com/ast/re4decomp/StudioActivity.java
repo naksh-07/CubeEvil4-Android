@@ -507,9 +507,9 @@ public final class StudioActivity extends Activity {
   private final StringBuilder convertLog = new StringBuilder();
   private int convertTex = 128;
   private boolean keepHead;  // GTA skins: Leon's own head, face and hair stay (a skin without a head)
-  // GTA skins, Remake outfits: no thicker than Leon round each bone; off at first (DevJunior, 20.11.2026: the skins'
-  // own proportions looked best)
-  private boolean fitLeon = false;
+  // RE4 Remake outfits: "Slim", sized as the GTA skins come out (trunk to the head joint, a little slimmer); on at
+  // first (DevJunior, 20.11.2026, the Master Chief so: "this one came out perfect, it would be a good measure")
+  private boolean fitLeon = true;
   private volatile boolean busy;
 
   private void showConvert() {
@@ -554,6 +554,10 @@ public final class StudioActivity extends Activity {
         }
         content.addView(head);
         content.addView(note("Hidden for a skin with its own head or helmet; shown for one without a head."));
+      }
+      boolean remakeOutfit = false;
+      for (String[] k : skins) remakeOutfit |= k[0].endsWith(REMAKE);
+      if (remakeOutfit) {
         LinearLayout build = row();
         build.addView(text("Build ", 12, DIM, false));
         for (boolean on : new boolean[] {true, false}) {
@@ -562,8 +566,8 @@ public final class StudioActivity extends Activity {
           build.addView(b, chip());
         }
         content.addView(build);
-        content.addView(note("Slim: the skin a little slimmer, an RE4 Remake outfit also with a smaller trunk and head, "
-            + "as the GTA skins come out."));
+        content.addView(note("RE4 Remake outfits. Slim: sized as the GTA skins come out (smaller trunk and head, a "
+            + "little slimmer). Its own: the outfit's own build."));
       }
       if (convertTex > 128) {
         content.addView(note("Larger textures look sharper but need more of the game's memory: try 128 first."));

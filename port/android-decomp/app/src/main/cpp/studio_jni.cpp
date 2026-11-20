@@ -216,7 +216,7 @@ JNIEXPORT jstring JNICALL STUDIO(convertDff)(JNIEnv *env, jclass, jstring gc, js
   convert::Options o;
   if (tex >= 8) o.tex = tex;
   o.keepHead = keepHead;
-  o.fitBody = fitLeon ? 0.6 : 0.0;
+  (void) fitLeon;  // GTA skins keep their own build (DevJunior, 20.11.2026: theirs looked best)
   std::string log, why;
   if (!convert::ConvertDff(g, text(env, gcName), d, t, o, result, log, &why))
     return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
