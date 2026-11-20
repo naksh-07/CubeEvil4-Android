@@ -576,3 +576,61 @@ void le32at(Bytes &o, std::size_t p, std::uint32_t v) {
   o[p] = std::uint8_t(v), o[p + 1] = std::uint8_t(v >> 8), o[p + 2] = std::uint8_t(v >> 16), o[p + 3] = std::uint8_t(v >> 24);
 }
 void le16at(Bytes &o, std::size_t p, unsigned v) { o[p] = std::uint8_t(v), o[p + 1] = std::uint8_t(v >> 8); }
+
+// ---- Leon's own skinning, for the skin's vertices (weight transfer)
+// The bones a transferred weight may name: his trunk, arms with their twists, legs and the jaw; the others (fingers,
+// face, hair, the jacket's straps) give their weight to the nearest of these up their chain.
+bool transferBone(int id) { return (id >= 0 && id <= 25) || id == 27; }
+// 0 trunk, 1 left arm, 2 right arm, 3 left leg, 4 right leg
+int chainOf(int id) {
+  if (id >= 11 && id <= 16) return 1;
+  if (id >= 5 && id <= 10) return 2;
+  if (id >= 22 && id <= 25) return 3;
+  if (id >= 18 && id <= 21) return 4;
+  return 0;
+}
+struct SrcVert {
+  V3 p;
+  std::vector<std::pair<int, double>> w;
+  int chain;
+};
+void collectSkin(const Bytes &model, const std::map<int, DiscBone> &skel, std::vector<SrcVert> &out) {
+  if (model.size() < 0x60) return;
+  const unsigned shift = model[0x28], nv = be16(model, 0x38);
+  const std::uint32_t vtx = be32(model, 0x30), wgt = be32(model, 0x14);
+  const unsigned ext = be16(model, 0x2A), n = ext > 0xFF ? ext : model[0x18];
+  const bool big = ext > 0xFF;
+  auto up = [&](int id) {
+    for (int hops = 0; !transferBone(id) && hops < 64; ++hops) {
+      auto it = skel.find(id);
+      if (it == skel.end() || it->second.parent < 0) return 0;
+      id = it->second.parent;
+    }
+    return transferBone(id) ? id : 0;
+  };
+  std::vector<std::vector<std::pair<int, double>>> entries;
+  for (unsigned k = 0; k < n; ++k) {
+    const std::size_t e = wgt + std::size_t(k) * (big ? 12 : 8);
+    const unsigned cnt = std::min<unsigned>(big ? be16(model, e + 6) : model.at(e + 3), 3);
+    std::map<int, double> acc;
+    for (unsigned j = 0; j < cnt; ++j) {
+      const int id = big ? int(be16(model, e + j * 2)) : int(model.at(e + j));
+      const double r = model.at(e + (big ? 8 : 4) + j);
+      if (r > 0) acc[up(id)] += r;
+    }
+    entries.emplace_back(acc.begin(), acc.end());
+  }
+  const double s = 1.0 / double(1 << shift);
+  for (unsigned i = 0; i < nv; ++i) {
+    const std::size_t q = vtx + std::size_t(i) * 8;
+    const unsigned wi = be16(model, q + 6);
+    if (wi >= entries.size() || entries[wi].empty()) continue;
+    SrcVert sv;
+    sv.p = V3{double(std::int16_t(be16(model, q))) * s, double(std::int16_t(be16(model, q + 2))) * s,
+              double(std::int16_t(be16(model, q + 4))) * s};
+    sv.w = entries[wi];
+    auto best = std::max_element(sv.w.begin(), sv.w.end(), [](const auto &a, const auto &b) { return a.second < b.second; });
+    sv.chain = chainOf(best->first);
+    out.push_back(std::move(sv));
+  }
+}

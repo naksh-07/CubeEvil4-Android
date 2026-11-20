@@ -54,6 +54,10 @@ struct Options {
   std::set<int> bonesFree;
   // the skeletons differ (more or other parts): draw the main model with the disc's skeleton (Separate Ways' Ada)
   bool rebind = true;
+  // GTA skins (ConvertDff): Leon's own head, face and hair stay (a skin without a head of its own); off: folded away
+  bool keepHead = false;
+  // GTA skins: the weights from Leon's own skin, the nearest of his vertices (0: the skin's own, mapped by bone)
+  double transfer = 1.0;
 };
 
 // The disc's archive (`gcName` its file name: pl00.drs ...) with the PC mod's (unpacked .udas) converted into it.

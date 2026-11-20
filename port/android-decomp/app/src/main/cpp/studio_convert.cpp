@@ -1777,11 +1777,11 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
       int disc = 0;
       M3 r;
       V3 from, to, axis{0, 1, 0};
-      double k = 1;
+      double k = 1, c = 1;  // along the bone, across it (half the stretch: a longer limb also a little thicker)
       V3 apply(V3 p) const {
-        V3 q = p - from;
-        q = q + axis * ((k - 1) * dot(q, axis));
-        return to + r * q;
+        const V3 q = p - from;
+        const double a = dot(q, axis);
+        return to + r * (axis * (a * k) + (q - axis * a) * c);
       }
     };
     std::vector<Piece> piece(nb);
@@ -1813,6 +1813,7 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
         pc.axis = unit(g);
         pc.r = turn(pc.axis, unit(l));
         pc.k = std::max(0.6, std::min(1.6, len(l) / std::max(1e-6, len(g))));
+        pc.c = 1 + (pc.k - 1) * 0.5;
         kMin = std::min(kMin, pc.k), kMax = std::max(kMax, pc.k);
         pc.from = gj[b], pc.to = start;
         pc.disc = bm->disc;
@@ -1874,6 +1875,68 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
         given += r;
       }
       W[v] = e;
+    }
+
+    // Leon's own weights for the skin (DevJunior, 19.11.2026: "the models stretch too much ... the tool has to fix
+    // this"): the skin's few bones blend coarsely (a GTA ped has no twist bones, its hips and shoulders bend hard);
+    // each vertex takes the weights of the nearest vertices of Leon's own body, head, face and hands (by the inverse
+    // square of their distance, only those of the body parts its own bones belong to: an arm keeps arm weights), so
+    // it bends as his skin does, with his twist bones. Far from him (a shoulder pad, the helmet) it keeps more of its
+    // own.
+    if (o.transfer > 0) {
+      std::vector<SrcVert> src;
+      for (std::size_t e : {0, 2, 4, 6, 14, 17})
+        if (e < gc.count() && gc.kind(e) == "BIN" && !gc.entry(e).empty()) collectSkin(gc.entry(e), skel, src);
+      std::size_t moved = 0;
+      double far = 0;
+      for (std::size_t v = 0; v < nv; ++v) {
+        std::set<int> chains;
+        for (const auto &[bone, r] : W[v]) chains.insert(chainOf(bone));
+        // the 6 nearest of his vertices on those chains
+        std::array<std::pair<double, const SrcVert *>, 6> near;
+        near.fill({1e30, nullptr});
+        for (const auto &sv : src) {
+          if (!chains.count(sv.chain)) continue;
+          const V3 d = sv.p - P[v];
+          const double dd = dot(d, d);
+          if (dd >= near.back().first) continue;
+          std::size_t at2 = near.size() - 1;
+          while (at2 > 0 && near[at2 - 1].first > dd) near[at2] = near[at2 - 1], --at2;
+          near[at2] = {dd, &sv};
+        }
+        if (!near[0].second) continue;
+        std::map<int, double> acc;
+        double total = 0;
+        for (const auto &[dd, sv] : near) {
+          if (!sv) break;
+          const double w = 1.0 / (dd + 25.0);
+          for (const auto &[bone, r] : sv->w) acc[bone] += w * r;
+          total += w * 100.0;
+        }
+        // near him all his; 250 mm away and more half his, half its own
+        const double dist = std::sqrt(near[0].first);
+        far = std::max(far, dist);
+        const double mine = o.transfer * (dist < 80 ? 1.0 : std::max(0.5, 1.0 - (dist - 80) / 340.0));
+        std::map<int, double> mix;
+        for (const auto &[bone, a] : acc) mix[bone] += mine * a / total;
+        for (const auto &[bone, r] : W[v]) mix[bone] += (1 - mine) * r / 100.0;
+        std::vector<std::pair<int, double>> list(mix.begin(), mix.end());
+        std::stable_sort(list.begin(), list.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+        if (list.size() > 3) list.resize(3);
+        double sum = 0;
+        for (const auto &x : list) sum += x.second;
+        Weight e;
+        int given = 0;
+        for (std::size_t k = 0; k < list.size(); ++k) {
+          const int r = k + 1 == list.size() ? 100 - given : int(std::lround(list[k].second * 100.0 / sum));
+          if (r <= 0) continue;
+          e.push_back({list[k].first, r});
+          given += r;
+        }
+        if (!e.empty()) W[v] = e, ++moved;
+      }
+      log += fmt("weights from Leon's own skin for %zu of %zu vertices (%zu of his; the farthest %.0f mm off)\n", moved,
+                 nv, src.size(), far);
     }
 
     // the triangles by material, facing as the disc's do (corners counter-clockwise round their normal)
@@ -1995,7 +2058,8 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
     log += "entry   0 BIN: " + conv.stats + "\n";
 
     // the archive: the new body and TPL, Leon's head, face, hair, outfit, wound and hands folded away
-    std::set<std::size_t> fold = {2, 4, 5, 6, 10};
+    std::set<std::size_t> fold = {6, 10};
+    if (!o.keepHead) fold.insert({2, 4, 5});
     if (stem != "pl00") fold.insert(12);
     for (std::size_t i = 14; i <= 21; ++i) fold.insert(i);
     std::vector<Bytes> entries;
@@ -2010,7 +2074,7 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
         entries.push_back(gc.entry(i));
       }
     }
-    log += "Leon's own models folded away: " + folded + "\n";
+    log += "Leon's own models folded away: " + folded + (o.keepHead ? " (his head kept)" : "") + "\n";
     const Bytes newBody = buildBody(entries, gc.types);
     result = buildArchive(gc, newBody);
     log += fmt("%s: %zu bytes, data part %zu bytes (disc %zu; the game's place for Leon holds %d)\n", gcName.c_str(),

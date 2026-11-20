@@ -483,6 +483,7 @@ public final class StudioActivity extends Activity {
   private final List<String[]> udasFiles = new ArrayList<>();  // the mod's skins: PC stem, unpacked .udas
   private final StringBuilder convertLog = new StringBuilder();
   private int convertTex = 128;
+  private boolean keepHead;  // GTA skins: Leon's own head, face and hair stay (a skin without a head)
   private volatile boolean busy;
 
   private void showConvert() {
@@ -515,6 +516,19 @@ public final class StudioActivity extends Activity {
         sizes.addView(b, chip());
       }
       content.addView(sizes);
+      boolean gta = false;
+      for (String[] k : skins) gta |= k[0].endsWith(".dff");
+      if (gta) {
+        LinearLayout head = row();
+        head.addView(text("Leon's head ", 12, DIM, false));
+        for (boolean on : new boolean[] {false, true}) {
+          Button b = pill(on ? "Shown" : "Hidden", keepHead == on);
+          b.setOnClickListener(v -> { keepHead = on; results.clear(); showTab(2); });
+          head.addView(b, chip());
+        }
+        content.addView(head);
+        content.addView(note("Hidden for a skin with its own head or helmet; shown for one without a head."));
+      }
       if (convertTex > 128) {
         content.addView(note("Larger textures look sharper but need more of the game's memory: try 128 first."));
       }
@@ -761,7 +775,8 @@ public final class StudioActivity extends Activity {
         }
         java.io.File dest = new java.io.File(out, k[3]);
         String r = k[0].endsWith(".dff")
-            ? StudioBridge.convertDff(disc.getAbsolutePath(), k[3], k[1], txdFor(k[1]), convertTex, dest.getAbsolutePath())
+            ? StudioBridge.convertDff(disc.getAbsolutePath(), k[3], k[1], txdFor(k[1]), convertTex, keepHead,
+                dest.getAbsolutePath())
             : StudioBridge.convertSkin(disc.getAbsolutePath(), k[3], k[1], packs.toArray(new String[0]), convertTex,
                 dest.getAbsolutePath());
         disc.delete();

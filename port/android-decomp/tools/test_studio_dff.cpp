@@ -1,5 +1,5 @@
 // CubeEvil4 Studio's GTA skin converter on the host (cpp/studio_dff.inc):
-//   studio_dff_check GC_ARCHIVE SKIN.dff SKIN.txd|- OUT [--tex N]
+//   studio_dff_check GC_ARCHIVE SKIN.dff SKIN.txd|- OUT [--tex N] [--transfer 0..1] [--head 0|1]
 #include "studio_convert.h"
 #include <cstdio>
 #include <cstring>
@@ -12,12 +12,14 @@ static Bytes slurp(const std::string &p) {
 }
 int main(int argc, char **argv) {
   if (argc < 5) {
-    std::fprintf(stderr, "usage: studio_dff_check GC SKIN.dff SKIN.txd|- OUT [--tex N]\n");
+    std::fprintf(stderr, "usage: studio_dff_check GC SKIN.dff SKIN.txd|- OUT [--tex N] [--transfer 0..1] [--head 0|1]\n");
     return 2;
   }
   Options o;
   for (int i = 5; i + 1 < argc; i += 2)
     if (!std::strcmp(argv[i], "--tex")) o.tex = std::atoi(argv[i + 1]);
+    else if (!std::strcmp(argv[i], "--transfer")) o.transfer = std::atof(argv[i + 1]);
+    else if (!std::strcmp(argv[i], "--head")) o.keepHead = std::atoi(argv[i + 1]) != 0;
   Bytes out;
   std::string log, why;
   const std::string gc = argv[1];

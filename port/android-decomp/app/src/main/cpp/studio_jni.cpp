@@ -205,7 +205,7 @@ JNIEXPORT jstring JNICALL STUDIO(convertSkin)(JNIEnv *env, jclass, jstring gc, j
 // A GTA San Andreas ped skin (`dff`, its textures `txd`: "" none) on Leon's archive of the disc (`gc`, its name
 // `gcName`), written to `out`: "ok\n" + the report, or "error\n" + why (+ the report so far)
 JNIEXPORT jstring JNICALL STUDIO(convertDff)(JNIEnv *env, jclass, jstring gc, jstring gcName, jstring dff, jstring txd,
-                                            jint tex, jstring out) {
+                                            jint tex, jboolean keepHead, jstring out) {
   convert::Bytes g, d, t, result;
   if (!readAll(text(env, gc), g)) return env->NewStringUTF("error\nthe disc's archive cannot be read");
   if (!readAll(text(env, dff), d)) return env->NewStringUTF("error\nthe .dff cannot be read");
@@ -213,6 +213,7 @@ JNIEXPORT jstring JNICALL STUDIO(convertDff)(JNIEnv *env, jclass, jstring gc, js
   if (!txdPath.empty() && !readAll(txdPath, t)) return env->NewStringUTF("error\nthe .txd cannot be read");
   convert::Options o;
   if (tex >= 8) o.tex = tex;
+  o.keepHead = keepHead;
   std::string log, why;
   if (!convert::ConvertDff(g, text(env, gcName), d, t, o, result, log, &why))
     return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
