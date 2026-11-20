@@ -1,12 +1,12 @@
 # Port patch (mods; wish of DevJunior, 20.11.2026: "the total rounds of each weapon beside the magazine's"): the HUD
-# shows the rounds of the equipped weapon's ammunition in the case beside the loaded rounds, as the 2023 remake does.
+# shows the rounds of the equipped gun's own ammunition in the case beside the loaded rounds, as the 2023 remake does.
 # Three copies of the life meter's units digit (unit 0xB) in the free id classes 54..56 under the digits' own parent,
-# a size smaller, right of the loaded rounds, which move left by half a digit step; hidden with the counter (knife,
-# thrown weapons, empty, endless ammo). On with the app's "Remake movement" (runtime/quick_pickup.cpp
-# re4_ammo_reserve_on).
+# half the size (0.42 with three digits), right of the loaded rounds, their tops on the digits' top; the loaded rounds
+# stay on their unlit segments. Hidden with the counter (knife, empty, endless ammo) and for thrown weapons. On with the
+# app's "Remake movement" (runtime/quick_pickup.cpp re4_ammo_reserve_on).
 --- a/src/game/cockpit.cpp
 +++ b/src/game/cockpit.cpp
-@@ -556,6 +556,134 @@
+@@ -556,6 +556,136 @@
  // Per-frame ammo display: the equipped weapon's loaded count as three digit ids (leading zeros
  // hidden; the "empty" id when 0), and the bullet type icon (IDC_BLLT_ICON) for the weapon, parented
  // to the HUD frame; hidden for weapons without a counter (knife, infinite launchers).
@@ -81,9 +81,9 @@
 +        }
 +    }
 +    {
-+        const f32 s = 0.62f; /* the reserve's size against the loaded rounds' digits */
++        f32 s; /* the reserve's size against the loaded rounds' digits */
 +        f32 pitch = reserveBaseX[0] - reserveBaseX[1];
-+        f32 minX = u[0]->ver[0].x, maxX = minX, minY = u[0]->ver[0].y;
++        f32 minX = u[0]->ver[0].x, maxX = minX, maxY = u[0]->ver[0].y;
 +        f32 shift;
 +        f32 cx;
 +        u8 d[3];
@@ -96,16 +96,17 @@
 +        for (v = 1; v < 4; v++) {
 +            minX = u[0]->ver[v].x < minX ? u[0]->ver[v].x : minX;
 +            maxX = u[0]->ver[v].x > maxX ? u[0]->ver[v].x : maxX;
-+            minY = u[0]->ver[v].y < minY ? u[0]->ver[v].y : minY;
++            maxY = u[0]->ver[v].y > maxY ? u[0]->ver[v].y : maxY;
 +        }
 +        cx = (minX + maxX) * 0.5f;
 +        if (reserve > 999) {
 +            reserve = 999;
 +        }
 +        n = reserve >= 100 ? 3 : reserve >= 10 ? 2 : 1;
-+        /* the loaded rounds move left by as much as the reserve's digits need (half a small step each, at least half a
-+           step): one digit 0.5, two 0.62, three 0.93 steps; the two numbers never touch */
-+        shift = show ? -pitch * (0.5f * s * (f32) n > 0.5f ? 0.5f * s * (f32) n : 0.5f) : 0.0f;
++        /* the loaded rounds stay on their unlit "8" segments (the device test of 20.11.2026: moved left they left
++           them, and over a grenade's "x"); the reserve, a size smaller with three digits, keeps clear of the ring */
++        shift = 0.0f;
++        s = n >= 3 ? 0.42f : 0.5f;
 +        for (k = 0; k < 3; k++) {
 +            u[k]->pos0.x = reserveBaseX[k] + shift;
 +        }
@@ -130,9 +131,10 @@
 +                r->ver[v].y = u[0]->ver[v].y * s;
 +                r->ver[v].z = u[0]->ver[v].z;
 +            }
-+            /* centre: one step and a half small step right of the units digit; bottom on the digits' line */
++            /* centre: half a step and half a small step right of the units digit; top on the digits' top (where the
++               dial is wider) */
 +            r->pos0.x = u[0]->pos0.x + cx + pitch * (0.5f + 0.5f * s) + (f32) i * pitch * s - s * cx;
-+            r->pos0.y = u[0]->pos0.y + (1.0f - s) * minY;
++            r->pos0.y = u[0]->pos0.y + (1.0f - s) * maxY;
 +            r->pos0.z = u[0]->pos0.z;
 +        }
 +    }
@@ -141,7 +143,7 @@
  void BulletInfo::move()
  {
      u8 digit[3];
-@@ -671,6 +799,22 @@
+@@ -671,6 +801,23 @@
      if (digit[2] == 0) {
          u[2]->be_flag &= ~8;
      }
@@ -149,8 +151,9 @@
 +       weapon's own ammunition (its bullet type, as the game reloads it; weapons sharing one kind show the same) */
 +    {
 +        u16 bid = 0xFFFF;
++        /* guns only: a grenade's counter is its own count (and its "x" sign sits left of the digits) */
 +        int show = re4_ammo_reserve_on() && dispBulletDigit(wepNo) == 1 && noBullet == 0 && digit[0] != 13
-+                   && (u[0]->be_flag & 8);
++                   && (u[0]->be_flag & 8) && itemType(im->weaponId()) == 1;
 +
 +        if (show) { /* only for a gun: WeaponId2BulletId logs every weapon it does not know */
 +            if (itemType(im->weaponId()) == 1) {
