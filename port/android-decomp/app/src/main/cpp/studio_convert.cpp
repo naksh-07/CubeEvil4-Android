@@ -1890,6 +1890,20 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
       std::size_t moved = 0;
       double far = 0;
       for (std::size_t v = 0; v < nv; ++v) {
+        // the head keeps its own weights (DevJunior, 19.11.2026: the helmet "deforms" in the cutscenes: near his face
+        // it took Leon's jaw, which talks); a vertex mostly on the skin's head, jaw or brows
+        {
+          double head = 0, all = 0;
+          for (int j = 0; j < 4; ++j) {
+            const unsigned b = m.bone[v][std::size_t(j)];
+            const double w = m.weight[v][std::size_t(j)];
+            if (w <= 0 || b >= nb) continue;
+            const std::string key = gtaKey(m.boneName[b]);
+            all += w;
+            if (key == "head" || key == "jaw" || key == "l brow" || key == "r brow") head += w;
+          }
+          if (all > 0 && head / all > 0.5) continue;
+        }
         std::set<int> chains;
         for (const auto &[bone, r] : W[v]) chains.insert(chainOf(bone));
         // the 6 nearest of his vertices on those chains

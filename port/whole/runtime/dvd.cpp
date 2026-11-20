@@ -998,6 +998,13 @@ int re4_mod_file_bytes(const char* name)
     return (int) (body > size ? body : size);
 }
 
+// runtime/skin_hands.cpp (libre4_main) hands its check over at its start: the platform does not link the game hooks
+static int (*gWholeBody)(void);
+void re4_set_whole_body_check(int (*check)(void))
+{
+    gWholeBody = check;
+}
+
 int re4_player_modded(void)
 {
     return gPlayerModded;
@@ -1024,6 +1031,13 @@ int re4_mod_event_head(const char* name, const char* oya)
 {
     if (!gPlayerModded || name == 0 || oya == 0 || strcmp(oya, "pl0000") != 0) {
         return 0;
+    }
+    // a whole-body skin (CubeEvil4 Studio's GTA skins, runtime/skin_hands.cpp; DevJunior, 19.11.2026: Leon's hands
+    // showed in the cutscenes): every part of the event's Leon (ev00.., the hands, the jacket, head and eyes) is
+    // drawn as the skin's folded hand (archive part 0x12): nothing
+    if (gWholeBody && gWholeBody() && strncmp(name, "ev00", 4) == 0) {
+        re4_log("Event: part %s on %s: hidden (a whole-body skin)", name, oya);
+        return 0x12;
     }
     const int own = strcmp(name, "ev0001") == 0 ? 6 : strcmp(name, "ev0002") == 0 ? 8 : 0;
     if (own != 0) {

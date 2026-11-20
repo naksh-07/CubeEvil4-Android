@@ -578,9 +578,9 @@ void le32at(Bytes &o, std::size_t p, std::uint32_t v) {
 void le16at(Bytes &o, std::size_t p, unsigned v) { o[p] = std::uint8_t(v), o[p + 1] = std::uint8_t(v >> 8); }
 
 // ---- Leon's own skinning, for the skin's vertices (weight transfer)
-// The bones a transferred weight may name: his trunk, arms with their twists, legs and the jaw; the others (fingers,
+// The bones a transferred weight may name: his trunk, arms with their twists, legs; the others (the jaw, fingers,
 // face, hair, the jacket's straps) give their weight to the nearest of these up their chain.
-bool transferBone(int id) { return (id >= 0 && id <= 25) || id == 27; }
+bool transferBone(int id) { return id >= 0 && id <= 25; }  // not his jaw (27): it talks in the cutscenes
 // 0 trunk, 1 left arm, 2 right arm, 3 left leg, 4 right leg
 int chainOf(int id) {
   if (id >= 11 && id <= 16) return 1;
