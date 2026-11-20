@@ -1,5 +1,5 @@
 // CubeEvil4 Studio's RE4 Remake mod converter on the host (cpp/studio_remesh.inc):
-//   studio_remod_check GC_ARCHIVE MOD_FOLDER OUT [--variant FOLDER] [--tex N] [--head 0|1] [--max-tris N]
+//   studio_remod_check GC_ARCHIVE MOD_FOLDER OUT [--variant FOLDER] [--tex N] [--head 0|1] [--max-tris N] [--fit 0..1]
 // MOD_FOLDER (and the variant laid over it) hold natives/STM/... as the mod's .zip does.
 #include "studio_convert.h"
 #include <cstdio>
@@ -25,7 +25,7 @@ static void addFolder(const std::string &dir, std::map<std::string, Bytes> &file
 }
 int main(int argc, char **argv) {
   if (argc < 4) {
-    std::fprintf(stderr, "usage: studio_remod_check GC_ARCHIVE MOD_FOLDER OUT [--variant FOLDER] [--tex N] [--head 0|1] [--max-tris N]\n");
+    std::fprintf(stderr, "usage: studio_remod_check GC_ARCHIVE MOD_FOLDER OUT [--variant FOLDER] [--tex N] [--head 0|1] [--max-tris N] [--fit 0..1]\n");
     return 2;
   }
   Options o;
@@ -36,6 +36,7 @@ int main(int argc, char **argv) {
     else if (!std::strcmp(argv[i], "--tex")) o.tex = std::atoi(argv[i + 1]);
     else if (!std::strcmp(argv[i], "--head")) o.keepHead = std::atoi(argv[i + 1]) != 0;
     else if (!std::strcmp(argv[i], "--max-tris")) o.maxSkinTris = std::size_t(std::atoi(argv[i + 1]));
+    else if (!std::strcmp(argv[i], "--fit")) o.fitBody = std::atof(argv[i + 1]);
   }
   Bytes out;
   std::string log, why;

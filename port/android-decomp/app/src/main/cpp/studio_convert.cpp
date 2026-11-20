@@ -2215,6 +2215,94 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
                  parts2.size(), plates, stiffened, plateVerts);
     }
 
+    // Leon's build (DevJunior, 20.11.2026, the Remake's Master Chief: "make it Leon's size and proportions, it looks too
+    // fat and big"): around each of Leon's bones the skin is made no thicker than his own body there (his body, head and
+    // hands of the disc, with his jacket in pl00): for each bone the distance of its outer vertices from the bone (the
+    // segment to its child; the joint for an end bone) is measured on both, and the skin's distances are scaled down to
+    // his (0.6 at most), each vertex by its weights, so the joints stay smooth. Only thinner, never thicker.
+    if (o.fitBody > 0) {
+      std::map<int, int> childOf;
+      for (const auto &[id, b] : skel) {
+        if (b.parent < 0 || !transferBone(id) || !transferBone(b.parent)) continue;
+        const V3 d = b.at - skel.at(b.parent).at;
+        auto it = childOf.find(b.parent);
+        // several children (the spine: neck and clavicles; the hips: spine and thighs): the most upright one
+        if (it == childOf.end() || std::fabs(unit(d).y) > std::fabs(unit(skel.at(it->second).at - skel.at(b.parent).at).y))
+          childOf[b.parent] = id;
+      }
+      auto radial = [&](int bone, const V3 &p, V3 &foot) {
+        const V3 j = skel.at(bone).at;
+        auto c = childOf.find(bone);
+        if (c == childOf.end()) {
+          foot = j;
+          return p - j;
+        }
+        const V3 seg = skel.at(c->second).at - j;
+        const double t = std::max(0.0, std::min(1.0, dot(p - j, seg) / std::max(1e-9, dot(seg, seg))));
+        foot = j + seg * t;
+        return p - foot;
+      };
+      auto heaviest = [](const std::vector<std::pair<int, double>> &w) {
+        int b = -1;
+        double best = -1;
+        for (const auto &[bone, r] : w)
+          if (r > best) best = r, b = bone;
+        return b;
+      };
+      std::vector<SrcVert> leon;
+      for (std::size_t e : {0, 2, 4, 6, 14, 17})
+        if (e < gc.count() && gc.kind(e) == "BIN" && !gc.entry(e).empty()) collectSkin(gc.entry(e), skel, leon);
+      std::map<int, std::vector<double>> his, its;  // bone -> the distances of its vertices
+      for (const auto &sv : leon) {
+        const int b = heaviest(sv.w);
+        if (b < 0 || !skel.count(b)) continue;
+        V3 f;
+        his[b].push_back(len(radial(b, sv.p, f)));
+      }
+      for (std::size_t v = 0; v < nv; ++v) {
+        int b = -1, best = -1;
+        for (const auto &[bone, r] : W[v])
+          if (r > best) best = r, b = bone;
+        if (b < 0 || !skel.count(b)) continue;
+        V3 f;
+        its[b].push_back(len(radial(b, P[v], f)));
+      }
+      std::map<int, double> k;
+      std::string ks;
+      // the outer surface: the distance 85 % of the vertices stay within (armour plates and pouches count, the inside
+      // of a sleeve less)
+      auto outer = [](std::vector<double> d) {
+        std::sort(d.begin(), d.end());
+        return d[std::min(d.size() - 1, d.size() * 85 / 100)];
+      };
+      for (const auto &[b, sc] : its) {
+        auto h = his.find(b);
+        if (h == his.end() || h->second.size() < 8 || sc.size() < 8) continue;
+        const double mine = outer(sc), him = outer(h->second);
+        const double want = std::max(0.6, std::min(1.0, him / std::max(1e-6, mine)));
+        k[b] = 1.0 - o.fitBody * (1.0 - want);
+        if (k[b] < 0.995) ks += fmt("%s%d %.2f", ks.empty() ? "" : ", ", b, k[b]);
+      }
+      double lo = 1e30, hi = -1e30, lo2 = 1e30, hi2 = -1e30;
+      for (std::size_t v = 0; v < nv; ++v) {
+        V3 moved{0, 0, 0};
+        double total = 0;
+        for (const auto &[bone, r] : W[v]) {
+          if (!skel.count(bone)) continue;
+          V3 foot;
+          const V3 d = radial(bone, P[v], foot);
+          const double kb = k.count(bone) ? k.at(bone) : 1.0;
+          moved = moved + (foot + d * kb) * double(r);
+          total += r;
+        }
+        lo = std::min(lo, P[v].y), hi = std::max(hi, P[v].y);
+        if (total > 0) P[v] = moved * (1.0 / total);
+        lo2 = std::min(lo2, P[v].y), hi2 = std::max(hi2, P[v].y);
+      }
+      log += fmt("Leon's build: thinner round his bones (bone factor: %s); %.0f..%.0f mm high, now %.0f..%.0f\n",
+                 ks.empty() ? "none" : ks.c_str(), lo, hi, lo2, hi2);
+    }
+
     // the triangles by material, facing as the disc's do (corners counter-clockwise round their normal)
     long facing = 0;
     for (const auto &t : m.tris) {

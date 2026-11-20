@@ -507,6 +507,7 @@ public final class StudioActivity extends Activity {
   private final StringBuilder convertLog = new StringBuilder();
   private int convertTex = 128;
   private boolean keepHead;  // GTA skins: Leon's own head, face and hair stay (a skin without a head)
+  private boolean fitLeon = true;  // GTA skins, Remake outfits: no thicker than Leon round each bone
   private volatile boolean busy;
 
   private void showConvert() {
@@ -551,6 +552,15 @@ public final class StudioActivity extends Activity {
         }
         content.addView(head);
         content.addView(note("Hidden for a skin with its own head or helmet; shown for one without a head."));
+        LinearLayout build = row();
+        build.addView(text("Build ", 12, DIM, false));
+        for (boolean on : new boolean[] {true, false}) {
+          Button b = pill(on ? "Leon's" : "Its own", fitLeon == on);
+          b.setOnClickListener(v -> { fitLeon = on; results.clear(); showTab(2); });
+          build.addView(b, chip());
+        }
+        content.addView(build);
+        content.addView(note("Leon's: the skin made no thicker than Leon round each bone (armour, a big helmet)."));
       }
       if (convertTex > 128) {
         content.addView(note("Larger textures look sharper but need more of the game's memory: try 128 first."));
@@ -914,10 +924,10 @@ public final class StudioActivity extends Activity {
             ? StudioBridge.convertReWeapon(disc.getAbsolutePath(), k[3], k[1].split("\n"), k[5], convertTex,
                 dest.getAbsolutePath())
             : k[0].endsWith(REMAKE)
-            ? StudioBridge.convertReMod(disc.getAbsolutePath(), k[3], k[1].split("\n"), convertTex, keepHead,
+            ? StudioBridge.convertReMod(disc.getAbsolutePath(), k[3], k[1].split("\n"), convertTex, keepHead, fitLeon,
                 dest.getAbsolutePath())
             : k[0].endsWith(".dff")
-            ? StudioBridge.convertDff(disc.getAbsolutePath(), k[3], k[1], txdFor(k[1]), convertTex, keepHead,
+            ? StudioBridge.convertDff(disc.getAbsolutePath(), k[3], k[1], txdFor(k[1]), convertTex, keepHead, fitLeon,
                 dest.getAbsolutePath())
             : StudioBridge.convertSkin(disc.getAbsolutePath(), k[3], k[1], packs.toArray(new String[0]), convertTex,
                 dest.getAbsolutePath());

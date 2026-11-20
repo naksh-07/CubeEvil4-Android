@@ -47,12 +47,13 @@ final class StudioBridge {
   static native String convertSkin(String gc, String gcName, String pc, String[] packs, int tex, String out);
   /** A GTA San Andreas ped skin (.dff, its .txd or "") on Leon's disc archive: "ok\n" + report or "error\n" + why. */
   static native String convertDff(String gc, String gcName, String dff, String txd, int tex, boolean keepHead,
-      String out);
+      boolean fitLeon, String out);
   /**
    * An RE4 Remake (PC) character mod on Leon's disc archive: `dirs` its folders (natives/STM/... inside; the base,
    * then a colour variant laid over it): "ok\n" + report or "error\n" + why.
    */
-  static native String convertReMod(String gc, String gcName, String[] dirs, int tex, boolean keepHead, String out);
+  static native String convertReMod(String gc, String gcName, String[] dirs, int tex, boolean keepHead,
+      boolean fitLeon, String out);
   /**
    * An RE4 Remake (PC) weapon mod into the disc's weapon archive (em/wepNN.drs): `dirs` its folders (natives/STM/...
    * inside; the base, then a colour variant), `wp` the weapon's folder (wp4000 ...): "ok\n" + report or "error\n" + why.

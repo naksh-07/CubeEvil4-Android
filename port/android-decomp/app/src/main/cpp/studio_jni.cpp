@@ -207,7 +207,7 @@ JNIEXPORT jstring JNICALL STUDIO(convertSkin)(JNIEnv *env, jclass, jstring gc, j
 // A GTA San Andreas ped skin (`dff`, its textures `txd`: "" none) on Leon's archive of the disc (`gc`, its name
 // `gcName`), written to `out`: "ok\n" + the report, or "error\n" + why (+ the report so far)
 JNIEXPORT jstring JNICALL STUDIO(convertDff)(JNIEnv *env, jclass, jstring gc, jstring gcName, jstring dff, jstring txd,
-                                            jint tex, jboolean keepHead, jstring out) {
+                                            jint tex, jboolean keepHead, jboolean fitLeon, jstring out) {
   convert::Bytes g, d, t, result;
   if (!readAll(text(env, gc), g)) return env->NewStringUTF("error\nthe disc's archive cannot be read");
   if (!readAll(text(env, dff), d)) return env->NewStringUTF("error\nthe .dff cannot be read");
@@ -216,6 +216,7 @@ JNIEXPORT jstring JNICALL STUDIO(convertDff)(JNIEnv *env, jclass, jstring gc, js
   convert::Options o;
   if (tex >= 8) o.tex = tex;
   o.keepHead = keepHead;
+  o.fitBody = fitLeon ? 1.0 : 0.0;
   std::string log, why;
   if (!convert::ConvertDff(g, text(env, gcName), d, t, o, result, log, &why))
     return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
@@ -254,7 +255,7 @@ static void readReFolder(const std::string &dir, const std::string &rel, std::ma
 // An RE4 Remake mod (its folders `dirs`: the base, then a variant laid over it) on Leon's archive of the disc
 // (`gc`, its name `gcName`), written to `out`: "ok\n" + the report, or "error\n" + why (+ the report so far)
 JNIEXPORT jstring JNICALL STUDIO(convertReMod)(JNIEnv *env, jclass, jstring gc, jstring gcName, jobjectArray dirs,
-                                              jint tex, jboolean keepHead, jstring out) {
+                                              jint tex, jboolean keepHead, jboolean fitLeon, jstring out) {
   convert::Bytes g, result;
   if (!readAll(text(env, gc), g)) return env->NewStringUTF("error\nthe disc's archive cannot be read");
   std::map<std::string, convert::Bytes> files;
@@ -266,6 +267,7 @@ JNIEXPORT jstring JNICALL STUDIO(convertReMod)(JNIEnv *env, jclass, jstring gc, 
   convert::Options o;
   if (tex >= 8) o.tex = tex;
   o.keepHead = keepHead;
+  o.fitBody = fitLeon ? 1.0 : 0.0;
   std::string log, why;
   if (!convert::ConvertReMod(g, text(env, gcName), files, o, result, log, &why))
     return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
