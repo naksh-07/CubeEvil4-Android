@@ -48,6 +48,11 @@ final class StudioBridge {
   /** A GTA San Andreas ped skin (.dff, its .txd or "") on Leon's disc archive: "ok\n" + report or "error\n" + why. */
   static native String convertDff(String gc, String gcName, String dff, String txd, int tex, boolean keepHead,
       String out);
+  /**
+   * An RE4 Remake (PC) character mod on Leon's disc archive: `dirs` its folders (natives/STM/... inside; the base,
+   * then a colour variant laid over it): "ok\n" + report or "error\n" + why.
+   */
+  static native String convertReMod(String gc, String gcName, String[] dirs, int tex, boolean keepHead, String out);
   static native void surfaceCreated();
   static native void draw(int width, int height, float yaw, float pitch, float distance, float tx, float ty, float tz,
       int flags, float frame);

@@ -7,6 +7,7 @@
 // scaling (Pillow's bicubic filter, here a close one) and the painting of a missing face from the disc's (the PC
 // tool's bake_texture with scipy): here, as there without scipy, the disc's colour image.
 #include <cstdint>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -72,5 +73,10 @@ bool ConvertSkin(const Bytes &gc, const std::string &gcName, const Bytes &pc, co
 // away (studio_dff.inc). `log` gets the report; false and `why` when it cannot be done.
 bool ConvertDff(const Bytes &gc, const std::string &gcName, const Bytes &dff, const Bytes &txd, const Options &o,
                 Bytes &out, std::string &log, std::string *why);
+
+// An RE4 Remake (PC, RE Engine) character mod put on Leon's archive the same way (studio_remesh.inc): `files` are its
+// files by their path below natives/STM (lower case, '/'), a colour variant's laid over the base folder's.
+bool ConvertReMod(const Bytes &gc, const std::string &gcName, const std::map<std::string, Bytes> &files,
+                  const Options &o, Bytes &out, std::string &log, std::string *why);
 
 }  // namespace re4::studio::convert

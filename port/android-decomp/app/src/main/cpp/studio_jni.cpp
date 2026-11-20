@@ -2,7 +2,9 @@
 // The UI thread opens archives, loads models and picks animations; the GL thread poses and draws. One lock for both.
 #include "studio_convert.h"
 #include "studio_gl.h"
+#include <dirent.h>
 #include <fstream>
+#include <sys/stat.h>
 #include <android/log.h>
 #include <jni.h>
 #include <mutex>
@@ -216,6 +218,56 @@ JNIEXPORT jstring JNICALL STUDIO(convertDff)(JNIEnv *env, jclass, jstring gc, js
   o.keepHead = keepHead;
   std::string log, why;
   if (!convert::ConvertDff(g, text(env, gcName), d, t, o, result, log, &why))
+    return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
+  if (!writeAll(text(env, out), result)) return env->NewStringUTF("error\nthe result cannot be written");
+  return env->NewStringUTF(("ok\n" + log).c_str());
+}
+
+// the RE4 Remake mod's files below `dir` (natives/STM/... inside): their path after "natives/stm/" in lower case;
+// only meshes, materials and textures
+static void readReFolder(const std::string &dir, const std::string &rel, std::map<std::string, convert::Bytes> &files) {
+  DIR *d = opendir(dir.c_str());
+  if (!d) return;
+  while (dirent *e = readdir(d)) {
+    const std::string name = e->d_name;
+    if (name == "." || name == "..") continue;
+    const std::string path = dir + "/" + name;
+    std::string low = rel.empty() ? name : rel + "/" + name;
+    for (auto &c : low) c = char(std::tolower(static_cast<unsigned char>(c)));
+    struct stat st {};
+    if (stat(path.c_str(), &st) != 0) continue;
+    if (S_ISDIR(st.st_mode)) {
+      readReFolder(path, low, files);
+      continue;
+    }
+    const auto at = low.find("natives/stm/");
+    if (at == std::string::npos) continue;
+    if (low.find(".mesh.") == std::string::npos && low.find(".mdf2.") == std::string::npos &&
+        low.find(".tex.") == std::string::npos)
+      continue;
+    convert::Bytes b;
+    if (readAll(path, b)) files[low.substr(at + 12)] = std::move(b);
+  }
+  closedir(d);
+}
+
+// An RE4 Remake mod (its folders `dirs`: the base, then a variant laid over it) on Leon's archive of the disc
+// (`gc`, its name `gcName`), written to `out`: "ok\n" + the report, or "error\n" + why (+ the report so far)
+JNIEXPORT jstring JNICALL STUDIO(convertReMod)(JNIEnv *env, jclass, jstring gc, jstring gcName, jobjectArray dirs,
+                                              jint tex, jboolean keepHead, jstring out) {
+  convert::Bytes g, result;
+  if (!readAll(text(env, gc), g)) return env->NewStringUTF("error\nthe disc's archive cannot be read");
+  std::map<std::string, convert::Bytes> files;
+  for (jsize i = 0; i < env->GetArrayLength(dirs); ++i) {
+    auto *s = static_cast<jstring>(env->GetObjectArrayElement(dirs, i));
+    readReFolder(text(env, s), "", files);
+    env->DeleteLocalRef(s);
+  }
+  convert::Options o;
+  if (tex >= 8) o.tex = tex;
+  o.keepHead = keepHead;
+  std::string log, why;
+  if (!convert::ConvertReMod(g, text(env, gcName), files, o, result, log, &why))
     return env->NewStringUTF(("error\n" + why + "\n" + log).c_str());
   if (!writeAll(text(env, out), result)) return env->NewStringUTF("error\nthe result cannot be written");
   return env->NewStringUTF(("ok\n" + log).c_str());

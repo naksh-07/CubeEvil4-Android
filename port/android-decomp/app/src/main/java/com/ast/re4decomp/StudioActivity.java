@@ -491,9 +491,9 @@ public final class StudioActivity extends Activity {
       content.addView(card("Working…", "the mod's files are read and converted on the phone"), item());
       return;
     }
-    content.addView(note("UHD skins of the PC release (Nexus mods: em/plXX.udas with BIO4/ImagePackHD/*.pack) and GTA San "
-        + "Andreas ped skins (.dff with its .txd, on Leon) become a mod pack for CubeEvil4. Pick the mod's .zip (or its "
-        + "files)."));
+    content.addView(note("UHD skins of the PC release (Nexus mods: em/plXX.udas with BIO4/ImagePackHD/*.pack), GTA San "
+        + "Andreas ped skins (.dff with its .txd, on Leon) and Leon outfits of the RE4 Remake (natives/STM/..., .mesh with "
+        + "its .mdf2 and .tex) become a mod pack for CubeEvil4. Pick the mod's .zip (or its files)."));
     Button pick = card("Pick a mod (.zip)", modName.isEmpty() ? "" : "Now: " + modName);
     pick.setOnClickListener(v -> {
       android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
@@ -517,7 +517,7 @@ public final class StudioActivity extends Activity {
       }
       content.addView(sizes);
       boolean gta = false;
-      for (String[] k : skins) gta |= k[0].endsWith(".dff");
+      for (String[] k : skins) gta |= k[0].endsWith(".dff") || k[0].endsWith(REMAKE);
       if (gta) {
         LinearLayout head = row();
         head.addView(text("Leon's head ", 12, DIM, false));
@@ -627,6 +627,8 @@ public final class StudioActivity extends Activity {
       deleteTree(convertDir);
       java.io.File udas = new java.io.File(convertDir, "udas"), packs = new java.io.File(convertDir, "packs");
       new java.io.File(convertDir, "gta").mkdirs();
+      java.io.File remake = new java.io.File(convertDir, "remake");
+      remake.mkdirs();
       udas.mkdirs();
       packs.mkdirs();
       new java.io.File(convertDir, "out").mkdirs();
@@ -652,6 +654,20 @@ public final class StudioActivity extends Activity {
             for (java.util.zip.ZipEntry e; (e = zip.getNextEntry()) != null;) {
               if (e.isDirectory()) continue;
               String n = e.getName().replace('\\', '/');
+              // an RE4 Remake mod: its folders (the base, the colour variants) with natives/STM/... kept as they are
+              int nat = n.toLowerCase(Locale.ROOT).indexOf("natives/stm/");
+              if (nat >= 0) {
+                String low2 = n.toLowerCase(Locale.ROOT);
+                if (!low2.contains(".mesh.") && !low2.contains(".mdf2.") && !low2.contains(".tex.")) continue;
+                String top = nat == 0 ? "mod" : n.substring(0, nat - 1).replace('/', '_');
+                if (top.isEmpty() || top.contains("..")) continue;
+                java.io.File dest = new java.io.File(new java.io.File(remake, top), n.substring(nat));
+                if (!dest.getCanonicalPath().startsWith(remake.getCanonicalPath())) continue;
+                dest.getParentFile().mkdirs();
+                store(zip, dest);
+                found++;
+                continue;
+              }
               java.io.File dest = destination(n.substring(n.lastIndexOf('/') + 1), udas, packs);
               if (dest == null) continue;
               store(zip, dest);
@@ -690,12 +706,28 @@ public final class StudioActivity extends Activity {
         java.util.Arrays.sort(gta);
         for (java.io.File f : gta) if (f.getName().endsWith(".dff")) udasFiles.add(new String[] {f.getName(), f.getAbsolutePath()});
       }
+      // RE4 Remake mods: the folder with the meshes, and each colour variant laid over it
+      java.io.File[] tops = remake.listFiles();
+      if (tops != null) {
+        java.util.Arrays.sort(tops);
+        java.io.File base = null;
+        for (java.io.File t : tops) if (base == null && hasMesh(t)) base = t;
+        if (base != null) {
+          udasFiles.add(new String[] {base.getName() + REMAKE, base.getAbsolutePath()});
+          for (java.io.File t : tops) {
+            if (t.equals(base) || !t.isDirectory()) continue;
+            udasFiles.add(new String[] {t.getName() + REMAKE, base.getAbsolutePath() + "\n" + t.getAbsolutePath()});
+          }
+        } else if (tops.length > 0) {
+          log("RE4 Remake files without a .mesh: only Leon outfits with their meshes are converted here");
+        }
+      }
       listSkins();
       String[] packNames = packs.list();
       log(skins.size() + " skins, " + (packNames == null ? 0 : packNames.length) + " texture packs");
       if (skins.isEmpty()) {
-        log("No em/plXX.udas or .dff in what was picked: this converts UHD skins of the PC release and GTA San Andreas "
-            + "ped skins.");
+        log("No em/plXX.udas, .dff or RE4 Remake .mesh in what was picked: this converts UHD skins of the PC release, GTA "
+            + "San Andreas ped skins and Leon outfits of the RE4 Remake.");
       }
     });
   }
@@ -706,7 +738,7 @@ public final class StudioActivity extends Activity {
     List<String[]> out = new ArrayList<>();
     for (String[] u : udasFiles) {
       List<String> targets = new ArrayList<>();
-      if (u[0].endsWith(".dff")) targets.addAll(java.util.Arrays.asList(GTA_ON));
+      if (u[0].endsWith(".dff") || u[0].endsWith(REMAKE)) targets.addAll(java.util.Arrays.asList(GTA_ON));
       else targets.add(u[0]);
       for (String[] alt : PC_ONLY) {
         if (alt[0].equals(u[0])) {
@@ -738,6 +770,18 @@ public final class StudioActivity extends Activity {
     if (low.endsWith(".dff") || low.endsWith(".txd")) return new java.io.File(new java.io.File(udas.getParentFile(), "gta"), low);
     if (low.endsWith(".pack") || low.endsWith(".pack.lfs")) return new java.io.File(packs, low);
     return null;
+  }
+
+  // RE4 Remake mods (Leon outfits of the PC release, RE Engine): an entry's name ends with this
+  private static final String REMAKE = " (RE4 Remake)";
+
+  private static boolean hasMesh(java.io.File dir) {
+    java.io.File[] in = dir.listFiles();
+    if (in == null) return false;
+    for (java.io.File f : in) {
+      if (f.isDirectory() ? hasMesh(f) : f.getName().toLowerCase(Locale.ROOT).contains(".mesh.")) return true;
+    }
+    return false;
   }
 
   // the .txd of a .dff: the one of the same name, else the only one picked ("" none)
@@ -774,7 +818,10 @@ public final class StudioActivity extends Activity {
           continue;
         }
         java.io.File dest = new java.io.File(out, k[3]);
-        String r = k[0].endsWith(".dff")
+        String r = k[0].endsWith(REMAKE)
+            ? StudioBridge.convertReMod(disc.getAbsolutePath(), k[3], k[1].split("\n"), convertTex, keepHead,
+                dest.getAbsolutePath())
+            : k[0].endsWith(".dff")
             ? StudioBridge.convertDff(disc.getAbsolutePath(), k[3], k[1], txdFor(k[1]), convertTex, keepHead,
                 dest.getAbsolutePath())
             : StudioBridge.convertSkin(disc.getAbsolutePath(), k[3], k[1], packs.toArray(new String[0]), convertTex,

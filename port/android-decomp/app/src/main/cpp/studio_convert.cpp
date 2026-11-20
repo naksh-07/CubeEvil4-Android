@@ -1,5 +1,9 @@
 // CubeEvil4 Studio's converter of UHD skins (studio_convert.h): port/tools/uhd_skin_convert.py and re4lfs.py in C++.
 // The names follow the Python tool's, so the two can be read side by side.
+#define BCDEC_STATIC
+#define BCDEC_IMPLEMENTATION
+#include "third_party/bcdec.h"  // BC1..BC7 blocks (Sergii Kudlai, MIT or Unlicense): the RE4 Remake's textures
+#include <cctype>
 #include "studio_convert.h"
 
 #include <algorithm>
@@ -1580,6 +1584,7 @@ Bytes readFile(const std::string &path, std::uint64_t at, std::uint64_t len) {
 }
 
 #include "studio_dff.inc"
+#include "studio_remesh.inc"
 
 }  // namespace
 
@@ -1717,28 +1722,28 @@ bool ConvertSkin(const Bytes &gcData, const std::string &gcName, const Bytes &pc
   }
 }
 
-bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dffData, const Bytes &txdData,
-                const Options &o, Bytes &result, std::string &log, std::string *why) {
-  try {
+namespace {
+
+// A skinned mesh (a GTA skin's, an RE4 Remake mod's: its bones named as a GTA ped's, kLeon) with its textures, onto
+// Leon's archive `gcData`: the work of ConvertDff below the reading.
+void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const std::map<std::string, Rgba> &images,
+                std::vector<std::string> notes, const Options &o, Bytes &result, std::string &log, const char *what,
+                bool shoulderFit = false) {
     const Archive gc(gcData, true);
     std::string stem = gcName;
     if (auto slash = stem.find_last_of("/\\"); slash != std::string::npos) stem = stem.substr(slash + 1);
     stem = lower(stem.substr(0, stem.find('.')));
     if (stem != "pl00" && stem != "pl08" && stem != "pl09" && stem != "pl10")
-      fail("GTA skins go on Leon for now (pl00, pl08, pl09, pl10), not on " + stem);
+      fail(std::string(what) + "s go on Leon for now (pl00, pl08, pl09, pl10), not on " + stem);
     if (gc.count() < 22 || gc.kind(0) != "BIN" || gc.kind(1) != "TPL") fail("not Leon's archive");
     const Bytes body = gc.entry(0);
     const auto skel = discSkeleton(body);
     for (int need : {0, 2, 3, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 40, 55})
       if (!skel.count(need)) fail(fmt("the disc's skeleton has no bone %d", need));
 
-    DffMesh m = readDff(dffData);
-    std::vector<std::string> notes;
-    std::map<std::string, Rgba> images;
-    if (!txdData.empty()) images = readTxd(txdData, notes);
     const std::size_t nb = m.boneAt.size(), nv = m.pos.size();
-    log += fmt("GTA skin: %zu vertices, %zu triangles, %zu materials, %zu bones, %zu textures in the .txd\n", nv,
-               m.tris.size(), m.matTex.size(), nb, images.size());
+    log += fmt("%s: %zu vertices, %zu triangles, %zu materials, %zu bones, %zu textures\n", what, nv, m.tris.size(),
+               m.matTex.size(), nb, images.size());
 
     // the bones by name, each to its disc bone
     std::map<std::string, int> byName;
@@ -1762,12 +1767,23 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
     V3 left = cross(up, fwd);
     bool mirror = false;
     if (dot(at("l upperarm") - at("r upperarm"), left) < 0) left = left * -1.0, mirror = true;
-    const double gtaTrunk = dot(at("head") - at("pelvis"), up), leonTrunk = skel.at(4).at.y - skel.at(17).at.y;
-    if (gtaTrunk <= 0) fail("the skin's head is not above its hips");
+    // GTA skins: hips to head as long as his, on his hips. RE4 Remake mods (Leon himself, his bones not placed as on
+    // the disc: the Remake's hip joint is at the thighs, the disc's pelvis bone at the waist): the thighs to the
+    // shoulders as his, the thighs' middle on his (their head and feet then within a few cm of his: limbs ~1.0..1.1).
+    double gtaTrunk, leonTrunk;
+    V3 hips, h;
+    if (shoulderFit) {
+      const V3 th = (at("l thigh") + at("r thigh")) * 0.5, sh = (at("l upperarm") + at("r upperarm")) * 0.5;
+      gtaTrunk = dot(sh - th, up), leonTrunk = (skel.at(13).at.y + skel.at(7).at.y - skel.at(22).at.y - skel.at(18).at.y) * 0.5;
+      hips = th, h = (skel.at(22).at + skel.at(18).at) * 0.5;
+    } else {
+      gtaTrunk = dot(at("head") - at("pelvis"), up), leonTrunk = skel.at(4).at.y - skel.at(17).at.y;
+      hips = at("pelvis"), h = skel.at(17).at;
+    }
+    if (gtaTrunk <= 0) fail("the skin's head (or shoulders) is not above its hips");
     const double scale = leonTrunk / gtaTrunk;
-    const V3 hips = at("pelvis");
     auto G = [&](V3 v) {  // the skin's hips on Leon's
-      const V3 d = v - hips, h = skel.at(17).at;
+      const V3 d = v - hips;
       return V3{h.x + scale * dot(d, left), h.y + scale * dot(d, up), h.z + scale * dot(d, fwd)};
     };
     auto Gdir = [&](V3 n) { return unit(V3{dot(n, left), dot(n, up), dot(n, fwd)}); };
@@ -2195,6 +2211,32 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
                result.size(), newBody.size(), gc.body.size(), 0x600000);
     if (newBody.size() > 0x600000) fail(fmt("too large for the mods' place for the player (%zu bytes): pick smaller "
                                             "textures", newBody.size()));
+}
+
+}  // namespace
+
+bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dffData, const Bytes &txdData,
+                const Options &o, Bytes &result, std::string &log, std::string *why) {
+  try {
+    DffMesh m = readDff(dffData);
+    std::vector<std::string> notes;
+    std::map<std::string, Rgba> images;
+    if (!txdData.empty()) images = readTxd(txdData, notes);
+    skinOnLeon(gcData, gcName, std::move(m), images, std::move(notes), o, result, log, "GTA skin");
+    return true;
+  } catch (const std::exception &e) {
+    if (why) *why = e.what();
+    return false;
+  }
+}
+
+bool ConvertReMod(const Bytes &gcData, const std::string &gcName, const std::map<std::string, Bytes> &files,
+                  const Options &o, Bytes &result, std::string &log, std::string *why) {
+  try {
+    std::vector<std::string> notes;
+    std::map<std::string, Rgba> images;
+    DffMesh m = readReMod(files, images, notes, log);
+    skinOnLeon(gcData, gcName, std::move(m), images, std::move(notes), o, result, log, "RE4 Remake mod", true);
     return true;
   } catch (const std::exception &e) {
     if (why) *why = e.what();
