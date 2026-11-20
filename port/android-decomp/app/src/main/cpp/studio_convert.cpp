@@ -1747,8 +1747,10 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
       if (!byName.count(need)) fail(std::string("the skin has no bone \"") + need + "\": not a GTA SA ped skeleton");
     auto at = [&](const char *n) { return m.boneAt[std::size_t(byName.at(n))]; };
 
-    // the whole skin into the disc's space: up, forward, its left; scaled so that its hips stand as high over its
-    // ankles as Leon's (his motions place the hips: the feet then reach the ground)
+    // The whole skin into Leon's space (up, forward, its left) at the size of his trunk: hips to head as long as his.
+    // Leon's skeleton stays as it is (his motions, his grips on the weapons and the knife are made for it): the trunk
+    // (hips, back, neck, head) keeps the skin's own shape and sits on his hips; the limbs are turned at his joints to
+    // point as his bones do and stretched to his bones' lengths, so the hands are where his are.
     const V3 feet = (at("l foot") + at("r foot")) * 0.5;
     const bool toes = byName.count("l toe0") && byName.count("r toe0");
     const V3 toeMid = toes ? (at("l toe0") + at("r toe0")) * 0.5 : feet;
@@ -1759,37 +1761,39 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
     V3 left = cross(up, fwd);
     bool mirror = false;
     if (dot(at("l upperarm") - at("r upperarm"), left) < 0) left = left * -1.0, mirror = true;
-    const V3 leonFeet = (skel.at(20).at + skel.at(24).at) * 0.5;
-    const double gtaHips = dot(at("pelvis") - feet, up), leonHips = skel.at(17).at.y - leonFeet.y;
-    if (gtaHips <= 0) fail("the skin's hips are not above its feet");
-    const double scale = leonHips / gtaHips;
-    auto G = [&](V3 v) {
-      const V3 d = v - feet;
-      return V3{leonFeet.x + scale * dot(d, left), leonFeet.y + scale * dot(d, up), leonFeet.z + scale * dot(d, fwd)};
+    const double gtaTrunk = dot(at("head") - at("pelvis"), up), leonTrunk = skel.at(4).at.y - skel.at(17).at.y;
+    if (gtaTrunk <= 0) fail("the skin's head is not above its hips");
+    const double scale = leonTrunk / gtaTrunk;
+    const V3 hips = at("pelvis");
+    auto G = [&](V3 v) {  // the skin's hips on Leon's
+      const V3 d = v - hips, h = skel.at(17).at;
+      return V3{h.x + scale * dot(d, left), h.y + scale * dot(d, up), h.z + scale * dot(d, fwd)};
     };
     auto Gdir = [&](V3 n) { return unit(V3{dot(n, left), dot(n, up), dot(n, fwd)}); };
-    log += fmt("into Leon's space: scale %.1f%s; its own proportions kept\n", scale,
-               mirror ? ", mirrored (its left side was the other)" : "");
+    log += fmt("into Leon's space: scale %.1f (his trunk)%s\n", scale, mirror ? ", mirrored (its left side was the other)" : "");
 
-    // Its own shape, posed as Leon's bind pose: the limbs (clavicles, arms, hands, legs, feet) turned at their joints
-    // to point as his do, the trunk, neck and head as they are; each bone's piece turns about its joint, the joints
-    // follow their parents (forward kinematics), so the pieces meet. Leon's skeleton then moves to the skin's joints.
     struct Piece {
       bool set = false;
       int disc = 0;
       M3 r;
-      V3 from, to;
-      V3 apply(V3 p) const { return to + r * (p - from); }
+      V3 from, to, axis{0, 1, 0};
+      double k = 1;
+      V3 apply(V3 p) const {
+        V3 q = p - from;
+        q = q + axis * ((k - 1) * dot(q, axis));
+        return to + r * q;
+      }
     };
     std::vector<Piece> piece(nb);
     std::vector<V3> gj(nb);
     for (std::size_t b = 0; b < nb; ++b) gj[b] = G(m.boneAt[b]);
     auto isLimb = [](const std::string &k) {
-      for (const char *x : {"clavicle", "upperarm", "forearm", "hand", "thigh", "calf", "foot"})
+      for (const char *x : {"upperarm", "forearm", "hand", "thigh", "calf", "foot"})
         if (k.find(x) != std::string::npos && k.find("finger") == std::string::npos) return true;
       return false;
     };
     std::vector<std::string> unknown;
+    double kMin = 9, kMax = 0;
     std::function<const Piece &(std::size_t, int)> make = [&](std::size_t b, int depth) -> const Piece & {
       Piece &pc = piece[b];
       if (pc.set || depth > 64) return pc;
@@ -1799,21 +1803,29 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
         if (key == e.gta) bm = &e;
       if (!bm) unknown.push_back(m.boneName[b]);
       const int parent = m.boneParent[b];
-      M3 r;  // identity: the trunk keeps its pose
-      if (parent >= 0) {
-        const Piece &pp = make(std::size_t(parent), depth + 1);
-        r = pp.r;  // leaves (head, fingers, toes) and unknown bones turn with their parent
-        pc.to = pp.apply(gj[b]);
-        pc.disc = pp.disc;
+      const bool clavicle = key.find("clavicle") != std::string::npos;
+      if (bm && bm->discTo >= 0 && byName.count(bm->gtaTo) && (isLimb(key) || clavicle)) {
+        const V3 g = gj[std::size_t(byName.at(bm->gtaTo))] - gj[b];
+        // a limb from Leon's joint along his bone; a clavicle from where the trunk puts it to his shoulder joint
+        V3 start = skel.at(bm->disc).at;
+        if (clavicle && parent >= 0) start = make(std::size_t(parent), depth + 1).apply(gj[b]);
+        const V3 l = skel.at(bm->discTo).at - start;
+        pc.axis = unit(g);
+        pc.r = turn(pc.axis, unit(l));
+        pc.k = std::max(0.6, std::min(1.6, len(l) / std::max(1e-6, len(g))));
+        kMin = std::min(kMin, pc.k), kMax = std::max(kMax, pc.k);
+        pc.from = gj[b], pc.to = start;
+        pc.disc = bm->disc;
+      } else if (parent >= 0) {
+        // the trunk follows its root; leaves (head, fingers, toes) and unknown bones move as their parent does
+        pc = make(std::size_t(parent), depth + 1);
+        pc.set = false;
+        if (bm) pc.disc = bm->disc;
       } else {
-        pc.to = gj[b];
+        // the root of the skeleton: the trunk as it is, on Leon's hips
+        pc.from = pc.to = V3{};
+        pc.disc = bm ? bm->disc : 0;
       }
-      if (bm && bm->discTo >= 0 && byName.count(bm->gtaTo) && isLimb(key)) {
-        const V3 g = gj[std::size_t(byName.at(bm->gtaTo))] - gj[b], l = skel.at(bm->discTo).at - skel.at(bm->disc).at;
-        r = turn(unit(g), unit(l));
-      }
-      if (bm) pc.disc = bm->disc;
-      pc.r = r, pc.from = gj[b];
       pc.set = true;
       return pc;
     };
@@ -1823,69 +1835,8 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
       for (const auto &u : unknown) list += (list.empty() ? "" : ", ") + u;
       log += "bones not known here, moved with their parent: " + list + "\n";
     }
-
-    // Leon's skeleton on the skin's joints: his bones of the table at the posed joints (12 / 6 with 13 / 7, the forearm
-    // twists 15 / 9 between elbow and wrist as on the disc, 0 with the hips), all others (fingers, face, hair, the
-    // straps) keep their offset from their parent
-    std::map<int, V3> placed;
-    auto jointOf = [&](const char *name) -> std::optional<V3> {
-      auto it = byName.find(name);
-      if (it == byName.end()) return std::nullopt;
-      return piece[std::size_t(it->second)].to;
-    };
-    const std::pair<int, const char *> defined[] = {
-        {17, "pelvis"}, {0, "pelvis"}, {2, "spine"}, {3, "spine1"}, {4, "head"}, {27, "jaw"},
-        {11, "l clavicle"}, {13, "l upperarm"}, {12, "l upperarm"}, {14, "l forearm"}, {16, "l hand"},
-        {5, "r clavicle"}, {7, "r upperarm"}, {6, "r upperarm"}, {8, "r forearm"}, {10, "r hand"},
-        {22, "l thigh"}, {23, "l calf"}, {24, "l foot"}, {25, "l toe0"},
-        {18, "r thigh"}, {19, "r calf"}, {20, "r foot"}, {21, "r toe0"}};
-    for (const auto &[id, name] : defined)
-      if (auto j = jointOf(name)) placed[id] = *j;
-    auto lerp = [&](int a, int c, int from, int mid, int to) {
-      if (!placed.count(a) || !placed.count(c)) return;
-      const double t = (skel.at(mid).at.x - skel.at(from).at.x) / (skel.at(to).at.x - skel.at(from).at.x);
-      placed[mid] = placed[a] + (placed[c] - placed[a]) * t;
-    };
-    lerp(14, 16, 14, 15, 16), lerp(8, 10, 8, 9, 10);
-    // the back bones where Leon has them between hips and head (the GTA spine joints sit low, at the hips): his
-    // motions bend the back at the same places
-    if (placed.count(17) && placed.count(4))
-      for (int id : {2, 3}) {
-        const double t = (skel.at(id).at.y - skel.at(17).at.y) / (skel.at(4).at.y - skel.at(17).at.y);
-        placed[id] = placed[17] + (placed[4] - placed[17]) * t;
-        placed[id].z += skel.at(id).at.z - (skel.at(17).at.z + (skel.at(4).at.z - skel.at(17).at.z) * t);
-      }
-    std::map<int, V3> world;
-    std::function<V3(int, int)> newWorld = [&](int id, int depth) -> V3 {
-      if (auto it = world.find(id); it != world.end()) return it->second;
-      V3 w;
-      if (placed.count(id)) {
-        w = placed[id];
-      } else {
-        const int par = skel.at(id).parent;
-        w = par < 0 || !skel.count(par) || depth > 256 ? skel.at(id).at
-                                                       : newWorld(par, depth + 1) + (skel.at(id).at - skel.at(par).at);
-      }
-      return world[id] = w;
-    };
-    Bytes posed = body;  // Leon's body with the records moved (convertModel takes the skeleton from it)
-    {
-      const unsigned np = body[0x19];
-      for (unsigned i = 0; i < np; ++i) {
-        const std::size_t r = 0x60 + std::size_t(i) * 16;
-        const int id = body[r], par = body[r + 1] == 0xFF ? -1 : int(body[r + 1]);
-        const V3 w = newWorld(id, 0), local = par < 0 ? w : w - newWorld(par, 0);
-        const float f[3] = {float(local.x), float(local.y), float(local.z)};
-        for (int k = 0; k < 3; ++k) {
-          std::uint32_t u;
-          std::memcpy(&u, &f[k], 4);
-          set32(posed, r + 4 + std::size_t(k) * 4, u);
-        }
-      }
-      log += fmt("Leon's joints on the skin's: hips %.0f, head %.0f, shoulders %.0f apart (his own %.0f, %.0f, %.0f)\n",
-                 newWorld(17, 0).y, newWorld(4, 0).y, len(newWorld(13, 0) - newWorld(7, 0)), skel.at(17).at.y,
-                 skel.at(4).at.y, len(skel.at(13).at - skel.at(7).at));
-    }
+    log += fmt("limbs stretched to Leon's bones by %.2f..%.2f\n", kMin, kMax);
+    const Bytes &posed = body;
 
     // the vertices on Leon's skeleton, their weights by his bones
     std::vector<V3> P(nv), N(nv);
