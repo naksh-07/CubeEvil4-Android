@@ -320,8 +320,12 @@ public final class StudioActivity extends Activity {
       for (String[] f : found) {
         // f: rel, file name, pack name ("" none), size
         String parent = f[2].isEmpty() ? "" : f[2] + " · ";
-        Button b = card(parent + f[1], String.format(Locale.ROOT, "%.1f MB", Long.parseLong(f[3]) / 1048576.0));
-        b.setOnClickListener(v -> openArchive(f[0], f[1]));
+        boolean model = f[0].contains("/em/");
+        Button b = card(parent + f[1], String.format(Locale.ROOT, "%.1f MB", Long.parseLong(f[3]) / 1048576.0)
+            + (model ? "" : " · tap to save a copy"));
+        // a copy of the file for other tools (DevJunior, 20.11.2026: the core for the Remake HUD); hold a model's card
+        b.setOnClickListener(v -> { if (model) openArchive(f[0], f[1]); else saveCopy(f[0], f[1]); });
+        b.setOnLongClickListener(v -> { saveCopy(f[0], f[1]); return true; });
         content.addView(b, item());
       }
       return;
@@ -466,7 +470,22 @@ public final class StudioActivity extends Activity {
   // .zip the game imports like any mod pack). The mod is unpacked into the cache (em/plXX.udas, ImagePackHD/*.pack,
   // .lfs unpacked), each skin is turned into the disc's own archive (cpp/studio_convert.cpp, the port of
   // port/tools/uhd_skin_convert.py), shown here, and the results go into <mod>/em/plXX.drs (or .das) of the .zip.
-  private static final int PICK_MOD = 41, SAVE_ZIP = 42;
+  private static final int PICK_MOD = 41, SAVE_ZIP = 42, SAVE_COPY = 43;
+  private String copyRel;  // the file "save a copy" writes (SAVE_COPY)
+
+  // a disc or mod pack file as it is, to a place the user picks
+  private void saveCopy(String rel, String name) {
+    copyRel = rel;
+    android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+    i.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+    i.setType("application/octet-stream");
+    i.putExtra(android.content.Intent.EXTRA_TITLE, name);
+    try {
+      startActivityForResult(i, SAVE_COPY);
+    } catch (Exception e) {
+      toast("No file picker: " + e.getMessage());
+    }
+  }
   private static final String[][] CHARACTERS = {
       {"pl00", "Leon"}, {"pl08", "Leon (jacket)"}, {"pl09", "Leon (armour)"}, {"pl10", "Leon (outfit)"},
       {"pl01", "Ashley"}, {"pl05", "Ashley (armour)"}, {"pl11", "Ashley (outfit)"}, {"pl0b", "Ada"},
@@ -608,6 +627,25 @@ public final class StudioActivity extends Activity {
       importMod(picked);
     } else if (request == SAVE_ZIP && data.getData() != null) {
       saveZip(data.getData());
+    } else if (request == SAVE_COPY && data.getData() != null && copyRel != null) {
+      final android.net.Uri to = data.getData();
+      final String rel = copyRel;
+      new Thread(() -> {
+        java.io.File tmp = new java.io.File(getCacheDir(), "copy.tmp");
+        String why = files.copy(rel, tmp);
+        if (why.isEmpty()) {
+          try (java.io.InputStream in = new java.io.FileInputStream(tmp);
+               java.io.OutputStream out = getContentResolver().openOutputStream(to)) {
+            byte[] buf = new byte[1 << 16];
+            for (int n; (n = in.read(buf)) > 0;) out.write(buf, 0, n);
+          } catch (Exception e) {
+            why = String.valueOf(e.getMessage());
+          }
+        }
+        tmp.delete();
+        final String w = why;
+        main.post(() -> toast(w.isEmpty() ? "Saved: " + rel : "Not saved: " + w));
+      }, "studio-copy").start();
     }
   }
 
@@ -1059,6 +1097,7 @@ public final class StudioActivity extends Activity {
       }
     } else {
       collect(source + "/files/em", "", out);
+      collect(source + "/files/etc", "", out);  // the core (etc/core.das: the HUD's textures), under "Other"
     }
     List<String[]> kept = new ArrayList<>();
     for (String[] f : out) {
