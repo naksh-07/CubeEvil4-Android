@@ -1939,6 +1939,54 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
                  nv, src.size(), far);
     }
 
+    // Rigid plates (DevJunior, 19.11.2026: the armour's crotch plate "looks very bad when running"): a separate small
+    // piece of the mesh (its triangles joined by shared vertices, at most kPlate across) is armour, not cloth: all its
+    // vertices take the piece's average weights, so it moves as one, without stretching between the bones it spans.
+    {
+      const double kPlate = 320.0;
+      std::vector<std::size_t> root(nv);
+      for (std::size_t v = 0; v < nv; ++v) root[v] = v;
+      std::function<std::size_t(std::size_t)> find = [&](std::size_t x) {
+        while (root[x] != x) x = root[x] = root[root[x]];
+        return x;
+      };
+      for (const auto &t : m.tris) {
+        if (t[0] >= nv || t[1] >= nv || t[2] >= nv) continue;
+        root[find(t[1])] = find(t[0]), root[find(t[2])] = find(t[0]);
+      }
+      std::map<std::size_t, std::vector<std::size_t>> parts2;
+      for (std::size_t v = 0; v < nv; ++v) parts2[find(v)].push_back(v);
+      std::size_t plates = 0, plateVerts = 0;
+      for (const auto &[r, vs] : parts2) {
+        if (vs.size() < 3) continue;
+        V3 lo{1e30, 1e30, 1e30}, hi{-1e30, -1e30, -1e30};
+        for (auto v : vs)
+          lo = {std::min(lo.x, P[v].x), std::min(lo.y, P[v].y), std::min(lo.z, P[v].z)},
+          hi = {std::max(hi.x, P[v].x), std::max(hi.y, P[v].y), std::max(hi.z, P[v].z)};
+        if (len(hi - lo) > kPlate) continue;
+        std::map<int, double> acc;
+        for (auto v : vs)
+          for (const auto &[bone, rate] : W[v]) acc[bone] += rate;
+        std::vector<std::pair<int, double>> list(acc.begin(), acc.end());
+        std::stable_sort(list.begin(), list.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+        if (list.size() > 3) list.resize(3);
+        double sum = 0;
+        for (const auto &x : list) sum += x.second;
+        Weight e;
+        int given = 0;
+        for (std::size_t k = 0; k < list.size(); ++k) {
+          const int rr = k + 1 == list.size() ? 100 - given : int(std::lround(list[k].second * 100.0 / sum));
+          if (rr <= 0) continue;
+          e.push_back({list[k].first, rr});
+          given += rr;
+        }
+        for (auto v : vs) W[v] = e;
+        ++plates, plateVerts += vs.size();
+      }
+      log += fmt("%zu pieces of the mesh; %zu small ones (%zu vertices) move as rigid plates\n", parts2.size(), plates,
+                 plateVerts);
+    }
+
     // the triangles by material, facing as the disc's do (corners counter-clockwise round their normal)
     long facing = 0;
     for (const auto &t : m.tris) {

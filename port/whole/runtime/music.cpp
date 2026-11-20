@@ -73,7 +73,9 @@ bool threat(const cEm* m)
         return false;
     }
     switch (id) {
-    case 0x21: case 0x23: case 0x27: case 0x28: case 0x2A: case 0x3A: case 0x3B: case 0x3D: case 0x3E: case 0x3F:
+    // not enemies to fight: the village dog, the crow, the cow (0x26: DevJunior, 19.11.2026, the battle music by the
+    // cow in r101), the fish, the chicken, the traps, the helicopters, the carts, the targets
+    case 0x21: case 0x23: case 0x26: case 0x27: case 0x28: case 0x2A: case 0x3A: case 0x3B: case 0x3D: case 0x3E: case 0x3F:
         return false;
     default:
         return true;
