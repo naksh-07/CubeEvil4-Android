@@ -495,6 +495,10 @@ public final class StudioActivity extends Activity {
   private static final String[][] PC_ONLY = {{"pl16", "pl0b", "pl0c"}};
   // GTA San Andreas ped skins (.dff + .txd; DevJunior, 19.11.2026: "this model over Leon"): Leon's outfits
   private static final String[] GTA_ON = {"pl00", "pl08", "pl09", "pl10"};
+  // ... or Ashley's or Ada's (DevJunior, 20.11.2026: "skins prepared for Ashley and for Ada Wong")
+  private static final String[] ASHLEY_ON = {"pl01", "pl05", "pl11"};
+  private static final String[] ADA_ON = {"pl0b", "pl0c"};
+  private static final String[][] SKIN_FOR = {{"", "Auto"}, {"leon", "Leon"}, {"ashley", "Ashley"}, {"ada", "Ada"}};
   // the disc's handguns (DevJunior, 20.11.2026: "replace weapons or make weapon packs"): the choice for an RE4 Remake
   // weapon the converter does not know (the Sentinel Nine ...); the known ones go where StudioBridge.reWeaponTarget says
   private static final String[][] WEAPONS = {
@@ -510,6 +514,9 @@ public final class StudioActivity extends Activity {
   // RE4 Remake outfits: "Slim", sized as the GTA skins come out (trunk to the head joint, a little slimmer); on at
   // first (DevJunior, 20.11.2026, the Master Chief so: "this one came out perfect, it would be a good measure")
   private boolean fitLeon = true;
+  // whom GTA skins and RE4 Remake outfits go on: "" by the outfit's folder (cha1.. Ashley, cha2.. Ada, else Leon)
+  private String skinFor = "";
+  private final java.util.Map<String, String> remakeWho = new java.util.HashMap<>();  // mod folder -> its character
   private volatile boolean busy;
 
   private void showConvert() {
@@ -518,7 +525,7 @@ public final class StudioActivity extends Activity {
       return;
     }
     content.addView(note("UHD skins of the PC release (Nexus mods: em/plXX.udas with BIO4/ImagePackHD/*.pack), GTA San "
-        + "Andreas ped skins (.dff with its .txd, on Leon), Leon outfits and handguns of the RE4 Remake (natives/STM/..., "
+        + "Andreas ped skins (.dff with its .txd), outfits for Leon, Ashley or Ada and handguns of the RE4 Remake (natives/STM/..., "
         + ".mesh with its .mdf2 and .tex) become a mod pack for CubeEvil4. Pick the mod's .zip (or its files)."));
     Button pick = card("Pick a mod (.zip)", modName.isEmpty() ? "" : "Now: " + modName);
     pick.setOnClickListener(v -> {
@@ -545,8 +552,17 @@ public final class StudioActivity extends Activity {
       boolean gta = false;
       for (String[] k : skins) gta |= k[0].endsWith(".dff") || k[0].endsWith(REMAKE);
       if (gta) {
+        LinearLayout who = row();
+        who.addView(text("For ", 12, DIM, false));
+        for (String[] f : SKIN_FOR) {
+          Button b = pill(f[1], skinFor.equals(f[0]));
+          b.setOnClickListener(v -> { skinFor = f[0]; results.clear(); listSkins(); showTab(2); });
+          who.addView(b, chip());
+        }
+        content.addView(who);
+        content.addView(note("Auto: RE4 Remake outfits go on whom they were made for (Leon, Ashley or Ada), GTA skins on Leon."));
         LinearLayout head = row();
-        head.addView(text("Leon's head ", 12, DIM, false));
+        head.addView(text("The character's head ", 12, DIM, false));
         for (boolean on : new boolean[] {false, true}) {
           Button b = pill(on ? "Shown" : "Hidden", keepHead == on);
           b.setOnClickListener(v -> { keepHead = on; results.clear(); showTab(2); });
@@ -695,6 +711,7 @@ public final class StudioActivity extends Activity {
       new java.io.File(convertDir, "out").mkdirs();
       skins.clear();
       udasFiles.clear();
+      remakeWho.clear();
       results.clear();
       convertLog.setLength(0);
       modName = "";
@@ -755,6 +772,7 @@ public final class StudioActivity extends Activity {
         f.delete();
       }
       udasFiles.clear();
+      remakeWho.clear();
       java.io.File[] found = udas.listFiles();
       if (found != null) {
         java.util.Arrays.sort(found);
@@ -805,7 +823,7 @@ public final class StudioActivity extends Activity {
             udasFiles.add(new String[] {t.getName() + REMAKE, base.getAbsolutePath() + "\n" + t.getAbsolutePath()});
           }
         } else if (tops.length > 0 && weaponBase.isEmpty()) {
-          log("RE4 Remake files without a .mesh: only Leon outfits and weapons with their meshes are converted here");
+          log("RE4 Remake files without a .mesh: only outfits and weapons with their meshes are converted here");
         }
       }
       listSkins();
@@ -813,7 +831,7 @@ public final class StudioActivity extends Activity {
       log(skins.size() + " skins, " + (packNames == null ? 0 : packNames.length) + " texture packs");
       if (skins.isEmpty()) {
         log("No em/plXX.udas, .dff or RE4 Remake .mesh in what was picked: this converts UHD skins of the PC release, GTA "
-            + "San Andreas ped skins and Leon outfits of the RE4 Remake.");
+            + "San Andreas ped skins and outfits of the RE4 Remake.");
       }
     });
   }
@@ -824,7 +842,11 @@ public final class StudioActivity extends Activity {
     List<String[]> out = new ArrayList<>();
     for (String[] u : udasFiles) {
       List<String> targets = new ArrayList<>();
-      if (u[0].endsWith(".dff") || u[0].endsWith(REMAKE)) targets.addAll(java.util.Arrays.asList(GTA_ON));
+      if (u[0].endsWith(".dff") || u[0].endsWith(REMAKE)) {
+        String who = skinFor.isEmpty() && u[0].endsWith(REMAKE) ? whoFor(u[1].split("\n")[0]) : skinFor;
+        targets.addAll(java.util.Arrays.asList(
+            who.equals("ashley") ? ASHLEY_ON : who.equals("ada") ? ADA_ON : GTA_ON));
+      }
       else if (u[0].endsWith(REMAKE_WEAPON)) {
         String known = StudioBridge.reWeaponTarget(u[2]);
         if (!known.isEmpty()) targets.add(known);
@@ -852,6 +874,31 @@ public final class StudioActivity extends Activity {
     }
     skins.clear();
     skins.addAll(out);
+  }
+
+  // whom an RE4 Remake outfit was made for: its meshes' folder (character/ch/cha1NN Ashley, cha2NN Ada, else Leon)
+  private String whoFor(String base) {
+    String known = remakeWho.get(base);
+    if (known != null) return known;
+    String who = "";
+    java.util.ArrayDeque<java.io.File> todo = new java.util.ArrayDeque<>();
+    todo.add(new java.io.File(base));
+    while (!todo.isEmpty() && who.isEmpty()) {
+      java.io.File d = todo.poll();
+      java.io.File[] in = d.listFiles();
+      if (in == null) continue;
+      for (java.io.File f : in) {
+        if (f.isDirectory()) todo.add(f);
+        else if (f.getName().toLowerCase(Locale.ROOT).contains(".mesh")) {
+          String path = f.getAbsolutePath().toLowerCase(Locale.ROOT).replace('\\', '/');
+          if (path.contains("/ch/cha1/")) who = "ashley";
+          else if (path.contains("/ch/cha2/")) who = "ada";
+          else if (path.contains("/ch/cha0/")) who = "leon";
+        }
+      }
+    }
+    remakeWho.put(base, who);
+    return who;
   }
 
   private static java.io.File destination(String name, java.io.File udas, java.io.File packs) {

@@ -531,6 +531,31 @@ Bytes foldModel(const Bytes &model, const std::map<int, DiscBone> &skel) {
   return m;
 }
 
+// A BIN of the disc with only its part below `cut` (rest height, mm) folded away, each vertex there onto the first bone
+// of its weight entry: Ashley's "outfit" model holds her hair and her skirt; a new outfit under her own head keeps the
+// hair (no part spans the cut: the hair ends at her neck, the skirt at her hips)
+Bytes foldBelow(const Bytes &model, const std::map<int, DiscBone> &skel, double cut) {
+  Bytes m = model;
+  const std::uint32_t wgt = be32(m, 0x14), vtx = be32(m, 0x30);
+  const unsigned nv = be16(m, 0x38), shift = m.at(0x28);
+  const bool big = be16(m, 0x2A) > 0xFF;
+  const double s = double(1 << shift);
+  auto q = [&](double v) { return unsigned(std::max(-32768, std::min(32767, int(std::lround(v * s)))) & 0xFFFF); };
+  for (unsigned i = 0; i < nv; ++i) {
+    const std::size_t p = vtx + std::size_t(i) * 8;
+    if (double(std::int16_t(be16(m, p + 2))) / s >= cut) continue;
+    const unsigned wi = be16(m, p + 6);
+    const std::size_t e = wgt + std::size_t(wi) * (big ? 12 : 8);
+    const int bone = e < m.size() ? (big ? int(be16(m, e)) : int(m.at(e))) : 0;
+    auto it = skel.find(bone);
+    const V3 at = it != skel.end() ? it->second.at : V3{};
+    const unsigned x = q(at.x), y = q(at.y), z = q(at.z);
+    m.at(p) = std::uint8_t(x >> 8), m[p + 1] = std::uint8_t(x), m[p + 2] = std::uint8_t(y >> 8), m[p + 3] = std::uint8_t(y);
+    m[p + 4] = std::uint8_t(z >> 8), m[p + 5] = std::uint8_t(z);
+  }
+  return m;
+}
+
 // The disc's TPL with more images behind its own (offsets of the old ones moved by the longer table)
 Bytes appendTpl(const Bytes &tpl, const std::vector<std::tuple<unsigned, unsigned, unsigned, Bytes>> &add) {
   if (tpl.size() < 12 || be32(tpl, 0) != 0x0020AF30) fail("the body's TPL is not one");

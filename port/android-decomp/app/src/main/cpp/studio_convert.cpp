@@ -1891,6 +1891,15 @@ Converted buildModel(const Bytes &body, const std::map<unsigned, std::vector<std
     return convertModel(blob, palette, &posed);
 }
 
+// The character's own skin in its archive (entry = PL_ARC - 4 of setModel): body, head, face, hands; with
+// `outfit` its outfit too (Leon's jacket in pl00)
+std::vector<std::size_t> ownSkin(const std::string &stem, bool outfit) {
+  if (stem == "pl01" || stem == "pl05") return outfit ? std::vector<std::size_t>{0, 2, 3, 4, 13, 16} : std::vector<std::size_t>{0, 2, 3, 13, 16};
+  if (stem == "pl11") return outfit ? std::vector<std::size_t>{0, 2, 3, 5, 8, 11} : std::vector<std::size_t>{0, 2, 3, 8, 11};
+  if (stem == "pl0b" || stem == "pl0c") return outfit ? std::vector<std::size_t>{0, 2, 4, 5, 13, 14} : std::vector<std::size_t>{0, 2, 4, 13, 14};
+  return outfit ? std::vector<std::size_t>{0, 2, 4, 6, 14, 17} : std::vector<std::size_t>{0, 2, 4, 14, 17};
+}
+
 void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const std::map<std::string, Rgba> &images,
                 std::vector<std::string> notes, const Options &o, Bytes &result, std::string &log, const char *what,
                 bool shoulderFit = false) {
@@ -1898,8 +1907,10 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
     std::string stem = gcName;
     if (auto slash = stem.find_last_of("/\\"); slash != std::string::npos) stem = stem.substr(slash + 1);
     stem = lower(stem.substr(0, stem.find('.')));
-    if (stem != "pl00" && stem != "pl08" && stem != "pl09" && stem != "pl10")
-      fail(std::string(what) + "s go on Leon for now (pl00, pl08, pl09, pl10), not on " + stem);
+    static const std::set<std::string> kOn = {"pl00", "pl08", "pl09", "pl10", "pl01", "pl05", "pl11", "pl0b", "pl0c"};
+    if (!kOn.count(stem))
+      fail(std::string(what) + "s go on Leon (pl00, pl08..pl10), Ashley (pl01, pl05, pl11) or Ada (pl0b, pl0c), not on " +
+           stem);
     if (gc.count() < 22 || gc.kind(0) != "BIN" || gc.kind(1) != "TPL") fail("not Leon's archive");
     const Bytes body = gc.entry(0);
     const auto skel = discSkeleton(body);
@@ -2064,6 +2075,14 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
       }
       W[v] = e;
     }
+    // the skin's own head: vertices its own skeleton puts on the head (before Leon's or the character's weights)
+    std::size_t ownHead = 0;
+    for (std::size_t v = 0; v < nv; ++v) {
+      int best = -1, bone = -1;
+      for (const auto &[b, r] : W[v])
+        if (r > best) best = r, bone = b;
+      if (bone == 4 || bone == 27 || bone == 28) ++ownHead;
+    }
 
     // Leon's own weights for the skin (DevJunior, 19.11.2026: "the models stretch too much ... the tool has to fix
     // this"): the skin's few bones blend coarsely (a GTA ped has no twist bones, its hips and shoulders bend hard);
@@ -2073,7 +2092,7 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
     // own.
     if (o.transfer > 0) {
       std::vector<SrcVert> src;
-      for (std::size_t e : {0, 2, 4, 6, 14, 17})
+      for (std::size_t e : ownSkin(stem, true))
         if (e < gc.count() && gc.kind(e) == "BIN" && !gc.entry(e).empty()) collectSkin(gc.entry(e), skel, src);
       std::size_t moved = 0;
       double far = 0;
@@ -2284,7 +2303,7 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
         for (const auto &[b, a] : acc)
           if (!childOf.count(b) && a.second > 0) refMiddle[b] = a.first * (1.0 / a.second);
       } else {
-        for (std::size_t e : {0, 2, 4, 14, 17})
+        for (std::size_t e : ownSkin(stem, false))
           if (e < gc.count() && gc.kind(e) == "BIN" && !gc.entry(e).empty()) collectSkin(gc.entry(e), skel, leon);
       }
       std::map<int, std::vector<double>> his, its;  // bone -> the distances of its vertices
@@ -2472,11 +2491,34 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
     const Converted conv = buildModel(body, byMat, P, N, m.uv, W, matSlot, n0 + add.size(), std::size_t(o.palette));
     log += "entry   0 BIN: " + conv.stats + "\n";
 
-    // the archive: the new body and TPL, Leon's head, face, hair, outfit, wound and hands folded away
-    std::set<std::size_t> fold = {6, 10};
-    if (!o.keepHead) fold.insert({2, 4, 5});
-    if (stem != "pl00") fold.insert(12);
-    for (std::size_t i = 14; i <= 21; ++i) fold.insert(i);
+    // a skin without a head of its own (a mod that leaves the head to the game) keeps the character's
+    bool keepHead = o.keepHead;
+    if (!keepHead && ownHead < 30) {
+      keepHead = true;
+      log += fmt("no head of its own (%zu vertices on the head): the character's head kept\n", ownHead);
+    }
+    // the archive: the new body and TPL, the character's own head, face, hair, outfit, wound and hands folded away
+    // (entry = PL_ARC - 4 of each setModel: studio_model.cpp Characters; DevJunior, 20.11.2026: skins for Ashley and
+    // Ada too)
+    std::set<std::size_t> fold, hair;  // hair: the head's hair, kept with the head (in pl01/pl11 with her skirt)
+    if (stem == "pl01" || stem == "pl05") {  // Ashley: hair 4 (pl01 with the skirt), outfit 6, hands, head 2, face 3
+      fold = {6, 13, 14, 16, 17}, hair = {4};
+      if (!keepHead) fold.insert({2, 3});
+    } else if (stem == "pl11") {  // Ashley at Leon's side: hair and skirt 5, outfit 6, hands 8..12
+      fold = {6, 8, 9, 10, 11, 12}, hair = {5};
+      if (!keepHead) fold.insert({2, 3});
+    } else if (stem == "pl0b" || stem == "pl0c") {  // Ada: hair 5, hands 13..17, head 2, face 4
+      fold = {13, 14, 15, 16, 17}, hair = {5};
+      if (!keepHead) fold.insert({2, 4});
+    } else {  // Leon
+      fold = {6, 10};
+      if (!keepHead) fold.insert({2, 4, 5});
+      if (stem != "pl00") fold.insert(12);
+      for (std::size_t i = 14; i <= 21; ++i) fold.insert(i);
+    }
+    if (!keepHead) fold.insert(hair.begin(), hair.end()), hair.clear();
+    // below the neck (her spine's top less 22 cm) a hair model's other part (the skirt) goes
+    const double cut = skel.count(3) ? skel.at(3).at.y - 220.0 : 1e9;
     std::vector<Bytes> entries;
     std::string folded;
     for (std::size_t i = 0; i < gc.count(); ++i) {
@@ -2485,11 +2527,14 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
       else if (fold.count(i) && gc.kind(i) == "BIN" && !gc.entry(i).empty()) {
         entries.push_back(foldModel(gc.entry(i), skel));
         folded += (folded.empty() ? "" : ", ") + std::to_string(i);
+      } else if (hair.count(i) && gc.kind(i) == "BIN" && !gc.entry(i).empty()) {
+        entries.push_back(foldBelow(gc.entry(i), skel, cut));
+        folded += (folded.empty() ? "" : ", ") + std::to_string(i) + fmt(" (below %.0f mm)", cut);
       } else {
         entries.push_back(gc.entry(i));
       }
     }
-    log += "Leon's own models folded away: " + folded + (o.keepHead ? " (his head kept)" : "") + "\n";
+    log += "the character's own models folded away: " + folded + (keepHead ? " (the head kept)" : "") + "\n";
     const Bytes newBody = buildBody(entries, gc.types);
     result = buildArchive(gc, newBody);
     // a larger player file goes to the mods' place (patch 0901: up to 6 MB)
@@ -2521,7 +2566,14 @@ bool ConvertReMod(const Bytes &gcData, const std::string &gcName, const std::map
   try {
     std::vector<std::string> notes;
     std::map<std::string, Rgba> images;
-    DffMesh m = readReMod(files, images, notes, log);
+    // the outfit of the character this archive is: Leon cha0.., Ashley cha1.., Ada cha2..
+    std::string stem = gcName;
+    if (auto slash = stem.find_last_of("/\\"); slash != std::string::npos) stem = stem.substr(slash + 1);
+    stem = lower(stem.substr(0, stem.find('.')));
+    const char *who = (stem == "pl01" || stem == "pl05" || stem == "pl11") ? "cha1"
+                      : (stem == "pl0b" || stem == "pl0c")                ? "cha2"
+                                                                            : "cha0";
+    DffMesh m = readReMod(files, images, notes, log, false, who);
     skinOnLeon(gcData, gcName, std::move(m), images, std::move(notes), o, result, log, "RE4 Remake mod", true);
     return true;
   } catch (const std::exception &e) {

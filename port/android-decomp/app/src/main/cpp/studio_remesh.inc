@@ -294,8 +294,10 @@ DffMesh readReMod(const std::map<std::string, Bytes> &files, std::map<std::strin
     const auto dot = path.find(".mesh.");
     if (dot == std::string::npos) continue;
     if (!weapon) {
-      const auto ch = path.find("character/ch/cha0/");
-      if (ch != std::string::npos) byChar[path.substr(ch + 18, 6)].push_back(path);
+      // character/ch/chaN/chaNNN: Leon 0, Ashley 1, Ada 2
+      const auto ch = path.find("character/ch/cha");
+      if (ch != std::string::npos && path.size() > ch + 24 && path[ch + 17] == '/')
+        byChar[path.substr(ch + 18, 6)].push_back(path);
     } else {
       const auto wp = path.find("character/wp/wp");
       if (wp != std::string::npos && path.size() > wp + 24 && path[wp + 17] == '/') byChar[path.substr(wp + 18, 6)].push_back(path);
@@ -303,9 +305,22 @@ DffMesh readReMod(const std::map<std::string, Bytes> &files, std::map<std::strin
   }
   if (byChar.empty())
     fail(weapon ? "no weapon meshes of the RE4 Remake (natives/STM/_Chainsaw/Character/wp/wpNN/wpNNNN/...)"
-                : "no character meshes of the RE4 Remake (natives/STM/_Chainsaw/Character/ch/cha0/...)");
-  if (!want.empty() && !byChar.count(want)) fail("the mod has no meshes of " + want);
-  const std::string chr = !want.empty() ? want : byChar.count("cha000") ? "cha000" : byChar.begin()->first;
+                : "no character meshes of the RE4 Remake (natives/STM/_Chainsaw/Character/ch/chaN/...)");
+  // `want`: a folder (wp4000, cha101), or a character's first letters (cha0 Leon, cha1 Ashley, cha2 Ada): its NN0 first
+  std::string chr;
+  if (byChar.count(want)) {
+    chr = want;
+  } else if (!want.empty()) {
+    for (const auto &[key, list] : byChar)
+      if (key.compare(0, want.size(), want) == 0 && (chr.empty() || key.compare(4, 2, "00") == 0)) chr = key;
+    if (chr.empty() && !weapon) {  // another character's outfit on this one
+      chr = byChar.count("cha000") ? "cha000" : byChar.begin()->first;
+      log += "no outfit of " + want + "... in the mod: " + chr + " (another character's) taken\n";
+    }
+    if (chr.empty()) fail("the mod has no meshes of " + want);
+  } else {
+    chr = byChar.count("cha000") ? "cha000" : byChar.begin()->first;
+  }
   if (picked) *picked = chr;
   DffMesh m;
   std::map<std::string, unsigned> boneOf;  // by the Remake's name
@@ -323,8 +338,15 @@ DffMesh readReMod(const std::map<std::string, Bytes> &files, std::map<std::strin
     // its materials' colour maps: the .mdf2 beside it (the same name)
     std::map<std::string, std::string> colourOf;
     const std::string stem = path.substr(0, path.find(".mesh."));
+    bool hasMdf2 = false;
     for (const auto &[fp, fd] : files)
-      if (fp.compare(0, stem.size() + 6, stem + ".mdf2.") == 0) colourOf = readMdf2(fd);
+      if (fp.compare(0, stem.size() + 6, stem + ".mdf2.") == 0) colourOf = readMdf2(fd), hasMdf2 = true;
+    // a mesh the mod ships without its materials draws with the game's own textures (the Claire outfit's head is
+    // Ashley's): left out, the character's own part stays
+    if (!hasMdf2) {
+      log += "  " + path.substr(path.find_last_of('/') + 1) + ": no materials in the mod (the game's own), left out\n";
+      continue;
+    }
     std::vector<unsigned> matMap;
     for (const auto &name : p.mats) {
       const std::string tex = colourOf.count(name) ? colourOf.at(name) : "";
@@ -359,6 +381,37 @@ DffMesh readReMod(const std::map<std::string, Bytes> &files, std::map<std::strin
     }
     // its bones into the shared list (by name; the first mesh's place wins): those its vertices hang on, the ones
     // the conversion turns, and their parents (a head's face rig has hundreds no vertex uses)
+    // a real face (Ashley's head: 231 bones) rigs its skin to hundreds of face bones the disc has no use for: those
+    // under the head (not a bone the conversion knows) hand their vertices to the head
+    if (!weapon) {
+      int head = -1;
+      for (std::size_t i = 0; i < p.boneName.size(); ++i)
+        if (p.boneName[i] == "Head") head = int(i);
+      if (head >= 0) {
+        std::vector<int> to(p.boneName.size(), -1);
+        for (std::size_t i = 0; i < p.boneName.size(); ++i) {
+          if (int(i) == head || reBoneAsGta(p.boneName[i])) continue;
+          for (int q = p.boneParent[i], hops = 0; q >= 0 && std::size_t(q) < p.boneName.size() && hops < 256;
+               q = p.boneParent[std::size_t(q)], ++hops)
+            if (q == head) {
+              to[i] = head;
+              break;
+            }
+        }
+        std::size_t moved = 0;
+        for (std::size_t v = 0; v < p.pos.size(); ++v) {
+          auto &bv = p.bone[v];
+          auto &wv = p.weight[v];
+          for (std::size_t j = 0; j < 8; ++j)
+            if (bv[j] < to.size() && to[bv[j]] >= 0 && wv[j] > 0)
+              bv[j] = static_cast<std::remove_reference_t<decltype(bv[j])>>(to[bv[j]]), ++moved;
+          for (std::size_t j = 0; j < 8; ++j)  // one weight per bone
+            for (std::size_t k = j + 1; k < 8; ++k)
+              if (wv[j] > 0 && wv[k] > 0 && bv[k] == bv[j]) wv[j] += wv[k], wv[k] = 0;
+        }
+        if (moved) log += fmt("  %s: %zu weights of face bones on the head\n", path.c_str(), moved);
+      }
+    }
     std::vector<char> need(p.boneName.size(), 0);
     for (std::size_t v = 0; v < p.pos.size(); ++v)
       for (int j = 0; j < 8; ++j)
