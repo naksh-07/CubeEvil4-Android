@@ -65,7 +65,7 @@ struct Options {
   // half with the inner layer); a denser skin is reduced
   std::size_t maxSkinTris = 0;
   // GTA skins and RE4 Remake mods: how much the skin is made as thin as Leon round each bone (1 all, 0 its own build)
-  double fitBody = 1.0;
+  double fitBody = 0.0;
   // the PC HUD (ConvertCoreHud): a picture this close to the disc's (mean difference per pixel, 0..255) is not the
   // mod's and stays the disc's
   double hudSame = 14.0;

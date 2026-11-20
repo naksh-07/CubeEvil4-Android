@@ -507,7 +507,9 @@ public final class StudioActivity extends Activity {
   private final StringBuilder convertLog = new StringBuilder();
   private int convertTex = 128;
   private boolean keepHead;  // GTA skins: Leon's own head, face and hair stay (a skin without a head)
-  private boolean fitLeon = true;  // GTA skins, Remake outfits: no thicker than Leon round each bone
+  // GTA skins, Remake outfits: no thicker than Leon round each bone; off at first (DevJunior, 20.11.2026: the skins'
+  // own proportions looked best)
+  private boolean fitLeon = false;
   private volatile boolean busy;
 
   private void showConvert() {
