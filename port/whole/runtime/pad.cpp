@@ -309,6 +309,15 @@ void re4_pad_add(u16 buttons)
     g_add |= buttons;
 }
 
+// Buttons a frame hook takes from channel 0 for the frame it runs in (re4_pad_block: runtime/codec_call.cpp, Leon
+// only walks during a remake call), after the controller, the script and re4_pad_add.
+static u16 g_block;
+
+void re4_pad_block(u16 buttons)
+{
+    g_block |= buttons;
+}
+
 // The C stick a frame hook sets on channel 0 for the frame it runs in (re4_pad_substick: the mouse wheel's zoom,
 // runtime/wheel_zoom.cpp): straight up (y > 0) or down, y as the game sees it after the SDK's PADClamp (src/lib/
 // Padclamp.c: 15 off, at most 59 straight), in place of the controller's or the script's C stick.
@@ -503,6 +512,22 @@ u32 PADRead(PADStatus* status)
             status[0].analogA = 0xFF;
         }
         g_add = 0;
+    }
+    if (g_block) {
+        status[0].button &= (u16) ~g_block;
+        if (g_block & 0x0040) {
+            status[0].triggerLeft = 0;
+        }
+        if (g_block & 0x0020) {
+            status[0].triggerRight = 0;
+        }
+        if (g_block & 0x0100) {
+            status[0].analogA = 0;
+        }
+        if (g_block & 0x0200) {
+            status[0].analogB = 0;
+        }
+        g_block = 0;
     }
     g_reported = status[0].button;
     // every change of the buttons (scripted or from the device)

@@ -1,0 +1,28 @@
+# Patch 0939 (wish of DevJunior, 19.11.2026: "the call system of the remake, a small box at the side while you move,
+# talking with Hunnigan"; his choice: option A for every call, the story's too). Not a bug of the prototype: a port
+# feature of the mods (with the app's "Remake movement"). game/sscrn.cpp OpeSetOpenTerm (a scenario's radio call):
+# once the player is free, re4_codec_call (runtime/codec_call.cpp) plays the call in the scenario's task without the
+# codec screen (marked heard, the radio's tone, the voice stream, the subtitles on their frames; Leon walks, his hand
+# at his ear: patch 0940) and the scenario goes on after it; it answers 0 (the game's own codec screen) with the
+# switch off, another character than Leon or the call's data not readable.
+--- a/src/game/sscrn.cpp
++++ b/src/game/sscrn.cpp
+@@ -794,6 +794,8 @@
+ // (x, y, z, ang), starts an event, plays the radio stream (strTbl block), the "take out the radio"
+ // motion with the radio model in the left hand (parts 0x10), then opens the terminal sub screen
+ // (SS_OPEN_TERM); the skip key cancels. Restores the position afterwards.
++extern "C" int re4_codec_call(int no); /* port (patch 0939): runtime/codec_call.cpp */
++
+ void OpeSetOpenTerm(int no, f32 x, f32 y, f32 z, f32 ang)
+ {
+     SubScreenWork* wk = &SubScreenWk;
+@@ -807,6 +809,9 @@
+     while (pl->checkEvent() != 1) {
+         SceSleep(1);
+     }
++    if (re4_codec_call(no)) { /* port (patch 0939, mods): the remake's call, the game going on */
++        return;
++    }
+     if (x != 0.0f) {
+         wk->posBak = pPL->pos;
+         wk->angBak = pPL->ang;

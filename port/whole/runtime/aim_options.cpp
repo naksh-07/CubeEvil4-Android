@@ -152,6 +152,7 @@ extern "C" void re4_finish_set(int on);                   // runtime/finisher.cp
 extern "C" void re4_move_set(int on);                     // runtime/locomotion.cpp
 extern "C" void re4_react_set(int on);                    // runtime/react.cpp
 extern "C" int re4_move_sprint(int held);                 // runtime/locomotion.cpp
+extern "C" int re4_codec_walk_only(void);                  // runtime/codec_call.cpp
 extern "C" void re4_move_jog_press(void);                 // runtime/locomotion.cpp
 extern "C" void re4_back_adjust_set(int word);           // runtime/wardrobe.cpp
 extern "C" void re4_ashley_gun_set(int on);             // runtime/ashley_gun.cpp
@@ -324,6 +325,10 @@ f32 re4_aim_turn_boost(int stickX)
 // around (run without it, walk while it is held).
 int re4_run_held(int held)
 {
+    // a remake call (runtime/codec_call.cpp): Leon walks
+    if (re4_codec_walk_only()) {
+        return 0;
+    }
     // the remake's sprint (runtime/locomotion.cpp): the stick jogs, the run key sprints
     const int sprint = re4_move_sprint(held);
     if (sprint >= 0) {

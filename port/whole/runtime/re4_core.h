@@ -177,7 +177,8 @@ typedef struct Re4CoreSnapshot {
     uint32_t droppedModels;  /* models beyond the budget */
     uint32_t screen;         /* RE4_CORE_SCREEN_* */
     uint16_t nInfos;
-    uint16_t reserved;
+    uint16_t codec;          /* a remake radio call plays (runtime/codec_call.cpp): its number + 1, 0 none (until
+                                19.11.2026 "reserved", always 0) */
     uint32_t droppedInfos;   /* infos beyond the budget (or beyond 255 of one model) */
     uint32_t nMorph;
     uint32_t droppedMorph;   /* morphed infos beyond the budget (drawn unmorphed) */

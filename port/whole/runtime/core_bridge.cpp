@@ -39,6 +39,7 @@ extern cObjMgr ObjMgr;
 
 extern "C" int re4_dvd_inserted_disc(void);
 extern "C" int re4_valid_port_ptr(const void* p);
+extern "C" int re4_codec_active(void);  // runtime/codec_call.cpp
 
 namespace {
 
@@ -345,6 +346,7 @@ extern "C" void re4_bridge_capture(Re4CoreSnapshot* s)
     s->screen = (StaFlagChk(g, STA_SUB_SCRN) ? RE4_CORE_SCREEN_SUB : 0) |
                 (StaFlagChk(g, STA_EVENT) ? RE4_CORE_SCREEN_EVENT : 0) |
                 (DbgFlagChk(g, DBG_DBG_CAM) ? RE4_CORE_SCREEN_DEBUGCAM : 0);
+    s->codec = (uint16_t) re4_codec_active();  // the app's call box
     // a sub screen draws its own items with its own camera in pG->Camera
     // (sscrn.cpp keeps the world camera aside); the world behind it is the
     // controller's camera

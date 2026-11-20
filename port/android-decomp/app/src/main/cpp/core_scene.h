@@ -36,6 +36,7 @@ struct CoreFrame {
   std::array<float, 3> eye{}, target{};
   float roll{}, fovy{};
   std::uint32_t screen{};  // RE4_CORE_SCREEN_*
+  std::uint16_t codec{};   // a remake radio call: its number + 1 (Re4CoreSnapshot::codec), 0 none
   std::uint32_t droppedModels{};  // models beyond the snapshot's budget
   std::vector<Re4CoreModel> models;
   std::vector<Re4CoreModelInfo> infos;  // Re4CoreModel::firstInfo / nInfos

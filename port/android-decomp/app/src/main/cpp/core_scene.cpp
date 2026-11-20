@@ -53,6 +53,7 @@ void CopyCoreFrame(const Re4CoreSnapshot &s, CoreFrame &out) {
   out.roll = s.cameraRoll;
   out.fovy = s.cameraFovy;
   out.screen = s.screen;
+  out.codec = s.codec;
   out.droppedModels = s.droppedModels;
   const auto models = std::min<unsigned>(s.nModels, RE4_CORE_MAX_MODELS);
   const auto infos = std::min<unsigned>(s.nInfos, RE4_CORE_MAX_INFOS);

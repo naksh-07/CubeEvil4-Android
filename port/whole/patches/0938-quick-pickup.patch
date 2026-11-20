@@ -1,25 +1,44 @@
 # Patch 0938 (wish of DevJunior, 19.11.2026: "the pick-ups of the remake, so you do not stop so much on your way").
 # Not a bug of the prototype: a port feature of the mods (with the app's "Remake movement"). game/sce_at.cpp
 # sceAtFunc_item: money, treasures and the ammunition and healing items the case takes by itself (PutInCase) are taken at once,
-# without the zoom and the question; the message shows without stopping the game and closes after 45 frames; the
-# clean-up is sceAtGetItem's (sceAtQuickItemTask). Everything else (weapons, keys, files, a full case) stays the
+# without the zoom and the question; the message shows without stopping the game for 45 frames (a no-stop message
+# lasts one frame: set again every frame; none during a remake call, patch 0939); the clean-up is sceAtGetItem's
+# (sceAtQuickItemTask, a free scenario slot: two pick-ups in a row). Everything else (weapons, keys, files, a full case) stays the
 # game's.
 --- a/src/game/sce_at.cpp
 +++ b/src/game/sce_at.cpp
-@@ -1491,6 +1491,102 @@
+@@ -1491,6 +1491,123 @@
      SceUpCutEnd();
  }
  
 +/* port (patch 0938, mods): the remake's quick pick-up (DevJunior, 19.11.2026: "the pick-ups, so you do not stop so
-+   much on your way"). With the app's "Remake movement" (re4_quick_pickup_on, runtime/quick_pickup.cpp) money and the
-+   ammunition and healing items that go into the case by themselves are taken at once: no zoom, no question, the
-+   game goes on; the message shows a moment without stopping the game (attribute 0x80) and closes by itself. The
-+   rest of the clean-up is sceAtGetItem's own (flags, area off, model released, save record, the area freed). */
++   much on your way"). With the app's "Remake movement" (re4_quick_pickup_on, runtime/quick_pickup.cpp) money,
++   treasures and the ammunition and healing items that go into the case by themselves are taken at once: no zoom,
++   no question, the game goes on. The message is a no-stop one (attribute 0x80: drawn the frame it is set, as
++   act_btn.cpp's), set again every frame for 45 frames by the pick-up's own task (a free scenario slot, so that two
++   pick-ups in a row each get theirs; the newest one's message shows); none while a remake radio call shows its
++   subtitles (runtime/codec_call.cpp). The rest of the clean-up is sceAtGetItem's own (flags, area off, model
++   released, save record, the area freed). */
 +extern "C" int re4_quick_pickup_on(void);
 +extern "C" void re4_quick_pickup_log(int id, int num, int kind);
++extern "C" int re4_codec_active(void);
++static int quickMesNo, quickMesAttr, quickMesItem, quickMesSerial;
++static u32 quickMesNum;
++
++static void sceAtQuickMesShow()
++{
++    int y = 0x129 - cMes.getFontHeight(0) - cMes.getLineGap(0);
++
++    cMes.MesSetNumber(0, quickMesNum, 0);
++    cMes.MesSet(quickMesNo, 0x64, y, quickMesAttr | 0x80, 0, 0, 4);
++    cMes.SetItemName(0, quickMesItem);
++    cMes.MesSetNumber(0, quickMesNum, 0);
++}
++
 +static void sceAtQuickItemTask(SCE_AT_ITEM* w)
 +{
 +    SCE_AT_DATA_ITEM* it = &w->item;
++    int mine = quickMesSerial;
 +    int i;
 +
 +    EffectEspDelete(1, ESP_CORE_KIND_ITEM, it->pModel, 0);
@@ -35,18 +54,26 @@
 +        Mem_free(w);
 +        DelPrim(&pS->ot[15], (u32*) w);
 +    }
-+    for (i = 0; i < 45; i++) {
++    for (i = 0; i < 45 && mine == quickMesSerial; i++) {
++        if (!re4_codec_active()) {
++            sceAtQuickMesShow();
++        }
 +        SceSleep(1);
 +    }
-+    cMes.Delete(0);
++}
++
++static void sceAtQuickMes(int no, u32 attr, int item, u32 num)
++{
++    quickMesNo = no;
++    quickMesAttr = attr;
++    quickMesItem = item;
++    quickMesNum = num;
++    quickMesSerial++;
 +}
 +
 +static int sceAtQuickItem(SCE_AT_ITEM* w)
 +{
 +    SCE_AT_DATA_ITEM* it = &w->item;
-+    int fh = cMes.getFontHeight(0);
-+    int ls = cMes.getLineGap(0);
-+    int y = 0x129 - fh - ls;
 +    ITEM_INFO info;
 +    u32 money;
 +    int num;
@@ -64,16 +91,14 @@
 +        money = pG->peseta;
 +        ItemMgr.get(it->item_id, it->item_num);
 +        SndCall(0, 0x10, 0, 0, 0, 0);
-+        cMes.MesSetNumber(0, pG->peseta - money, 0);
-+        cMes.MesSet(0x14, 0x64, y, 0x10000011 | 0x80, 0, 0, 4);
++        sceAtQuickMes(0x14, 0x10000011, it->item_id, pG->peseta - money);
 +        re4_quick_pickup_log(it->item_id, (int) (pG->peseta - money), 8);
 +        break;
 +    case 5:    /* treasures (DevJunior, 19.11.2026: "the treasures too") */
 +    case 0xC:
 +        ItemMgr.get(it->item_id, it->item_num);
 +        SndCall(0, 0x13, 0, 0, 0, 0);
-+        cMes.MesSet(0x15, 0x64, y, 0x11 | 0x80, 0, 0, 4);
-+        cMes.SetItemName(0, it->item_id);
++        sceAtQuickMes(0x15, 0x11, it->item_id, 0);
 +        re4_quick_pickup_log(it->item_id, 1, 5);
 +        break;
 +    case 2:  /* ammunition */
@@ -87,19 +112,16 @@
 +        }
 +        SndCall(0, 0x13, 0, 0, 0, 0);
 +        if (info.type == 2) {
-+            cMes.MesSet(0x13, 0x64, y, 0x211 | 0x80, 0, 0, 4);
-+            cMes.SetItemName(0, it->item_id);
-+            cMes.MesSetNumber(0, num, 0);
++            sceAtQuickMes(0x13, 0x211, it->item_id, num);
 +        } else {
-+            cMes.MesSet(0x11, 0x64, y, 0x411 | 0x80, 0, 0, 4);
-+            cMes.SetItemName(0, it->item_id);
++            sceAtQuickMes(0x11, 0x411, it->item_id, 0);
 +        }
 +        re4_quick_pickup_log(it->item_id, num, info.type);
 +        break;
 +    default:
 +        return 0;
 +    }
-+    p = SceExec(5, (TaskFunc) sceAtQuickItemTask, w, 0, SCE_PRIO_15, 0);
++    p = SceExec(0x12, (TaskFunc) sceAtQuickItemTask, w, 0, SCE_PRIO_15, 0);
 +    if (p != 0) {
 +        p->setNoSuspend(1);
 +    }
@@ -109,7 +131,7 @@
  // Type 3 handler (item): keys blocked, the item model prepared (itemZoom) and the pick-up task
  // started (sceAtGetItem or the no-model variant); SceSys.m_item_get = 1 while it runs.
  int sceAtFunc_item(SCE_AT_DATA* w, cModel* m)
-@@ -1499,6 +1587,10 @@
+@@ -1499,6 +1616,10 @@
      int ret;
      SCE_TASK* p;
  

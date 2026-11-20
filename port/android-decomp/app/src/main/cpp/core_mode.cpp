@@ -1798,10 +1798,104 @@ bool minimapBuild(int format, unsigned xh, bool wide, re4gx::GxOverlay *out) {
   return true;
 }
 
-// The minimap with GLES (after the picture, at its bottom left)
+// --- the remake's radio call (runtime/codec_call.cpp; wish of DevJunior, 19.11.2026: "a small box at the side while
+// you move"): while the core plays a call (CoreFrame::codec) a box at the top left of the shown picture: a dark panel
+// with a frame, the caller's place (a plain silhouette: no picture of the game's) and the voice's moving bars; the
+// game's subtitles stay where the events show theirs. In the minimap's overlay (one per picture): the call's box wins.
+struct CodecBoxState {
+  unsigned call = 0;
+  std::chrono::steady_clock::time_point since;
+} codecBox;
+
+bool codecBuild(int format, unsigned xh, bool wide, re4gx::GxOverlay *out) {
+  if (!frame.valid || frame.step[0] != 3 || !frame.codec ||
+      (frame.screen & (RE4_CORE_SCREEN_SUB | RE4_CORE_SCREEN_EVENT))) {
+    codecBox.call = 0;
+    return false;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (codecBox.call != frame.codec) {
+    codecBox.call = frame.codec;
+    codecBox.since = now;
+    LOG("codec: the call box for call %u", frame.codec - 1u);
+  }
+  const float t = std::chrono::duration<float>(now - codecBox.since).count();
+  const float in = std::min(1.0f, t / 0.25f);  // fades in
+  std::vector<float> v;
+  auto put = [&](float x, float y, float r, float g, float b, float a) { v.insert(v.end(), {x, y, r, g, b, a * in}); };
+  auto quad = [&](float x0, float y0, float x1, float y1, float r, float g, float b, float a) {
+    put(x0, y0, r, g, b, a);
+    put(x1, y0, r, g, b, a);
+    put(x1, y1, r, g, b, a);
+    put(x0, y0, r, g, b, a);
+    put(x1, y1, r, g, b, a);
+    put(x0, y1, r, g, b, a);
+  };
+  // the box: the square's top 45 % (2.2 : 1)
+  const float bx0 = -1.0f, bx1 = 1.0f, by0 = 0.1f, by1 = 1.0f;
+  quad(bx0, by0, bx1, by1, 0.02f, 0.05f, 0.04f, 0.62f);
+  // the caller's place: a panel, a head and shoulders
+  const float px0 = -0.93f, px1 = -0.17f, py0 = 0.17f, py1 = 0.93f;
+  quad(px0, py0, px1, py1, 0.10f, 0.20f, 0.16f, 0.75f);
+  const float cx = (px0 + px1) * 0.5f, cy = py0 + (py1 - py0) * 0.64f, hr = (px1 - px0) * 0.17f;
+  const int kSides = 24;
+  for (int i = 0; i < kSides; i++) {
+    const float a0 = 6.2831853f * i / kSides, a1 = 6.2831853f * (i + 1) / kSides;
+    put(cx, cy, 0.45f, 0.70f, 0.58f, 0.85f);
+    put(cx + std::cos(a0) * hr, cy + std::sin(a0) * hr * 2.2f, 0.45f, 0.70f, 0.58f, 0.85f);
+    put(cx + std::cos(a1) * hr, cy + std::sin(a1) * hr * 2.2f, 0.45f, 0.70f, 0.58f, 0.85f);
+  }
+  const float sy1 = cy - hr * 2.4f;
+  put(px0 + 0.08f, py0, 0.45f, 0.70f, 0.58f, 0.85f);
+  put(px1 - 0.08f, py0, 0.45f, 0.70f, 0.58f, 0.85f);
+  put(cx + hr * 1.6f, sy1, 0.45f, 0.70f, 0.58f, 0.85f);
+  put(px0 + 0.08f, py0, 0.45f, 0.70f, 0.58f, 0.85f);
+  put(cx + hr * 1.6f, sy1, 0.45f, 0.70f, 0.58f, 0.85f);
+  put(cx - hr * 1.6f, sy1, 0.45f, 0.70f, 0.58f, 0.85f);
+  // the voice: 14 bars about the box's middle line, moving
+  const int kBars = 14;
+  const float wx0 = -0.05f, wx1 = 0.92f, mid = (by0 + by1) * 0.5f, bw = (wx1 - wx0) / kBars;
+  for (int i = 0; i < kBars; i++) {
+    const float k = 0.5f + 0.5f * std::sin(t * 9.0f + i * 1.7f) * std::sin(t * 3.1f + i * 0.6f);
+    const float h = 0.05f + 0.30f * k;
+    const float x0 = wx0 + i * bw + bw * 0.2f, x1 = wx0 + (i + 1) * bw - bw * 0.2f;
+    quad(x0, mid - h, x1, mid + h, 0.55f, 0.90f, 0.70f, 0.9f);
+  }
+  const int triVerts = static_cast<int>(v.size() / 6);
+  // the frame and the panel's edge
+  auto line = [&](float x0, float y0, float x1, float y1, float a) {
+    put(x0, y0, 0.60f, 0.92f, 0.74f, a);
+    put(x1, y1, 0.60f, 0.92f, 0.74f, a);
+  };
+  const float e = 0.985f;
+  line(bx0 * e, by0 + 0.01f, bx1 * e, by0 + 0.01f, 0.85f);
+  line(bx1 * e, by0 + 0.01f, bx1 * e, by1 * e, 0.85f);
+  line(bx1 * e, by1 * e, bx0 * e, by1 * e, 0.85f);
+  line(bx0 * e, by1 * e, bx0 * e, by0 + 0.01f, 0.85f);
+  line(px0, py0, px1, py0, 0.6f);
+  line(px1, py0, px1, py1, 0.6f);
+  line(px1, py1, px0, py1, 0.6f);
+  line(px0, py1, px0, py0, 0.6f);
+  const int lineVerts = static_cast<int>(v.size() / 6) - triVerts;
+  // the square at the top left of the shown picture, as far from its edges as the minimap is from its own
+  re4mm::Rect hud, pic;
+  re4mm::PictureRects(format, width, height, static_cast<int>(xh), &hud, &pic, wide);
+  const re4mm::Rect shown = re4mm::Shown(format, hud, pic);
+  const int size = std::max(64, std::min(hud.h * 40 / 100, hud.w * 34 / 100));
+  const int m = std::max(6, shown.h * 4 / 100);
+  out->verts = v;
+  out->parts = {{false, 0, triVerts}, {true, triVerts, lineVerts}};
+  out->x = shown.x + m;
+  out->y = shown.y + shown.h - m - size;
+  out->size = size;
+  out->lineWidth = std::max(1.0f, static_cast<float>(size) / 200.0f);
+  return true;
+}
+
+// The overlay with GLES (after the picture): the call's box, else the minimap
 void minimapDraw(int format, unsigned xh, bool wide) {
   re4gx::GxOverlay o;
-  if (!minimapBuild(format, xh, wide, &o))
+  if (!codecBuild(format, xh, wide, &o) && !minimapBuild(format, xh, wide, &o))
     return;
   if (!minimap.program && !minimapProgram()) {
     minimap.failed = true;
@@ -1809,10 +1903,7 @@ void minimapDraw(int format, unsigned xh, bool wide) {
     return;
   }
   const std::vector<float> &v = o.verts;
-  const int discVerts = o.parts[0].count, triVerts = o.parts[1].first, lineVerts = o.parts[1].count;
-  const int size = o.size;
-  const re4mm::Rect at{o.x, o.y, o.size, o.size};
-  glViewport(at.x, at.y, size, size);
+  glViewport(o.x, o.y, o.size, o.size);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glDisable(GL_DEPTH_TEST);
@@ -1821,11 +1912,12 @@ void minimapDraw(int format, unsigned xh, bool wide) {
   glBindVertexArray(minimap.vao);
   glBindBuffer(GL_ARRAY_BUFFER, minimap.vbo);
   glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(v.size() * sizeof(float)), v.data(), GL_STREAM_DRAW);
-  glDrawArrays(GL_TRIANGLES, 0, discVerts);
-  glLineWidth(std::max(1.0f, static_cast<float>(size) / 160.0f));
-  glDrawArrays(GL_LINES, triVerts, lineVerts);
-  glDrawArrays(GL_TRIANGLES, discVerts, triVerts - discVerts);
-  glLineWidth(1.0f);
+  for (const re4gx::GxOverlay::Part &part : o.parts) {
+    if (part.lines)
+      glLineWidth(o.lineWidth);
+    glDrawArrays(part.lines ? GL_LINES : GL_TRIANGLES, part.first, part.count);
+    glLineWidth(1.0f);
+  }
   glBindVertexArray(0);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glUseProgram(0);
@@ -3021,8 +3113,8 @@ bool drawGx() {
   const int mapFormat = format < 0 && aspect && std::string(aspect) == "4:3" ? 1 : format;
   if (gx->Api() == re4gx::GxApi::kVulkan) {
     re4gx::GxOverlay map;
-    if (!minimapBuild(mapFormat, xh, xfbWide, &map))
-      map = re4gx::GxOverlay();  // (none this picture)
+    if (!codecBuild(mapFormat, xh, xfbWide, &map) && !minimapBuild(mapFormat, xh, xfbWide, &map))
+      map = re4gx::GxOverlay();  // (none this picture; the call's box before the minimap)
     gx->SetOverlay(map);
   }
   if (format == 5) {

@@ -370,6 +370,8 @@ void re4_pad_script_free(void);
 /* Buttons (PAD_BUTTON_* bits) a frame hook adds to channel 0 for the frame it
  * runs in, on top of the controller (pad.cpp; the knife swipe, knife_swipe.cpp). */
 void re4_pad_add(unsigned short buttons);
+/* Buttons taken from channel 0 for the frame the hook runs in (runtime/codec_call.cpp). */
+void re4_pad_block(unsigned short buttons);
 
 /* Every OS thread and where it waits (os_thread.cpp; RE4_WAIT_TRACE=1 records
  * the places): the hang search of host/main.cpp on SIGUSR1. */

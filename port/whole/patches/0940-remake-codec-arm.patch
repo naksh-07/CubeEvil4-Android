@@ -1,0 +1,24 @@
+# Patch 0940 (wish of DevJunior, 19.11.2026: "Leon only walks, with his hand at his ear, as in the remake").
+# Not a bug of the prototype: a port feature of the mods (patch 0939). game/player.cpp cPlayer::move: after
+# moveMatCalcBefore (the routine, the motion base and the body are done), before the parts' world matrices,
+# re4_codec_arm (runtime/codec_call.cpp) turns Leon's left upper arm and forearm so that his hand is at his ear
+# while a remake call plays (blended in and out); otherwise it does nothing.
+--- a/src/game/player.cpp
++++ b/src/game/player.cpp
+@@ -294,6 +294,8 @@
+ 
+ extern "C" void re4_player_after_routine(cPlayer* pl); /* port: runtime/free_move.cpp (patch 0900) */
+ 
++extern "C" void re4_codec_arm(cPlayer* pl); /* port (patch 0940): runtime/codec_call.cpp */
++
+ // Per-frame update.
+ void cPlayer::move()
+ {
+@@ -370,6 +372,7 @@
+     Body->waistSet(*Waist);
+     Body->move();
+     moveMatCalcBefore();
++    re4_codec_arm(this); /* port (patch 0940, mods): the hand at the ear during a remake call */
+     partsWorldCalc();
+     partsFixAdjust();
+     PartsWorldPosCalc(this);
