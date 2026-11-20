@@ -61,6 +61,9 @@ struct Options {
   double transfer = 1.0;
   // GTA skins: the skin once more just under its surface, so that gaps at the joints show its own colours
   bool innerLayer = true;
+  // GTA skins and RE4 Remake mods: at most this many triangles of the skin (0: as many as one model holds, 21845,
+  // half with the inner layer); a denser skin is reduced
+  std::size_t maxSkinTris = 0;
 };
 
 // The disc's archive (`gcName` its file name: pl00.drs ...) with the PC mod's (unpacked .udas) converted into it.

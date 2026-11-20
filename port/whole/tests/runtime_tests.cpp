@@ -2601,6 +2601,16 @@ static void testModMusic()
     CHECK(lr[0] > -6000 && lr[0] < 8000);
     run(240);
     CHECK(re4_mod_music_level() == 256 && abs(lr[0] + 6000) <= 2 && abs(lr[1] + 6000) <= 2);
+    re4_mod_music_cut(1);              // a radio call: silent within the block, no crossfade
+    re4_mod_music_want(-1, 256);
+    run(1);
+    CHECK(re4_mod_music_level() == 0 && lr[0] == 0 && lr[1] == 0);
+    re4_mod_music_cut(0);              // after the call: the same track fades back in
+    re4_mod_music_want(battle, 256);
+    run(10);
+    CHECK(re4_mod_music_level() > 0 && re4_mod_music_level() < 16);
+    run(400);
+    CHECK(re4_mod_music_level() == 256);
     re4_mod_music_want(-1, 256);       // none: the game's music back
     run(400);
     CHECK(re4_mod_music_level() == 0 && lr[0] == 0 && lr[1] == 0);

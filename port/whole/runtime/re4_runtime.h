@@ -198,6 +198,7 @@ void re4_mod_music_add(const char* name, const char* path);
 int re4_mod_music_find(const char* name);
 int re4_mod_music_count(void);
 void re4_mod_music_want(int track, int gain);
+void re4_mod_music_cut(int on);  // 1: silent at once (a radio call)
 int re4_mod_music_level(void);
 void re4_mod_music_mix(short* lr, unsigned frames);
 /* Patch 0901, event.cpp ExePacket_SetParts: 1 = a jacket part of costume 0 takes the skin's pl000e

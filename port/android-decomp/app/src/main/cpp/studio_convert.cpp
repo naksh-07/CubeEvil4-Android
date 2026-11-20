@@ -3,6 +3,7 @@
 #define BCDEC_STATIC
 #define BCDEC_IMPLEMENTATION
 #include "third_party/bcdec.h"  // BC1..BC7 blocks (Sergii Kudlai, MIT or Unlicense): the RE4 Remake's textures
+#include "third_party/meshoptimizer/meshoptimizer.h"  // the simplifier (Arseny Kapoulkine, MIT): too dense skins
 #include <cctype>
 #include "studio_convert.h"
 
@@ -1586,6 +1587,92 @@ Bytes readFile(const std::string &path, std::uint64_t at, std::uint64_t len) {
 #include "studio_dff.inc"
 #include "studio_remesh.inc"
 
+// A model takes at most 65535 corners (the header's count is 16-bit): 21845 triangles. A skin with more (the RE4
+// Remake's Leons have 40 000 to 80 000; DevJunior, 20.11.2026: "the Remake's models do not always work") is reduced
+// to `target` triangles by edge collapses (meshoptimizer's simplifier, attribute-aware: the UVs and normals keep
+// their seams). First each vertex is made one material's (a vertex two materials share is split): every collapse
+// stays within a material, so a triangle's material is its first corner's. Unused vertices are dropped after.
+void reduceSkin(DffMesh &m, std::size_t target, std::string &log) {
+  const std::size_t before = m.tris.size();
+  if (before <= target) return;
+  // one material per vertex
+  std::map<std::pair<unsigned, unsigned>, unsigned> split;  // (vertex, material) -> vertex
+  std::vector<unsigned> vmat(m.pos.size(), ~0u);
+  auto copyVertex = [&](unsigned v) {
+    m.pos.push_back(m.pos[v]);
+    if (v < m.nrm.size()) m.nrm.push_back(m.nrm[v]);
+    if (v < m.uv.size()) m.uv.push_back(m.uv[v]);
+    if (v < m.bone.size()) m.bone.push_back(m.bone[v]);
+    if (v < m.weight.size()) m.weight.push_back(m.weight[v]);
+    return unsigned(m.pos.size() - 1);
+  };
+  std::vector<std::array<unsigned, 4>> tris;
+  for (auto t : m.tris) {
+    if (t[0] >= m.pos.size() || t[1] >= m.pos.size() || t[2] >= m.pos.size()) continue;
+    for (int c = 0; c < 3; ++c) {
+      const unsigned v = t[c];
+      if (vmat[v] == ~0u) vmat[v] = t[3];
+      if (vmat[v] == t[3]) continue;
+      auto it = split.find({v, t[3]});
+      if (it == split.end()) {
+        it = split.emplace(std::make_pair(v, t[3]), copyVertex(v)).first;
+        vmat.push_back(t[3]);
+      }
+      t[c] = it->second;
+    }
+    tris.push_back(t);
+  }
+  const std::size_t nv = m.pos.size();
+  m.nrm.resize(nv, V3{0, 1, 0}), m.uv.resize(nv, {0.0, 0.0});
+  std::vector<float> P(nv * 3), A(nv * 5);
+  for (std::size_t v = 0; v < nv; ++v) {
+    const double p[3] = {m.pos[v].x, m.pos[v].y, m.pos[v].z};
+    for (int k = 0; k < 3; ++k) P[v * 3 + k] = float(p[k]);
+    A[v * 5] = float(m.uv[v][0]), A[v * 5 + 1] = float(m.uv[v][1]);
+    A[v * 5 + 2] = float(m.nrm[v].x), A[v * 5 + 3] = float(m.nrm[v].y), A[v * 5 + 4] = float(m.nrm[v].z);
+  }
+  std::vector<unsigned> in, out(tris.size() * 3);
+  in.reserve(tris.size() * 3);
+  for (const auto &t : tris) in.insert(in.end(), {t[0], t[1], t[2]});
+  const float weights[5] = {1.0f, 1.0f, 0.5f, 0.5f, 0.5f};
+  float err = 0;
+  // the borders of the mesh (a sleeve's open end, a cut at the neck) keep their place; seams between materials and
+  // UV islands collapse on both sides together
+  std::size_t n = meshopt_simplifyWithAttributes(out.data(), in.data(), in.size(), P.data(), nv, sizeof(float) * 3,
+                                                 A.data(), sizeof(float) * 5, weights, 5, nullptr, target * 3, 1.0f,
+                                                 meshopt_SimplifyLockBorder, &err);
+  if (n > target * 3) {  // the locked borders hold too many: let them move too
+    n = meshopt_simplifyWithAttributes(out.data(), in.data(), in.size(), P.data(), nv, sizeof(float) * 3, A.data(),
+                                       sizeof(float) * 5, weights, 5, nullptr, target * 3, 1.0f, 0, &err);
+  }
+  if (n > target * 3) {  // still too many (many small separate pieces): the plain simplifier, then dropping
+    n = meshopt_simplify(out.data(), in.data(), in.size(), P.data(), nv, sizeof(float) * 3, target * 3, 1.0f, 0, &err);
+    if (n > target * 3) n = target * 3;
+  }
+  // the vertices still used, renumbered
+  std::vector<unsigned> remap(nv, ~0u);
+  DffMesh r = m;
+  r.pos.clear(), r.nrm.clear(), r.uv.clear(), r.bone.clear(), r.weight.clear(), r.tris.clear();
+  for (std::size_t i = 0; i < n; i += 3) {
+    std::array<unsigned, 4> t{out[i], out[i + 1], out[i + 2], vmat[out[i]]};
+    for (int c = 0; c < 3; ++c) {
+      unsigned &w = remap[t[c]];
+      if (w == ~0u) {
+        w = unsigned(r.pos.size());
+        r.pos.push_back(m.pos[t[c]]), r.nrm.push_back(m.nrm[t[c]]), r.uv.push_back(m.uv[t[c]]);
+        if (t[c] < m.bone.size()) r.bone.push_back(m.bone[t[c]]);
+        if (t[c] < m.weight.size()) r.weight.push_back(m.weight[t[c]]);
+      }
+      t[c] = w;
+    }
+    r.tris.push_back(t);
+  }
+  log += fmt("the skin reduced from %zu to %zu triangles, %zu vertices (deviation %.2f%% of its size; one model holds "
+             "21845 triangles, half of them with the inner layer)\n", before, r.tris.size(), r.pos.size(),
+             double(err) * 100.0);
+  m = std::move(r);
+}
+
 }  // namespace
 
 bool Packs::add(const std::string &path) {
@@ -1741,9 +1828,12 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
     for (int need : {0, 2, 3, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 40, 55})
       if (!skel.count(need)) fail(fmt("the disc's skeleton has no bone %d", need));
 
+    log += fmt("%s: %zu vertices, %zu triangles, %zu materials, %zu bones, %zu textures\n", what, m.pos.size(),
+               m.tris.size(), m.matTex.size(), m.boneAt.size(), images.size());
+    // the inner layer doubles the triangles: half the model's room for the skin then
+    const std::size_t room = o.innerLayer ? 10900 : 21800;
+    reduceSkin(m, o.maxSkinTris ? std::min(o.maxSkinTris, room) : room, log);
     const std::size_t nb = m.boneAt.size(), nv = m.pos.size();
-    log += fmt("%s: %zu vertices, %zu triangles, %zu materials, %zu bones, %zu textures\n", what, nv, m.tris.size(),
-               m.matTex.size(), nb, images.size());
 
     // the bones by name, each to its disc bone
     std::map<std::string, int> byName;

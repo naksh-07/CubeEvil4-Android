@@ -382,6 +382,7 @@ int gFront = 0;  // the deck that plays the wanted track
 std::atomic<int> gWantTrack(-1);
 std::atomic<int> gWantGain(0);   // 0..256
 std::atomic<int> gLevel(0);      // the louder deck's crossfade share now, 0..256 (for the game's ducking)
+std::atomic<int> gCut(0);        // 1: silent at once, no fade (a remake radio call; re4_mod_music_cut)
 
 void close(Deck& d)
 {
@@ -676,6 +677,14 @@ void re4_mod_music_want(int track, int gain)
     gWantGain.store(gain < 0 ? 0 : gain > 256 ? 256 : gain);
 }
 
+// runtime/music.cpp: 1 = the music falls silent at once, without the crossfade (a radio call: DevJunior,
+// 20.11.2026, "the calls should stop the mod's songs dead"); the track stays open at gain 0 and fades back in
+// where it was when it is wanted again
+void re4_mod_music_cut(int on)
+{
+    gCut.store(on ? 1 : 0);
+}
+
 // The music's crossfade share now (0..256, its volume aside): how much the game's own music gives way
 // (runtime/music.cpp)
 int re4_mod_music_level(void)
@@ -710,6 +719,11 @@ void re4_mod_music_mix(short* lr, unsigned frames)
         gDeck[gFront].target = 0.0f;
     }
     const float fade = 1.0f / (kFadeSeconds * (float) kRate);
+    if (gCut.load()) {
+        for (Deck& d : gDeck) {
+            d.gain = d.target = 0.0f;
+        }
+    }
     int level = 0;
     for (Deck& d : gDeck) {
         if (d.track < 0 || d.dead) {

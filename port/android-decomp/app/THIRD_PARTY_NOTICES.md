@@ -33,3 +33,10 @@ The core decodes the OGG and MP3 files of a music mod pack (`port/whole/runtime/
 [stb_vorbis](https://github.com/nothings/stb) v1.24 by Sean Barrett (public domain or MIT, at the user's choice; the
 text at the end of `port/third_party/stb_vorbis/stb_vorbis.c`) and [minimp3](https://github.com/lieff/minimp3) by
 lieff (CC0 1.0, `port/third_party/minimp3/LICENSE`), both unchanged.
+
+## bcdec and meshoptimizer (the Studio's RE4 Remake import)
+
+The Studio decodes the RE4 Remake's BC1..BC7 textures with [bcdec](https://github.com/iOrange/bcdec) by Sergii
+Kudlai (`src/main/cpp/third_party/bcdec.h`, MIT or Unlicense, the text at the end of the file) and reduces skins
+with more triangles than one model holds with the simplifier of [meshoptimizer](https://github.com/zeux/meshoptimizer)
+0.24 by Arseny Kapoulkine (`src/main/cpp/third_party/meshoptimizer/`, MIT, `LICENSE.md` there), both unchanged.

@@ -38,6 +38,7 @@
 extern "C" void re4_add_frame_hook(void (*hook)(unsigned));  // runtime/pad.cpp
 extern "C" int re4_sound_volume(int music);                   // runtime/sound_volume.cpp
 extern "C" int re4_stealth_victim(void* character);           // runtime/finisher.cpp
+extern "C" int re4_codec_active(void);                        // runtime/codec_call.cpp
 extern cPlayer* pPL;
 
 namespace {
@@ -140,10 +141,13 @@ void frame(unsigned)
         return;
     }
     int want = -1;
-    const bool hard = !pG || !pPL || pG->pl_type != 0 || StaFlagChk(pG, STA_MOVIE_ON) || StaFlagChk(pG, STA_DIEDEMO);
+    // a remake radio call: the mod's music stops dead (no crossfade), the fight state stays as it was
+    const bool call = re4_codec_active() != 0;
+    re4_mod_music_cut(call ? 1 : 0);
+    const bool hard = call || !pG || !pPL || pG->pl_type != 0 || StaFlagChk(pG, STA_MOVIE_ON) || StaFlagChk(pG, STA_DIEDEMO);
     const bool soft = !hard && (StaFlagChk(pG, STA_EVENT) || StaFlagChk(pG, STA_SUSPEND));
     gBlocked = hard || soft ? gBlocked + 1 : 0;
-    if (hard && gBattle) {
+    if (hard && !call && gBattle) {
         // Leon's death, a movie: the fight is over (after a continue the room starts anew with the same id)
         gBattle = false;
         gNearFrames = gCalmFrames = 0;
