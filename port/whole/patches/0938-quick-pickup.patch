@@ -1,12 +1,12 @@
 # Patch 0938 (wish of DevJunior, 19.11.2026: "the pick-ups of the remake, so you do not stop so much on your way").
 # Not a bug of the prototype: a port feature of the mods (with the app's "Remake movement"). game/sce_at.cpp
-# sceAtFunc_item: money and the ammunition and healing items the case takes by itself (PutInCase) are taken at once,
+# sceAtFunc_item: money, treasures and the ammunition and healing items the case takes by itself (PutInCase) are taken at once,
 # without the zoom and the question; the message shows without stopping the game and closes after 45 frames; the
-# clean-up is sceAtGetItem's (sceAtQuickItemTask). Everything else (weapons, treasures, keys, a full case) stays the
+# clean-up is sceAtGetItem's (sceAtQuickItemTask). Everything else (weapons, keys, files, a full case) stays the
 # game's.
 --- a/src/game/sce_at.cpp
 +++ b/src/game/sce_at.cpp
-@@ -1491,6 +1491,94 @@
+@@ -1491,6 +1491,102 @@
      SceUpCutEnd();
  }
  
@@ -67,6 +67,14 @@
 +        cMes.MesSetNumber(0, pG->peseta - money, 0);
 +        cMes.MesSet(0x14, 0x64, y, 0x10000011 | 0x80, 0, 0, 4);
 +        re4_quick_pickup_log(it->item_id, (int) (pG->peseta - money), 8);
++        break;
++    case 5:    /* treasures (DevJunior, 19.11.2026: "the treasures too") */
++    case 0xC:
++        ItemMgr.get(it->item_id, it->item_num);
++        SndCall(0, 0x13, 0, 0, 0, 0);
++        cMes.MesSet(0x15, 0x64, y, 0x11 | 0x80, 0, 0, 4);
++        cMes.SetItemName(0, it->item_id);
++        re4_quick_pickup_log(it->item_id, 1, 5);
 +        break;
 +    case 2:  /* ammunition */
 +    case 6:  /* healing */
