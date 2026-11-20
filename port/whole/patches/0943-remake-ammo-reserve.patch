@@ -6,7 +6,7 @@
 # re4_ammo_reserve_on).
 --- a/src/game/cockpit.cpp
 +++ b/src/game/cockpit.cpp
-@@ -556,6 +556,132 @@
+@@ -556,6 +556,134 @@
  // Per-frame ammo display: the equipped weapon's loaded count as three digit ids (leading zeros
  // hidden; the "empty" id when 0), and the bullet type icon (IDC_BLLT_ICON) for the weapon, parented
  // to the HUD frame; hidden for weapons without a counter (knife, infinite launchers).
@@ -81,7 +81,7 @@
 +        }
 +    }
 +    {
-+        const f32 s = 0.62f;
++        const f32 s = 0.62f; /* the reserve's size against the loaded rounds' digits */
 +        f32 pitch = reserveBaseX[0] - reserveBaseX[1];
 +        f32 minX = u[0]->ver[0].x, maxX = minX, minY = u[0]->ver[0].y;
 +        f32 shift;
@@ -99,14 +99,16 @@
 +            minY = u[0]->ver[v].y < minY ? u[0]->ver[v].y : minY;
 +        }
 +        cx = (minX + maxX) * 0.5f;
-+        shift = show ? -0.5f * pitch : 0.0f;
-+        for (k = 0; k < 3; k++) {
-+            u[k]->pos0.x = reserveBaseX[k] + shift;
-+        }
 +        if (reserve > 999) {
 +            reserve = 999;
 +        }
 +        n = reserve >= 100 ? 3 : reserve >= 10 ? 2 : 1;
++        /* the loaded rounds move left by as much as the reserve's digits need (half a small step each, at least half a
++           step): one digit 0.5, two 0.62, three 0.93 steps; the two numbers never touch */
++        shift = show ? -pitch * (0.5f * s * (f32) n > 0.5f ? 0.5f * s * (f32) n : 0.5f) : 0.0f;
++        for (k = 0; k < 3; k++) {
++            u[k]->pos0.x = reserveBaseX[k] + shift;
++        }
 +        d[0] = reserve / 100;
 +        d[1] = reserve / 10 % 10;
 +        d[2] = reserve % 10;
@@ -139,22 +141,25 @@
  void BulletInfo::move()
  {
      u8 digit[3];
-@@ -671,6 +797,19 @@
+@@ -671,6 +799,22 @@
      if (digit[2] == 0) {
          u[2]->be_flag &= ~8;
      }
-+    /* port (patch 0943, mods): the reserve beside the loaded rounds, as in the remake */
++    /* port (patch 0943, mods): the reserve beside the loaded rounds, as in the remake: the rounds in the case of this
++       weapon's own ammunition (its bullet type, as the game reloads it; weapons sharing one kind show the same) */
 +    {
-+        u16 bid;
++        u16 bid = 0xFFFF;
++        int show = re4_ammo_reserve_on() && dispBulletDigit(wepNo) == 1 && noBullet == 0 && digit[0] != 13
++                   && (u[0]->be_flag & 8);
 +
-+        if (itemType(im->weaponId()) == 1) {
-+            bid = WeaponId2BulletId(im->weapon()->id, im->weapon()->getBulletType());
-+        } else {
-+            bid = WeaponId2BulletId(im->weaponId(), 0);
++        if (show) { /* only for a gun: WeaponId2BulletId logs every weapon it does not know */
++            if (itemType(im->weaponId()) == 1) {
++                bid = WeaponId2BulletId(im->weapon()->id, im->weapon()->getBulletType());
++            } else {
++                bid = WeaponId2BulletId(im->weaponId(), 0);
++            }
 +        }
-+        bulletReserve(u, re4_ammo_reserve_on() && dispBulletDigit(wepNo) == 1 && noBullet == 0 && digit[0] != 13
-+                             && (u[0]->be_flag & 8) && bid != 0,
-+                      bid != 0 ? ItemMgr.num(bid) : 0);
++        bulletReserve(u, show && bid != 0xFFFF && bid != 0, bid != 0xFFFF ? ItemMgr.num(bid) : 0);
 +    }
  }
  
