@@ -2231,7 +2231,9 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
         if (it == childOf.end() || std::fabs(unit(d).y) > std::fabs(unit(skel.at(it->second).at - skel.at(b.parent).at).y))
           childOf[b.parent] = id;
       }
-      std::map<int, V3> hisMiddle;  // an end bone (the head, a hand): the middle of Leon's own vertices on it
+      // an end bone (the head, a hand): round the middle of the skin's own vertices on it (round Leon's pulled the
+      // helmet forward and down onto the chest: "it looks like a dinosaur", DevJunior, 20.11.2026)
+      std::map<int, V3> hisMiddle;
       auto radial = [&](int bone, const V3 &p, V3 &foot) {
         const V3 j = skel.at(bone).at;
         auto c = childOf.find(bone);
@@ -2252,15 +2254,19 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
           if (r > best) best = r, b = bone;
         return b;
       };
+      // his body without the jacket (pl00's entry 6) and without the outfits' extras: an armour is measured against
+      // his build, not his coat
       std::vector<SrcVert> leon;
-      for (std::size_t e : {0, 2, 4, 6, 14, 17})
+      for (std::size_t e : {0, 2, 4, 14, 17})
         if (e < gc.count() && gc.kind(e) == "BIN" && !gc.entry(e).empty()) collectSkin(gc.entry(e), skel, leon);
       std::map<int, std::vector<double>> his, its;  // bone -> the distances of its vertices
       {
         std::map<int, std::pair<V3, int>> acc;
-        for (const auto &sv : leon) {
-          const int b = heaviest(sv.w);
-          if (b >= 0) acc[b].first = acc[b].first + sv.p, ++acc[b].second;
+        for (std::size_t v = 0; v < nv; ++v) {
+          int b = -1, best = -1;
+          for (const auto &[bone, r] : W[v])
+            if (r > best) best = r, b = bone;
+          if (b >= 0) acc[b].first = acc[b].first + P[v], ++acc[b].second;
         }
         for (const auto &[b, a] : acc)
           if (!childOf.count(b) && a.second > 0) hisMiddle[b] = a.first * (1.0 / a.second);
@@ -2292,7 +2298,8 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
       std::size_t all = 0;
       for (const auto &[b, sc] : its) {
         auto h = his.find(b);
-        if (h == his.end() || h->second.size() < 8 || sc.size() < 8) continue;
+        // measured on the bones with a segment (an end bone's middle is the skin's own, not his)
+        if (h == his.end() || h->second.size() < 8 || sc.size() < 8 || !childOf.count(b)) continue;
         wants.push_back({outer(h->second) / std::max(1e-6, outer(sc)), sc.size()});
         all += sc.size();
       }
@@ -2307,7 +2314,8 @@ void skinOnLeon(const Bytes &gcData, const std::string &gcName, DffMesh m, const
       want = std::max(0.7, std::min(1.0, want));
       const double kAll = 1.0 - o.fitBody * (1.0 - want);
       std::map<int, double> k;
-      for (const auto &[b, sc] : its) k[b] = kAll;
+      // the head half as much (a helmet is part of the look; the hands and feet as the rest)
+      for (const auto &[b, sc] : its) k[b] = b == 4 ? (1.0 + kAll) * 0.5 : kAll;
       const std::string ks = fmt("%.2f", kAll);
       double lo = 1e30, hi = -1e30, lo2 = 1e30, hi2 = -1e30;
       for (std::size_t v = 0; v < nv; ++v) {
