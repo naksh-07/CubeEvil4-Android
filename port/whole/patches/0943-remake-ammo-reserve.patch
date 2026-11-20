@@ -1,12 +1,12 @@
 # Port patch (mods; wish of DevJunior, 20.11.2026: "the total rounds of each weapon beside the magazine's"): the HUD
 # shows the rounds of the equipped gun's own ammunition in the case beside the loaded rounds, as the 2023 remake does.
 # Three copies of the life meter's units digit (unit 0xB) in the free id classes 54..56 under the digits' own parent,
-# half the size (0.42 with three digits), right of the loaded rounds, their tops on the digits' top; the loaded rounds
+# 0.42 the size (0.36 with three digits), right of the loaded rounds, a little over their top; the loaded rounds
 # stay on their unlit segments. Hidden with the counter (knife, empty, endless ammo) and for thrown weapons. On with the
 # app's "Remake movement" (runtime/quick_pickup.cpp re4_ammo_reserve_on).
 --- a/src/game/cockpit.cpp
 +++ b/src/game/cockpit.cpp
-@@ -556,6 +556,136 @@
+@@ -556,6 +556,139 @@
  // Per-frame ammo display: the equipped weapon's loaded count as three digit ids (leading zeros
  // hidden; the "empty" id when 0), and the bullet type icon (IDC_BLLT_ICON) for the weapon, parented
  // to the HUD frame; hidden for weapons without a counter (knife, infinite launchers).
@@ -83,7 +83,7 @@
 +    {
 +        f32 s; /* the reserve's size against the loaded rounds' digits */
 +        f32 pitch = reserveBaseX[0] - reserveBaseX[1];
-+        f32 minX = u[0]->ver[0].x, maxX = minX, maxY = u[0]->ver[0].y;
++        f32 minX = u[0]->ver[0].x, maxX = minX, maxY = u[0]->ver[0].y, minY = maxY;
 +        f32 shift;
 +        f32 cx;
 +        u8 d[3];
@@ -97,6 +97,7 @@
 +            minX = u[0]->ver[v].x < minX ? u[0]->ver[v].x : minX;
 +            maxX = u[0]->ver[v].x > maxX ? u[0]->ver[v].x : maxX;
 +            maxY = u[0]->ver[v].y > maxY ? u[0]->ver[v].y : maxY;
++            minY = u[0]->ver[v].y < minY ? u[0]->ver[v].y : minY;
 +        }
 +        cx = (minX + maxX) * 0.5f;
 +        if (reserve > 999) {
@@ -106,7 +107,7 @@
 +        /* the loaded rounds stay on their unlit "8" segments (the device test of 20.11.2026: moved left they left
 +           them, and over a grenade's "x"); the reserve, a size smaller with three digits, keeps clear of the ring */
 +        shift = 0.0f;
-+        s = n >= 3 ? 0.42f : 0.5f;
++        s = n >= 3 ? 0.36f : 0.42f;
 +        for (k = 0; k < 3; k++) {
 +            u[k]->pos0.x = reserveBaseX[k] + shift;
 +        }
@@ -133,8 +134,10 @@
 +            }
 +            /* centre: half a step and half a small step right of the units digit; top on the digits' top (where the
 +               dial is wider) */
-+            r->pos0.x = u[0]->pos0.x + cx + pitch * (0.5f + 0.5f * s) + (f32) i * pitch * s - s * cx;
-+            r->pos0.y = u[0]->pos0.y + (1.0f - s) * maxY;
++            /* (device test of 20.11.2026 with the Remake HUD: "the number is too close to the life line") closer to the
++               loaded rounds and raised a little over their top, where the dial is wider */
++            r->pos0.x = u[0]->pos0.x + cx + pitch * (0.4f + 0.5f * s) + (f32) i * pitch * s - s * cx;
++            r->pos0.y = u[0]->pos0.y + (1.0f - s) * maxY + 0.12f * (maxY - minY);
 +            r->pos0.z = u[0]->pos0.z;
 +        }
 +    }
@@ -143,7 +146,7 @@
  void BulletInfo::move()
  {
      u8 digit[3];
-@@ -671,6 +801,23 @@
+@@ -671,6 +804,23 @@
      if (digit[2] == 0) {
          u[2]->be_flag &= ~8;
      }
