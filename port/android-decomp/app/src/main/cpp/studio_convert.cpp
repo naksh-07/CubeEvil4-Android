@@ -6,6 +6,7 @@
 #include "third_party/meshoptimizer/meshoptimizer.h"  // the simplifier (Arseny Kapoulkine, MIT): too dense skins
 #include <cctype>
 #include "studio_convert.h"
+#include "texture.h"  // DecodeTpl: the disc's pictures (the PC HUD: only the changed ones)
 
 #include <algorithm>
 #include <array>
@@ -2679,6 +2680,332 @@ bool ConvertReWeapon(const Bytes &gcData, const std::string &gcName, const std::
     if (why) *why = e.what();
     return false;
   }
+}
+
+namespace {
+
+// An image padded to whole tiles (its edge repeated): GX keeps the tiles whole, the header the image's own size
+Rgba padTiles(const Rgba &in, int tw = 4, int th = 4) {
+  Rgba o;
+  o.w = (in.w + tw - 1) / tw * tw, o.h = (in.h + th - 1) / th * th;
+  o.px.resize(std::size_t(o.w) * std::size_t(o.h) * 4);
+  for (int y = 0; y < o.h; ++y)
+    for (int x = 0; x < o.w; ++x) {
+      const int sx = std::min(x, in.w - 1), sy = std::min(y, in.h - 1);
+      std::memcpy(&o.px[(std::size_t(y) * std::size_t(o.w) + std::size_t(x)) * 4],
+                  &in.px[(std::size_t(sy) * std::size_t(in.w) + std::size_t(sx)) * 4], 4);
+    }
+  return o;
+}
+
+// GX RGBA8 (6): per 4x4 tile 32 bytes of alpha and red, then 32 of green and blue
+Bytes encRgba8(const Rgba &in) {
+  const Rgba img = padTiles(in);
+  Bytes out;
+  for (int by = 0; by < img.h; by += 4)
+    for (int bx = 0; bx < img.w; bx += 4) {
+      for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) {
+          const auto *c = &img.px[(std::size_t(by + y) * std::size_t(img.w) + std::size_t(bx + x)) * 4];
+          out.push_back(c[3]), out.push_back(c[0]);
+        }
+      for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) {
+          const auto *c = &img.px[(std::size_t(by + y) * std::size_t(img.w) + std::size_t(bx + x)) * 4];
+          out.push_back(c[1]), out.push_back(c[2]);
+        }
+    }
+  return out;
+}
+
+// GX IA8 (3) of any size: alpha, then the grey
+Bytes encIa8Any(const Rgba &in) {
+  const Rgba img = padTiles(in);
+  Bytes out;
+  for (int by = 0; by < img.h; by += 4)
+    for (int bx = 0; bx < img.w; bx += 4)
+      for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) {
+          const auto *c = &img.px[(std::size_t(by + y) * std::size_t(img.w) + std::size_t(bx + x)) * 4];
+          out.push_back(c[3]), out.push_back(std::uint8_t((c[0] * 3 + c[1] * 6 + c[2]) / 10));
+        }
+  return out;
+}
+
+// GX I8 (1): 8x4 tiles of grey
+Bytes encI8Any(const Rgba &in) {
+  const Rgba img = padTiles(in, 8, 4);
+  Bytes out;
+  for (int by = 0; by < img.h; by += 4)
+    for (int bx = 0; bx < img.w; bx += 8)
+      for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 8; ++x) {
+          const auto *c = &img.px[(std::size_t(by + y) * std::size_t(img.w) + std::size_t(bx + x)) * 4];
+          out.push_back(std::uint8_t((c[0] * 3 + c[1] * 6 + c[2]) / 10));
+        }
+  return out;
+}
+
+// GX RGB5A3 (5): opaque 1rrrrrgggggbbbbb, else 0aaarrrrggggbbbb
+Bytes encRgb5a3(const Rgba &in) {
+  const Rgba img = padTiles(in);
+  Bytes out;
+  for (int by = 0; by < img.h; by += 4)
+    for (int bx = 0; bx < img.w; bx += 4)
+      for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x) {
+          const auto *c = &img.px[(std::size_t(by + y) * std::size_t(img.w) + std::size_t(bx + x)) * 4];
+          unsigned v;
+          if (c[3] >= 0xF8) v = 0x8000u | unsigned(c[0] >> 3) << 10 | unsigned(c[1] >> 3) << 5 | unsigned(c[2] >> 3);
+          else v = unsigned(c[3] >> 5) << 12 | unsigned(c[0] >> 4) << 8 | unsigned(c[1] >> 4) << 4 | unsigned(c[2] >> 4);
+          out.push_back(std::uint8_t(v >> 8)), out.push_back(std::uint8_t(v));
+        }
+  return out;
+}
+
+// An effect texture bank (IdTexDataLoad, version 0xB): each TPL's id and its byte range
+struct BankTpl {
+  unsigned id;
+  std::size_t at, end;
+};
+std::vector<BankTpl> bankTpls(const Bytes &d, bool be) {
+  auto r32 = [&](std::size_t p) { return be ? be32(d, p) : le32(d, p); };
+  auto r16 = [&](std::size_t p) { return be ? be16(d, p) : le16(d, p); };
+  if (d.size() < 0x20 || r32(0) != 0xB) fail("not a texture bank (version 0xB)");
+  const std::uint32_t ofsId = r32(4), ofsTpl = r32(0x18), ofsAnm = r32(0x1C), n = r32(ofsId);
+  if (r32(ofsTpl) != n) fail("the texture bank's tables differ");
+  // each TPL runs to the next one's start (in the bank's order, not the table's), the last to the animations
+  std::vector<std::size_t> starts;
+  for (std::uint32_t i = 0; i < n; ++i) starts.push_back(ofsTpl + r32(ofsTpl + 4 + i * 4));
+  std::vector<std::size_t> sorted = starts;
+  sorted.push_back(ofsAnm > starts.back() ? ofsAnm : d.size());
+  std::sort(sorted.begin(), sorted.end());
+  std::vector<BankTpl> out;
+  for (std::uint32_t i = 0; i < n; ++i) {
+    const std::size_t at = starts[i];
+    const std::size_t end = *std::upper_bound(sorted.begin(), sorted.end(), at);
+    if (end > d.size()) fail("the texture bank's TPLs run past its end");
+    out.push_back({r16(ofsId + 4 + i * 8), at, end});
+  }
+  return out;
+}
+
+}  // namespace
+
+bool ConvertCoreHud(const Bytes &gcData, const Bytes &pcData, const Packs &packs, const Options &o, Bytes &result,
+                    std::string &log, std::string *why) {
+  try {
+    const Archive gc(gcData, true);
+    const Bytes pcBytes = IsLfs(pcData) ? UnpackLfs(pcData) : pcData;
+    const Archive pc(pcBytes, false);
+    // the cockpit's textures: core slot 0x1D (CORE_COCKPIT_TEXTURE), sub-file 0x19
+    const std::size_t kBank = 0x19;
+    if (gc.count() <= kBank || pc.count() <= kBank || gc.kind(kBank) != "EFF" || pc.kind(kBank) != "EFF")
+      fail("not the core archives (etc/core.das, etc/core.udas): no cockpit textures at entry 25");
+    const Bytes g = gc.entry(kBank), p = pc.entry(kBank);
+    const auto gt = bankTpls(g, true), pt = bankTpls(p, false);
+    std::map<unsigned, const BankTpl *> pcById;
+    for (const auto &t : pt) pcById[t.id] = &t;
+    // which PC texture takes a disc texture's place: the one the PC's HUD layouts (the id files, kind UWF) put on the
+    // same unit (mostly the same id; the PC moved a few, and gave some unused ids other pictures: controller prompts).
+    // A texture no layout uses (the game's code picks it: sparkles, the scope) stays the disc's.
+    std::map<unsigned, std::map<unsigned, int>> votes;
+    for (std::size_t e = 0; e < std::min(gc.count(), pc.count()); ++e) {
+      if (gc.kind(e) != "UWF" || pc.kind(e) != "UWF") continue;
+      const Bytes x = gc.entry(e), y = pc.entry(e);
+      if (x.size() < 8 || y.size() < 8) continue;
+      std::map<std::pair<int, int>, std::pair<int, int>> pcUnit;  // (id, no) -> (texture, mask)
+      for (unsigned k = 0; k < y[5] && 8 + (k + 1) * 0x8C <= y.size(); ++k) {
+        const std::size_t q = 8 + k * 0x8C;
+        pcUnit[{y[q + 4], y[q + 5]}] = {y[q + 0xB], y[q + 0x6E]};
+      }
+      for (unsigned k = 0; k < x[5] && 8 + (k + 1) * 0x8C <= x.size(); ++k) {
+        const std::size_t q = 8 + k * 0x8C;
+        auto it = pcUnit.find({x[q + 4], x[q + 5]});
+        if (it == pcUnit.end()) continue;
+        ++votes[x[q + 0xB]][unsigned(it->second.first)];
+        if (x[q + 0x6E] != 0xFF && it->second.second != 0xFF) ++votes[x[q + 0x6E]][unsigned(it->second.second)];
+      }
+    }
+    std::map<unsigned, unsigned> pcFor;
+    for (const auto &[gid, tally] : votes)
+      pcFor[gid] = std::max_element(tally.begin(), tally.end(), [](const auto &a, const auto &b) { return a.second < b.second; })->first;
+
+    // what each disc texture becomes: the PC one of the same id with as many pictures, its shape near the disc's
+    struct Plan {
+      std::vector<Rgba> images;  // the pack's, one per picture; empty: the disc's TPL as it is
+    };
+    std::vector<Plan> plans(gt.size());
+    std::size_t taken = 0;
+    for (std::size_t i = 0; i < gt.size(); ++i) {
+      const BankTpl &t = gt[i];
+      const std::uint32_t n = be32(g, t.at + 4);
+      auto mapped = pcFor.find(t.id);
+      if (mapped == pcFor.end()) continue;  // no layout uses it
+      // the GameCube's own buttons stay (the PC shows its controller's: an "X" where the disc has the green A, the
+      // B left out), as does the grenade of the weapon circle (an eye in the PC's picture of that place)
+      if (t.id == 40 || t.id == 42 || t.id == 53) {
+        log += fmt("  id %3u: the GameCube's own (a button or the grenade): the disc's\n", t.id);
+        continue;
+      }
+      auto it = pcById.find(mapped->second);
+      if (it == pcById.end()) continue;
+      const BankTpl &q = *it->second;
+      const std::uint32_t pn = le32(p, q.at + 4);
+      const std::size_t gh0 = t.at + be32(g, t.at + 12), ph0 = q.at + le32(p, q.at + 12);
+      const double ga = double(be16(g, gh0 + 2)) / std::max(1, int(be16(g, gh0))),
+                   pa = double(le16(p, ph0 + 2)) / std::max(1, int(le16(p, ph0)));
+      if (pn != n || std::fabs(std::log(ga / pa)) > 0.35) {
+        log += fmt("  id %3u: the PC's differs (%u pictures %ux%u, the disc's %u %ux%u): the disc's\n", t.id, pn,
+                   le16(p, ph0 + 2), le16(p, ph0), n, be16(g, gh0 + 2), be16(g, gh0));
+        continue;
+      }
+      bool ok = true;
+      for (std::uint32_t k = 0; k < n && ok; ++k) {
+        const std::size_t ho = q.at + le32(p, q.at + 12 + k * 8), data = q.at + le32(p, ho + 8);
+        Packs::Image im;
+        std::string w;
+        if (data + 8 > p.size() || !packs.image(le32(p, data), le32(p, data + 4), im, &w)) {
+          log += fmt("  id %3u: picture %u not in the pack (%s): the disc's\n", t.id, k, w.c_str());
+          ok = false;
+          break;
+        }
+        Rgba r;
+        r.w = im.width, r.h = im.height, r.px = std::move(im.rgba);
+        plans[i].images.push_back(std::move(r));
+      }
+      // only what the mod changed: a picture as the disc's (its art in the PC's size) stays the disc's, smaller in
+      // its own format (the pack holds the PC's whole core: effects, fonts, film grain)
+      if (ok) {
+        const Bytes tplBytes(g.begin() + long(t.at), g.begin() + long(t.end));
+        double worst = 0;
+        for (std::uint32_t k = 0; k < n; ++k) {
+          re4::Texture d;
+          try {
+            d = re4::DecodeTpl(std::vector<std::uint8_t>(tplBytes.begin(), tplBytes.end()), k);
+          } catch (...) {
+            worst = 1e9;
+            break;
+          }
+          if (d.width == 0 || d.rgba.size() < std::size_t(d.width) * d.height * 4) {
+            worst = 1e9;
+            break;
+          }
+          const Rgba small = resize(plans[i].images[k], int(d.width), int(d.height));
+          double sum = 0;
+          for (std::size_t q = 0; q < d.rgba.size(); q += 4) {
+            const double ad = d.rgba[q + 3] / 255.0, as = small.px[q + 3] / 255.0;
+            double e = std::fabs(ad - as) * 255.0;
+            for (int ch = 0; ch < 3; ++ch) e += std::fabs(d.rgba[q + ch] * ad - small.px[q + ch] * as) / 3.0;
+            sum += e;
+          }
+          worst = std::max(worst, sum / double(d.width * d.height));
+        }
+        if (worst < o.hudSame) {
+          log += fmt("  id %3u: as the disc's (difference %.1f): the disc's\n", t.id, worst);
+          plans[i].images.clear();
+          continue;
+        }
+        log += fmt("  id %3u: changed (difference %.1f)\n", t.id, worst);
+      }
+      if (!ok) plans[i].images.clear();
+      else ++taken;
+    }
+    if (!taken) fail("none of the HUD's textures is in the picked pack (07000000.pack)");
+
+    // the sizes: the disc's times `scale`, from 4 down until the core fits the place of a larger core (3 MB)
+    const std::size_t kCoreMax = 0x300000;
+    for (double scale : {4.0, 3.0, 2.0, 1.5, 1.0}) {
+      for (int fallback = 0; fallback < 2; ++fallback) {  // 1: RGB5A3 (2 bytes) for the coloured ones
+        Bytes bank(g.begin(), g.begin() + long(be32(g, 0x18)));  // header, id and other tables up to the TPL table
+        const std::uint32_t ofsTpl = be32(g, 0x18);
+        Bytes table(4 + gt.size() * 4, 0);
+        set32(table, 0, std::uint32_t(gt.size()));
+        bank.insert(bank.end(), table.begin(), table.end());
+        std::size_t bytesNew = 0;
+        std::string detail;
+        for (std::size_t i = 0; i < gt.size(); ++i) {
+          pad(bank);
+          set32(bank, ofsTpl + 4 + i * 4, std::uint32_t(bank.size() - ofsTpl));
+          const BankTpl &t = gt[i];
+          if (plans[i].images.empty()) {
+            bank.insert(bank.end(), g.begin() + long(t.at), g.begin() + long(t.end));
+            continue;
+          }
+          // a new TPL: the disc's wrap and filter settings, each picture the disc's size times the scale
+          const std::uint32_t n = be32(g, t.at + 4);
+          const std::size_t base = bank.size();
+          Bytes tpl(12 + n * 8, 0);
+          set32(tpl, 0, 0x0020AF30), set32(tpl, 4, n), set32(tpl, 8, 12);
+          for (std::uint32_t k = 0; k < n; ++k) {
+            const std::size_t gho = t.at + be32(g, t.at + 12 + k * 8);
+            const unsigned gw = be16(g, gho + 2), gh = be16(g, gho), gf = be32(g, gho + 4);
+            const Rgba &src = plans[i].images[k];
+            const int w = std::max(1, std::min(src.w, int(std::lround(gw * scale)))),
+                      h = std::max(1, std::min(src.h, int(std::lround(gh * scale))));
+            const Rgba img = resize(src, w, h);
+            // the format by what the picture needs: grey without alpha I8 (1 byte), grey IA8 (2), colour with no or hard
+            // alpha CMPR (half a byte), soft alpha RGBA8 (4; RGB5A3, 2, when the core would not fit)
+            bool soft = false, clear = false;
+            for (std::size_t q = 3; q < img.px.size(); q += 4) {
+              soft = soft || (img.px[q] > 16 && img.px[q] < 240);
+              clear = clear || img.px[q] < 128;
+            }
+            const bool grey = gf <= 3;  // I4, I8, IA4, IA8 on the disc
+            unsigned fmtGx;
+            Bytes data;
+            if (grey && (gf <= 1) && !clear) fmtGx = 1, data = encI8Any(img);
+            else if (grey) fmtGx = 3, data = encIa8Any(img);
+            else if (!soft) fmtGx = 14, data = encCmpr(padTiles(img, 8, 8));
+            else if (!fallback) fmtGx = 6, data = encRgba8(img);
+            else fmtGx = 5, data = encRgb5a3(img);
+            static const char *kName[] = {"I4", "I8", "IA4", "IA8", "?", "RGB5A3", "RGBA8", "?", "?", "?", "?", "?", "?",
+                                          "?", "CMPR"};
+            pad(tpl);
+            const std::size_t hd = tpl.size();
+            tpl.resize(hd + 0x24, 0);
+            pad(tpl);
+            const std::size_t at = tpl.size();
+            tpl.insert(tpl.end(), data.begin(), data.end());
+            set32(tpl, 12 + k * 8, std::uint32_t(hd)), set32(tpl, 16 + k * 8, 0);
+            // header: height, width, format, data, then the disc's wrap S/T, filters, LOD bias and edge LOD; one level
+            std::copy(g.begin() + long(gho), g.begin() + long(gho + 0x24), tpl.begin() + long(hd));
+            tpl[hd] = std::uint8_t(h >> 8), tpl[hd + 1] = std::uint8_t(h), tpl[hd + 2] = std::uint8_t(w >> 8),
+            tpl[hd + 3] = std::uint8_t(w);
+            set32(tpl, hd + 4, fmtGx), set32(tpl, hd + 8, std::uint32_t(at));
+            tpl[hd + 0x21] = 0, tpl[hd + 0x22] = 0;  // min and max LOD: the one level
+            if (be32(tpl, hd + 0x10) > 1) set32(tpl, hd + 0x10, 1);  // a mipmap filter without mipmaps: linear
+            if (k == 0) detail += fmt("  id %3u: %u x %ux%u -> %dx%d %s", t.id, n, gw, gh, w, h, kName[fmtGx]);
+          }
+          bytesNew += tpl.size();
+          detail += fmt(", %zu bytes\n", tpl.size());
+          (void) base;
+          bank.insert(bank.end(), tpl.begin(), tpl.end());
+        }
+        pad(bank);
+        const std::uint32_t ofsAnm = be32(g, 0x1C);
+        set32(bank, 0x1C, std::uint32_t(bank.size()));
+        bank.insert(bank.end(), g.begin() + long(ofsAnm), g.end());
+        std::vector<Bytes> entries;
+        for (std::size_t e = 0; e < gc.count(); ++e) entries.push_back(e == kBank ? bank : gc.entry(e));
+        const Bytes body = buildBody(entries, gc.types);
+        if (body.size() > kCoreMax && !(scale == 1.0 && fallback == 1)) continue;
+        if (body.size() > kCoreMax) fail(fmt("the core is too large even at the disc's sizes (%zu bytes)", body.size()));
+        result = buildArchive(gc, body);
+        log += detail;
+        log += fmt("cockpit textures: %zu of %zu from the pack, at %.1f times the disc's size%s (%zu bytes of pictures)\n",
+                   taken, gt.size(), scale, fallback ? ", the coloured ones as RGB5A3" : "", bytesNew);
+        log += fmt("etc/core.das: %zu bytes, data part %zu (the disc's %zu; a core over %u bytes is read to the larger "
+                   "place, at most %zu)\n", result.size(), body.size(), gc.body.size(), 0x234000u, kCoreMax);
+        return true;
+      }
+    }
+    fail("the core does not fit");
+  } catch (const std::exception &e) {
+    if (why) *why = e.what();
+    return false;
+  }
+  return false;
 }
 
 bool IsLfs(const Bytes &data) { return data.size() >= 4 && std::memcmp(data.data(), "RDLX", 4) == 0; }

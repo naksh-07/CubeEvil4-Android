@@ -64,6 +64,9 @@ struct Options {
   // GTA skins and RE4 Remake mods: at most this many triangles of the skin (0: as many as one model holds, 21845,
   // half with the inner layer); a denser skin is reduced
   std::size_t maxSkinTris = 0;
+  // the PC HUD (ConvertCoreHud): a picture this close to the disc's (mean difference per pixel, 0..255) is not the
+  // mod's and stays the disc's
+  double hudSame = 14.0;
 };
 
 // The disc's archive (`gcName` its file name: pl00.drs ...) with the PC mod's (unpacked .udas) converted into it.
@@ -88,6 +91,12 @@ bool ConvertReMod(const Bytes &gc, const std::string &gcName, const std::map<std
 // reduced until it fits the weapon's place (0x70000 bytes).
 bool ConvertReWeapon(const Bytes &gc, const std::string &gcName, const std::map<std::string, Bytes> &files,
                      const std::string &wp, const Options &o, Bytes &out, std::string &log, std::string *why);
+
+// The PC release's HUD (a texture pack 07000000.pack, the Remake HUD mods) into the disc's core (`gc`, etc/core.das):
+// the cockpit's textures (entry 25) of the same id as the PC core's (`pc`, etc/core.udas) from the pack, at a few
+// times the disc's size while the core fits the place of a larger core (3 MB)
+bool ConvertCoreHud(const Bytes &gc, const Bytes &pc, const Packs &packs, const Options &o, Bytes &out,
+                    std::string &log, std::string *why);
 
 // The disc's weapon archive an RE4 Remake weapon (its folder name, wp4000 ...) replaces; "" none known
 const char *ReWeaponTarget(const std::string &wp);
