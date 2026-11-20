@@ -1,0 +1,24 @@
+# Patch 0937 (wish of DevJunior, 19.11.2026: the GTA skin over Leon showed Leon's hand over its glove with a weapon).
+# Not a bug of the prototype: a port feature of the mods. game/pl_leon.cpp cPlLeon::setRightHand: the weapon's grip
+# hand (type 1, Body->pWepHand) goes through re4_skin_hand (runtime/skin_hands.cpp): with a whole-body skin of
+# CubeEvil4 Studio (its own right hand, archive 0x12, folded and marked 0xF0 in byte 0x29) the folded hand instead;
+# on the disc's files and other mods nothing changes.
+--- a/src/game/pl_leon.cpp
++++ b/src/game/pl_leon.cpp
+@@ -151,6 +151,7 @@
+     }
+ }
+ 
++extern "C" void* re4_skin_hand(void* wep); /* port (patch 0937): runtime/skin_hands.cpp */
+ // Right hand model: 0 empty (archive 0x12), 1 the weapon grip hand (Body->pWepHand), anything else
+ // is taken as model data itself. Texture 0x11. A create failure HALTs.
+ void cPlLeon::setRightHand(int type)
+@@ -168,7 +169,7 @@
+         data = PL_ARC_PTR(pG->pPlayer, 0x12);
+         break;
+     case 1:
+-        data = Body->pWepHand;
++        data = re4_skin_hand(Body->pWepHand); /* port (patch 0937, mods): a whole-body skin keeps its own hand */
+         break;
+     default:
+         data = (void*) type;

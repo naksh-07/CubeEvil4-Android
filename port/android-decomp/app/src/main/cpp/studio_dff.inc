@@ -508,7 +508,8 @@ std::string gtaKey(std::string n) {
   return n;
 }
 
-// A BIN of the disc folded into one point: every vertex on the first bone of its first weight entry
+// A BIN of the disc folded into one point: every vertex on the first bone of its first weight entry; marked 0xF0 in
+// byte 0x29
 Bytes foldModel(const Bytes &model, const std::map<int, DiscBone> &skel) {
   Bytes m = model;
   const std::uint32_t wgt = be32(m, 0x14), vtx = be32(m, 0x30);
@@ -525,6 +526,7 @@ Bytes foldModel(const Bytes &model, const std::map<int, DiscBone> &skel) {
     m.at(p) = std::uint8_t(x >> 8), m[p + 1] = std::uint8_t(x), m[p + 2] = std::uint8_t(y >> 8), m[p + 3] = std::uint8_t(y);
     m[p + 4] = std::uint8_t(z >> 8), m[p + 5] = std::uint8_t(z), m[p + 6] = 0, m[p + 7] = 0;
   }
+  m.at(0x29) = 0xF0;  // folded: the game draws no weapon grip hand over the skin's own (runtime/skin_hands.cpp)
   return m;
 }
 
