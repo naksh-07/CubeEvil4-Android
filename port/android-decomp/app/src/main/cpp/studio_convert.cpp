@@ -1954,6 +1954,8 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
                  nv, src.size(), far);
     }
 
+    const std::vector<Weight> Wsoft = W;  // before the plates: the inner layer bends smoothly
+    std::vector<char> plated(nv, 0);
     // Rigid plates round the hips (DevJunior, 19.11.2026: the armour's crotch plate "looks very bad when running"): a
     // separate small piece of the mesh there (its triangles joined by shared vertices, at most kPlate across) is
     // armour, not cloth: all its vertices take the piece's average weights, so it moves as one, without stretching
@@ -2000,7 +2002,7 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
           e.push_back({list[k].first, rr});
           given += rr;
         }
-        for (auto v : vs) W[v] = e;
+        for (auto v : vs) W[v] = e, plated[v] = 1;
         ++plates, plateVerts += vs.size();
       }
       log += fmt("%zu pieces of the mesh; %zu small ones (%zu vertices) move as rigid plates\n", parts2.size(), plates,
@@ -2019,6 +2021,27 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
       if (t[0] >= nv || t[1] >= nv || t[2] >= nv || t[0] == t[1] || t[1] == t[2] || t[0] == t[2]) continue;
       const unsigned mat = t[3] < m.matTex.size() ? t[3] : 0;
       byMat[mat].push_back(facing >= 0 ? std::array<unsigned, 3>{t[0], t[1], t[2]} : std::array<unsigned, 3>{t[0], t[2], t[1]});
+    }
+    // An inner layer (DevJunior, 19.11.2026: "where it breaks, fill those gaps with the same tone"): the whole skin
+    // once more, kInset under its surface (deeper under the rigid plates), with the same texture and the smooth
+    // weights: where plates or pieces part at a bending joint, the inside shows the same colours, not the world.
+    if (o.innerLayer) {
+      const double kInset = 10.0, kInsetPlate = 22.0;
+      P.resize(nv * 2), N.resize(nv * 2), W.resize(nv * 2), m.uv.resize(nv * 2);
+      for (std::size_t v = 0; v < nv; ++v) {
+        P[nv + v] = P[v] - N[v] * (plated[v] ? kInsetPlate : kInset);
+        N[nv + v] = N[v], W[nv + v] = Wsoft[v], m.uv[nv + v] = m.uv[v];
+      }
+      std::size_t inner = 0;
+      for (auto &[mat, list] : byMat) {
+        const std::size_t n = list.size();
+        for (std::size_t k = 0; k < n; ++k) {
+          const auto t = list[k];
+          list.push_back({unsigned(t[0] + nv), unsigned(t[1] + nv), unsigned(t[2] + nv)});
+          ++inner;
+        }
+      }
+      log += fmt("an inner layer of %zu triangles under the surface fills the gaps at the joints\n", inner);
     }
     std::size_t corners = 0;
     for (const auto &[mat, list] : byMat) corners += list.size() * 3;
@@ -2145,10 +2168,11 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
     log += "Leon's own models folded away: " + folded + (o.keepHead ? " (his head kept)" : "") + "\n";
     const Bytes newBody = buildBody(entries, gc.types);
     result = buildArchive(gc, newBody);
-    log += fmt("%s: %zu bytes, data part %zu bytes (disc %zu; the game's place for Leon holds %d)\n", gcName.c_str(),
-               result.size(), newBody.size(), gc.body.size(), 0x118000);
-    if (newBody.size() > 0x118000) fail(fmt("too large for the game's place for Leon (%zu bytes): pick smaller textures",
-                                            newBody.size()));
+    // a larger player file goes to the mods' place (patch 0901: up to 6 MB)
+    log += fmt("%s: %zu bytes, data part %zu bytes (disc %zu; the mods' place for the player holds %d)\n", gcName.c_str(),
+               result.size(), newBody.size(), gc.body.size(), 0x600000);
+    if (newBody.size() > 0x600000) fail(fmt("too large for the mods' place for the player (%zu bytes): pick smaller "
+                                            "textures", newBody.size()));
     return true;
   } catch (const std::exception &e) {
     if (why) *why = e.what();

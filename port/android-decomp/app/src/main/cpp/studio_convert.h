@@ -58,6 +58,8 @@ struct Options {
   bool keepHead = false;
   // GTA skins: the weights from Leon's own skin, the nearest of his vertices (0: the skin's own, mapped by bone)
   double transfer = 1.0;
+  // GTA skins: the skin once more just under its surface, so that gaps at the joints show its own colours
+  bool innerLayer = true;
 };
 
 // The disc's archive (`gcName` its file name: pl00.drs ...) with the PC mod's (unpacked .udas) converted into it.
