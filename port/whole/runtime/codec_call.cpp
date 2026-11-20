@@ -26,6 +26,10 @@
 //    enemy appears until it is over"): patch 0941 holds the areas that start something (re4_codec_holds_area: they
 //    fire after the call if Leon still stands in them), patch 0942 lets a room script's enemy wait for the call's end
 //    (re4_codec_spawn_wait). Doors need A, which is taken anyway.
+//  - Leon stays near (DevJunior, 19.11.2026: "that he cannot leave the section"): within kLeash of where the call
+//    began (re4_codec_arm puts him back onto that circle); the Ganados leave him alone meanwhile ("that they do not
+//    see Leon"): the game's debug switch DBG_EM_NO_ATK (em10: no approach, no attack), set by the call only if it was
+//    off and cleared at its end (the room's start clears the debug words too).
 //  - The app's box (core_bridge.cpp: Re4CoreSnapshot::codec = the call + 1; core_mode.cpp draws it at the top left).
 //  - The scenario's task ended by the game (room change, game over): the frame hook ends the call (stream, message,
 //    MesData, the data freed if the room is the same: the room heap 4 it came from is replaced otherwise).
@@ -84,6 +88,9 @@ int gRing = -1;   // the radio's tone (SndStrPlayBlock)
 bool gArmWanted;  // the hand to the ear
 f32 gArmW;        // its blend
 std::atomic<bool> gSkip{false};  // START during the call (the frame hook)
+bool gNoAtkSet;   // DBG_EM_NO_ATK set by the call (not by the debug menu)
+Vec gStart;       // where Leon was when the call began (the leash)
+const f32 kLeash = 3000.0f;  // how far he may walk from there (mm)
 u16 gRawPrev;     // the pad's raw buttons at the last frame (START's press)
 
 bool inField(cPlayer* pl)
@@ -103,6 +110,10 @@ void finish(bool sameRoom, const char* why)
         gRing = -1;
     }
     cMes.Delete(0);
+    if (gNoAtkSet) {
+        DbgFlagOff(pG, DBG_EM_NO_ATK);
+        gNoAtkSet = false;
+    }
     if (gMesBak) {
         MesData.registData(2, gMesBak);
         gMesBak = 0;
@@ -135,6 +146,12 @@ void codecFrame(unsigned)
     const u16 raw = re4_pad_raw();
     const bool startPressed = (raw & 0x1000) && !(gRawPrev & 0x1000);
     gRawPrev = raw;
+    // the Ganados leave him alone meanwhile (DevJunior, 19.11.2026: "that they do not see Leon"): the game's own
+    // debug switch "enemies do not attack" (em10: no approach, no attack), set only while the call plays
+    if (!DbgFlagChk(pG, DBG_EM_NO_ATK)) {
+        DbgFlagOn(pG, DBG_EM_NO_ATK);
+        gNoAtkSet = true;
+    }
     if (inField(pPL)) {
         if (startPressed && !gSkip.exchange(true)) {
             re4_log("codec: call %d skipped (START)", gCall.load());
@@ -342,6 +359,7 @@ int re4_codec_call(int no)
     gTick = pG->Frame_cnt;
     gCall = no;
     gSkip = false;
+    gStart = pPL->pos;
     gRawPrev = re4_pad_raw();
     SubScreenWork* wk = &SubScreenWk;
     wk->cancel = 0;
@@ -468,6 +486,16 @@ void re4_codec_arm(cPlayer* pl)
         return;
     }
     const bool on = gArmWanted && gCall.load() >= 0 && inField(pl);
+    // the leash (DevJunior, 19.11.2026: "that he cannot leave the section"): back onto the circle of kLeash round
+    // where the call began, toward that place (which was free)
+    if (on) {
+        const f32 dx = pl->pos.x - gStart.x, dz = pl->pos.z - gStart.z;
+        const f32 d = sqrtf(dx * dx + dz * dz);
+        if (d > kLeash) {
+            pl->pos.x = gStart.x + dx * (kLeash / d);
+            pl->pos.z = gStart.z + dz * (kLeash / d);
+        }
+    }
     gArmW += on ? 1.0f / kArmIn : -1.0f / kArmIn;
     gArmW = gArmW < 0.0f ? 0.0f : gArmW > 1.0f ? 1.0f : gArmW;
     if (gArmW > 0.0f) {
