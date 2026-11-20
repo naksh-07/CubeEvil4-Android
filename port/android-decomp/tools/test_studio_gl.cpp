@@ -1,5 +1,6 @@
 // CubeEvil4 Studio check on the host (EGL pbuffer, GLES 3): an archive's model posed by one of its animations and drawn
 // with the grid, written as a PPM. Usage: studio_gl_check ARCHIVE BIN MOTION_ARCHIVE|- MOTION FRAME OUT.ppm
+// STUDIO_CAM=yaw,pitch,distance,targetY (radians, mm) sets the camera (no skeleton drawn): a close look at a joint.
 #include "studio_gl.h"
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
@@ -76,8 +77,11 @@ int main(int argc, char **argv) {
     check(view.create(&why), ("GL: " + why).c_str());
     view.upload(v);
     ViewOptions options;
-    options.skeleton = true;
-    view.draw(v, W, H, FrameBounds(v.restMinimum(), v.restMaximum()), options);
+    options.skeleton = !std::getenv("STUDIO_CAM");
+    Camera cam = FrameBounds(v.restMinimum(), v.restMaximum());
+    if (const char *c = std::getenv("STUDIO_CAM"))
+      std::sscanf(c, "%f,%f,%f,%f", &cam.yaw, &cam.pitch, &cam.distance, &cam.target[1]);
+    view.draw(v, W, H, cam, options);
     std::vector<unsigned char> px(W * H * 4);
     glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
     check(glGetError() == GL_NO_ERROR, "GL error");

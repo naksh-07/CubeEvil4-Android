@@ -1956,10 +1956,14 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
 
     const std::vector<Weight> Wsoft = W;  // before the plates: the inner layer bends smoothly
     std::vector<char> plated(nv, 0);
-    // Rigid plates round the hips (DevJunior, 19.11.2026: the armour's crotch plate "looks very bad when running"): a
-    // separate small piece of the mesh there (its triangles joined by shared vertices, at most kPlate across) is
-    // armour, not cloth: all its vertices take the piece's average weights, so it moves as one, without stretching
-    // between the thighs.
+    // The armour round the hips (DevJunior, 19.11.2026): a separate small piece of the mesh there (its triangles joined
+    // by shared vertices, at most kPlate across) is armour, not cloth. First all its vertices took the piece's average
+    // weights, so it moved as one ("the crotch plate looks very bad when running": it stretched between the thighs);
+    // made rigid, the hip guards stood off the leg when it lifted, a dark gap under them (second report: "it still
+    // breaks"). Now half way: each vertex kStiff of the piece's average and the rest its own smooth weights (half the
+    // stretch, no gap; checked in the Studio's view with the knee raised, walking and crouching). A piece hanging
+    // between both thighs (each leg at least kBothLegs of its weights) stays one rigid plate, mostly on the pelvis
+    // (kPelvis).
     {
       const double kPlate = 540.0;  // the hip guards and thigh plates of a suit of armour are this large
       std::vector<std::size_t> root(nv);
@@ -1974,7 +1978,7 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
       }
       std::map<std::size_t, std::vector<std::size_t>> parts2;
       for (std::size_t v = 0; v < nv; ++v) parts2[find(v)].push_back(v);
-      std::size_t plates = 0, plateVerts = 0;
+      std::size_t plates = 0, stiffened = 0, plateVerts = 0;
       for (const auto &[r, vs] : parts2) {
         if (vs.size() < 3) continue;
         V3 lo{1e30, 1e30, 1e30}, hi{-1e30, -1e30, -1e30};
@@ -1986,27 +1990,45 @@ bool ConvertDff(const Bytes &gcData, const std::string &gcName, const Bytes &dff
         // the joints (DevJunior, 19.11.2026: "the model now shows breaks")
         const V3 mid = (lo + hi) * 0.5, h = skel.at(17).at;
         if (mid.y < h.y - 320 || mid.y > h.y + 120 || std::fabs(mid.x - h.x) > 230) continue;
-        std::map<int, double> acc;
+        double legL = 0, legR = 0, all = 0;
         for (auto v : vs)
-          for (const auto &[bone, rate] : W[v]) acc[bone] += rate;
-        std::vector<std::pair<int, double>> list(acc.begin(), acc.end());
-        std::stable_sort(list.begin(), list.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
-        if (list.size() > 3) list.resize(3);
-        double sum = 0;
-        for (const auto &x : list) sum += x.second;
-        Weight e;
-        int given = 0;
-        for (std::size_t k = 0; k < list.size(); ++k) {
-          const int rr = k + 1 == list.size() ? 100 - given : int(std::lround(list[k].second * 100.0 / sum));
-          if (rr <= 0) continue;
-          e.push_back({list[k].first, rr});
-          given += rr;
+          for (const auto &[bone, rate] : W[v]) {
+            all += rate;
+            if (chainOf(bone) == 3) legL += rate;
+            if (chainOf(bone) == 4) legR += rate;
+          }
+        if (all <= 0) continue;
+        const double kBothLegs = 0.15, kPelvis = 0.65, kStiff = 0.5;
+        const bool crotch = legL / all >= kBothLegs && legR / all >= kBothLegs;
+        const double stiff = crotch ? 1.0 : kStiff;
+        std::map<int, double> avg;
+        for (auto v : vs)
+          for (const auto &[bone, rate] : W[v]) avg[bone] += (crotch ? 1.0 - kPelvis : 1.0) * rate / all;
+        if (crotch) avg[17] += kPelvis;
+        for (auto v : vs) {
+          std::map<int, double> acc;
+          for (const auto &[bone, a] : avg) acc[bone] += stiff * a;
+          for (const auto &[bone, rate] : W[v]) acc[bone] += (1.0 - stiff) * rate / 100.0;
+          std::vector<std::pair<int, double>> list(acc.begin(), acc.end());
+          std::stable_sort(list.begin(), list.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+          if (list.size() > 3) list.resize(3);
+          double sum = 0;
+          for (const auto &x : list) sum += x.second;
+          Weight e;
+          int given = 0;
+          for (std::size_t k = 0; k < list.size(); ++k) {
+            const int rr = k + 1 == list.size() ? 100 - given : int(std::lround(list[k].second * 100.0 / sum));
+            if (rr <= 0) continue;
+            e.push_back({list[k].first, rr});
+            given += rr;
+          }
+          W[v] = e;
+          plated[v] = crotch;
         }
-        for (auto v : vs) W[v] = e, plated[v] = 1;
-        ++plates, plateVerts += vs.size();
+        ++(crotch ? plates : stiffened), plateVerts += vs.size();
       }
-      log += fmt("%zu pieces of the mesh; %zu small ones (%zu vertices) move as rigid plates\n", parts2.size(), plates,
-                 plateVerts);
+      log += fmt("%zu pieces of the mesh; at the hips %zu crotch plates move rigidly, %zu pieces half stiff (%zu vertices)\n",
+                 parts2.size(), plates, stiffened, plateVerts);
     }
 
     // the triangles by material, facing as the disc's do (corners counter-clockwise round their normal)

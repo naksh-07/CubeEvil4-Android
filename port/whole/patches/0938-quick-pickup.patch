@@ -1,24 +1,24 @@
 # Patch 0938 (wish of DevJunior, 19.11.2026: "the pick-ups of the remake, so you do not stop so much on your way").
 # Not a bug of the prototype: a port feature of the mods (with the app's "Remake movement"). game/sce_at.cpp
-# sceAtFunc_item: money, treasures and the ammunition and healing items the case takes by itself (PutInCase) are taken at once,
+# sceAtFunc_item: money, treasures, grenades (0x01, 0x02, 0x0E) and the ammunition and healing items the case takes by
+# itself (PutInCase) are taken at once, with the game's "obtained" message 0x15 (0x11..0x13 are its questions),
 # without the zoom and the question; the message shows without stopping the game for 45 frames (a no-stop message
 # lasts one frame: set again every frame; none during a remake call, patch 0939); the clean-up is sceAtGetItem's
-# (sceAtQuickItemTask, a free scenario slot: two pick-ups in a row). Everything else (weapons, keys, files, a full case) stays the
-# game's.
+# (sceAtQuickItemTask, a free scenario slot: two pick-ups in a row). Everything else (guns, keys, files, a full case) stays the game's.
 --- a/src/game/sce_at.cpp
 +++ b/src/game/sce_at.cpp
-@@ -1491,6 +1491,123 @@
+@@ -1491,6 +1491,132 @@
      SceUpCutEnd();
  }
  
 +/* port (patch 0938, mods): the remake's quick pick-up (DevJunior, 19.11.2026: "the pick-ups, so you do not stop so
 +   much on your way"). With the app's "Remake movement" (re4_quick_pickup_on, runtime/quick_pickup.cpp) money,
-+   treasures and the ammunition and healing items that go into the case by themselves are taken at once: no zoom,
-+   no question, the game goes on. The message is a no-stop one (attribute 0x80: drawn the frame it is set, as
-+   act_btn.cpp's), set again every frame for 45 frames by the pick-up's own task (a free scenario slot, so that two
-+   pick-ups in a row each get theirs; the newest one's message shows); none while a remake radio call shows its
-+   subtitles (runtime/codec_call.cpp). The rest of the clean-up is sceAtGetItem's own (flags, area off, model
-+   released, save record, the area freed). */
++   treasures, grenades and the ammunition and healing items that go into the case by themselves are taken at once:
++   no zoom, no question, the game goes on. The message is the game's "obtained" one (0x15; money its own 0x14), a
++   no-stop one (attribute 0x80: drawn the frame it is set, as act_btn.cpp's), set again every frame for 45 frames
++   by the pick-up's own task (a free scenario slot, so that two pick-ups in a row each get theirs; the newest one's
++   message shows); none while a remake radio call shows its subtitles (runtime/codec_call.cpp). The rest of the
++   clean-up is sceAtGetItem's own (flags, area off, model released, save record, the area freed). */
 +extern "C" int re4_quick_pickup_on(void);
 +extern "C" void re4_quick_pickup_log(int id, int num, int kind);
 +extern "C" int re4_codec_active(void);
@@ -101,6 +101,10 @@
 +        sceAtQuickMes(0x15, 0x11, it->item_id, 0);
 +        re4_quick_pickup_log(it->item_id, 1, 5);
 +        break;
++    case 3:  /* of the weapons with a count only the grenades (hand, incendiary, flash) */
++        if (it->item_id != 0x01 && it->item_id != 0x02 && it->item_id != 0x0E) {
++            return 0;
++        }
 +    case 2:  /* ammunition */
 +    case 6:  /* healing */
 +        num = it->item_num;
@@ -111,10 +115,15 @@
 +            return 0;  /* no room: the game's own way (it opens the case) */
 +        }
 +        SndCall(0, 0x13, 0, 0, 0, 0);
-+        if (info.type == 2) {
-+            sceAtQuickMes(0x13, 0x211, it->item_id, num);
-+        } else {
-+            sceAtQuickMes(0x11, 0x411, it->item_id, 0);
++        /* the game's "obtained" message (0x15, the treasures'): 0x11 / 0x12 / 0x13 are its questions ("Take the
++           Handgun Ammo (10)?", device video of DevJunior 19.11.2026) */
++        sceAtQuickMes(0x15, 0x11, it->item_id, 0);
++        if (info.type == 3) {
++            itemInfo(ItemMgr.weaponId(), &info);
++            if (info.type == 3) {
++                PlReloadBullet(); /* as sceAtGetItem with a grenade in his hand */
++            }
++            info.type = 3;
 +        }
 +        re4_quick_pickup_log(it->item_id, num, info.type);
 +        break;
@@ -131,7 +140,7 @@
  // Type 3 handler (item): keys blocked, the item model prepared (itemZoom) and the pick-up task
  // started (sceAtGetItem or the no-model variant); SceSys.m_item_get = 1 while it runs.
  int sceAtFunc_item(SCE_AT_DATA* w, cModel* m)
-@@ -1499,6 +1616,10 @@
+@@ -1499,6 +1625,10 @@
      int ret;
      SCE_TASK* p;
  

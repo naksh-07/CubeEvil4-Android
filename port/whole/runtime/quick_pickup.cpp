@@ -15,5 +15,5 @@ extern "C" int re4_quick_pickup_on(void)
 extern "C" void re4_quick_pickup_log(int id, int num, int kind)
 {
     re4_log("pick-up: item %#x x%d (%s) taken on the move", id, num,
-            kind == 8 ? "money" : kind == 2 ? "ammunition" : kind == 5 ? "treasure" : "healing");
+            kind == 8 ? "money" : kind == 2 ? "ammunition" : kind == 5 ? "treasure" : kind == 3 ? "grenade" : "healing");
 }
