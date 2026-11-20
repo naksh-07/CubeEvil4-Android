@@ -578,6 +578,12 @@ void modFolder(Disc& d, const char* pack, const char* full, const char* rel, int
             free(names[k]);
             continue;
         }
+        if (strncmp(name, "codec/", 6) == 0) {
+            // the radio box's portraits and calls.txt: the app reads them (CodecPortraits.java), no file of the disc
+            re4_log("DVD: mod %s: %s is for the app's radio box", pack, name);
+            free(names[k]);
+            continue;
+        }
         if (strcmp(name, "sound/quickslot.wav") == 0) {
             // the D-pad quick slots' sound (runtime/mod_sound.cpp), no file of the disc either
             re4_mod_sound_path_set(path);

@@ -62,6 +62,8 @@
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <map>
+#include <cctype>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1805,7 +1807,29 @@ bool minimapBuild(int format, unsigned xh, bool wide, re4gx::GxOverlay *out) {
 struct CodecBoxState {
   unsigned call = 0;
   std::chrono::steady_clock::time_point since;
+  // the mods' portraits (CodecPortraits.java: mods/<pack>/codec/<name>.png, 64 x 64 ARGB, top row first) and which a
+  // call shows (codec/calls.txt); set before the core starts, read on the GL thread
+  std::mutex lock;
+  std::map<std::string, std::vector<std::uint32_t>> portraits;
+  std::map<int, std::string> callers;
 } codecBox;
+
+// Who talks in call `no` (the codec's 24 calls: op/op01..03.das): Hunnigan in the village (0..12) and at the
+// castle's start (13), then the castle's hijacked line (Salazar, later Saddler: 14..18), Hunnigan again on the
+// island (19..22, the partner model with her glasses as the village's) and Ada at its end (23, a model of its own).
+// A best guess from the codec's partner models (ss_term.cpp partnerType) and the story; codec/calls.txt corrects it.
+std::string codecCaller(int no) {
+  {
+    std::lock_guard<std::mutex> g(codecBox.lock);
+    auto it = codecBox.callers.find(no);
+    if (it != codecBox.callers.end()) return it->second;
+  }
+  if (no <= 13) return "hunnigan";
+  if (no <= 16) return "salazar";
+  if (no <= 18) return "saddler";
+  if (no <= 22) return "hunnigan";
+  return "ada";
+}
 
 bool codecBuild(int format, unsigned xh, bool wide, re4gx::GxOverlay *out) {
   if (!frame.valid || frame.step[0] != 3 || !frame.codec ||
@@ -1817,7 +1841,7 @@ bool codecBuild(int format, unsigned xh, bool wide, re4gx::GxOverlay *out) {
   if (codecBox.call != frame.codec) {
     codecBox.call = frame.codec;
     codecBox.since = now;
-    LOG("codec: the call box for call %u", frame.codec - 1u);
+    LOG("codec: the call box for call %u (%s)", frame.codec - 1u, codecCaller(int(frame.codec) - 1).c_str());
   }
   const float t = std::chrono::duration<float>(now - codecBox.since).count();
   const float in = std::min(1.0f, t / 0.25f);  // fades in
@@ -1834,24 +1858,60 @@ bool codecBuild(int format, unsigned xh, bool wide, re4gx::GxOverlay *out) {
   // the box: the square's top 45 % (2.2 : 1)
   const float bx0 = -1.0f, bx1 = 1.0f, by0 = 0.1f, by1 = 1.0f;
   quad(bx0, by0, bx1, by1, 0.02f, 0.05f, 0.04f, 0.62f);
-  // the caller's place: a panel, a head and shoulders
+  // the caller's place: the mods' portrait of who talks (a grid of 48 x 48 cells, its colours at the corners: a
+  // smooth picture with the overlay's coloured triangles, GLES and Vulkan alike), else a plain head and shoulders
   const float px0 = -0.93f, px1 = -0.17f, py0 = 0.17f, py1 = 0.93f;
   quad(px0, py0, px1, py1, 0.10f, 0.20f, 0.16f, 0.75f);
-  const float cx = (px0 + px1) * 0.5f, cy = py0 + (py1 - py0) * 0.64f, hr = (px1 - px0) * 0.17f;
-  const int kSides = 24;
-  for (int i = 0; i < kSides; i++) {
-    const float a0 = 6.2831853f * i / kSides, a1 = 6.2831853f * (i + 1) / kSides;
-    put(cx, cy, 0.45f, 0.70f, 0.58f, 0.85f);
-    put(cx + std::cos(a0) * hr, cy + std::sin(a0) * hr * 2.2f, 0.45f, 0.70f, 0.58f, 0.85f);
-    put(cx + std::cos(a1) * hr, cy + std::sin(a1) * hr * 2.2f, 0.45f, 0.70f, 0.58f, 0.85f);
+  std::vector<std::uint32_t> face;
+  {
+    const std::string who = codecCaller(int(frame.codec) - 1);
+    std::lock_guard<std::mutex> g(codecBox.lock);
+    auto it = codecBox.portraits.find(who);
+    if (it != codecBox.portraits.end()) face = it->second;
   }
-  const float sy1 = cy - hr * 2.4f;
-  put(px0 + 0.08f, py0, 0.45f, 0.70f, 0.58f, 0.85f);
-  put(px1 - 0.08f, py0, 0.45f, 0.70f, 0.58f, 0.85f);
-  put(cx + hr * 1.6f, sy1, 0.45f, 0.70f, 0.58f, 0.85f);
-  put(px0 + 0.08f, py0, 0.45f, 0.70f, 0.58f, 0.85f);
-  put(cx + hr * 1.6f, sy1, 0.45f, 0.70f, 0.58f, 0.85f);
-  put(cx - hr * 1.6f, sy1, 0.45f, 0.70f, 0.58f, 0.85f);
+  if (face.size() == 64u * 64u) {
+    const int kCells = 48;
+    auto colourAt = [&](float u, float v, float *c) {  // bilinear in the 64 x 64 picture (v 0 = its top)
+      const float x = u * 63.0f, y = v * 63.0f;
+      const int x0 = std::min(62, int(x)), y0 = std::min(62, int(y));
+      const float fx = x - float(x0), fy = y - float(y0);
+      for (int k = 0; k < 3; ++k) {
+        auto ch = [&](int xx, int yy) { return float((face[std::size_t(yy) * 64 + std::size_t(xx)] >> (16 - 8 * k)) & 0xFF) / 255.0f; };
+        c[k] = (ch(x0, y0) * (1 - fx) + ch(x0 + 1, y0) * fx) * (1 - fy) + (ch(x0, y0 + 1) * (1 - fx) + ch(x0 + 1, y0 + 1) * fx) * fy;
+      }
+    };
+    const float ix0 = px0 + 0.02f, ix1 = px1 - 0.02f, iy0 = py0 + 0.02f, iy1 = py1 - 0.02f;
+    for (int j = 0; j < kCells; ++j)
+      for (int i = 0; i < kCells; ++i) {
+        float c[4][3];
+        const float u0 = float(i) / kCells, u1 = float(i + 1) / kCells, v0 = float(j) / kCells, v1 = float(j + 1) / kCells;
+        colourAt(u0, v0, c[0]), colourAt(u1, v0, c[1]), colourAt(u1, v1, c[2]), colourAt(u0, v1, c[3]);
+        const float x0 = ix0 + (ix1 - ix0) * u0, x1 = ix0 + (ix1 - ix0) * u1;
+        const float y0 = iy1 - (iy1 - iy0) * v0, y1 = iy1 - (iy1 - iy0) * v1;  // the picture's top at the box's top
+        put(x0, y0, c[0][0], c[0][1], c[0][2], 1.0f);
+        put(x1, y0, c[1][0], c[1][1], c[1][2], 1.0f);
+        put(x1, y1, c[2][0], c[2][1], c[2][2], 1.0f);
+        put(x0, y0, c[0][0], c[0][1], c[0][2], 1.0f);
+        put(x1, y1, c[2][0], c[2][1], c[2][2], 1.0f);
+        put(x0, y1, c[3][0], c[3][1], c[3][2], 1.0f);
+      }
+  } else {
+    const float cx = (px0 + px1) * 0.5f, cy = py0 + (py1 - py0) * 0.64f, hr = (px1 - px0) * 0.17f;
+    const int kSides = 24;
+    for (int i = 0; i < kSides; i++) {
+      const float a0 = 6.2831853f * i / kSides, a1 = 6.2831853f * (i + 1) / kSides;
+      put(cx, cy, 0.45f, 0.70f, 0.58f, 0.85f);
+      put(cx + std::cos(a0) * hr, cy + std::sin(a0) * hr * 2.2f, 0.45f, 0.70f, 0.58f, 0.85f);
+      put(cx + std::cos(a1) * hr, cy + std::sin(a1) * hr * 2.2f, 0.45f, 0.70f, 0.58f, 0.85f);
+    }
+    const float sy1 = cy - hr * 2.4f;
+    put(px0 + 0.08f, py0, 0.45f, 0.70f, 0.58f, 0.85f);
+    put(px1 - 0.08f, py0, 0.45f, 0.70f, 0.58f, 0.85f);
+    put(cx + hr * 1.6f, sy1, 0.45f, 0.70f, 0.58f, 0.85f);
+    put(px0 + 0.08f, py0, 0.45f, 0.70f, 0.58f, 0.85f);
+    put(cx + hr * 1.6f, sy1, 0.45f, 0.70f, 0.58f, 0.85f);
+    put(cx - hr * 1.6f, sy1, 0.45f, 0.70f, 0.58f, 0.85f);
+  }
   // the voice: 14 bars about the box's middle line, moving
   const int kBars = 14;
   const float wx0 = -0.05f, wx1 = 0.92f, mid = (by0 + by1) * 0.5f, bw = (wx1 - wx0) / kBars;
@@ -4097,6 +4157,50 @@ extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setDynamicCa
 extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setMinimap(JNIEnv *, jclass, jboolean on) {
   const int want = on ? 1 : 0;
   if (optMinimap.exchange(want) != want) LOG("minimap: %s", want ? "on" : "off");
+}
+
+// The radio box's portraits from the mods (CodecPortraits.java, before the core starts): a name and 64 x 64 ARGB
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setCodecPortrait(JNIEnv *env, jclass, jstring name,
+                                                                                    jintArray argb) {
+  if (!name || !argb || env->GetArrayLength(argb) != 64 * 64) return;
+  const char *n = env->GetStringUTFChars(name, nullptr);
+  std::vector<std::uint32_t> px(64 * 64);
+  env->GetIntArrayRegion(argb, 0, 64 * 64, reinterpret_cast<jint *>(px.data()));
+  {
+    std::lock_guard<std::mutex> g(codecBox.lock);
+    codecBox.portraits[n] = std::move(px);
+  }
+  LOG("codec: portrait \"%s\" from the mods", n);
+  env->ReleaseStringUTFChars(name, n);
+}
+
+// Which portrait each call shows: codec/calls.txt's lines "N=name" or "A-B=name" ('#' comments); "" none
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setCodecCallers(JNIEnv *env, jclass, jstring lines) {
+  if (!lines) return;
+  const char *t = env->GetStringUTFChars(lines, nullptr);
+  std::map<int, std::string> callers;
+  std::string all = t;
+  env->ReleaseStringUTFChars(lines, t);
+  std::size_t at = 0;
+  while (at < all.size()) {
+    std::size_t end = all.find('\n', at);
+    if (end == std::string::npos) end = all.size();
+    std::string line = all.substr(at, end - at);
+    at = end + 1;
+    if (const auto hash = line.find('#'); hash != std::string::npos) line.resize(hash);
+    const auto eq = line.find('=');
+    if (eq == std::string::npos) continue;
+    int a = -1, b = -1;
+    if (std::sscanf(line.c_str(), "%d-%d", &a, &b) < 2) b = a;
+    std::string who = line.substr(eq + 1);
+    while (!who.empty() && std::isspace(static_cast<unsigned char>(who.back()))) who.pop_back();
+    while (!who.empty() && std::isspace(static_cast<unsigned char>(who.front()))) who.erase(0, 1);
+    for (auto &c : who) c = char(std::tolower(static_cast<unsigned char>(c)));
+    if (a < 0 || b < a || b > 63 || who.empty()) continue;
+    for (int k = a; k <= b; ++k) callers[k] = who;
+  }
+  std::lock_guard<std::mutex> g(codecBox.lock);
+  codecBox.callers = std::move(callers);
 }
 
 // Lens flares (the menu, wish of the project owner, 04.11.2026): a faint glow at the game's lights (GxRenderer::SetFlares);

@@ -401,6 +401,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     String wiped = PlayerWipe.prepare(this, imports.root);
     if (!wiped.isEmpty()) Log.i(TAG, wiped);
     applyGraphics();
+    CodecPortraits.load(imports.root);  // the radio box's portraits from the mods (before the core starts)
     startProblem = imports.root == null ? "No data folder"
         : CoreBridge.start(imports.root.getAbsolutePath(), coreSettings);
     menuSupported = startProblem.isEmpty() && CoreBridge.hasMenu();

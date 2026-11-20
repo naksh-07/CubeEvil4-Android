@@ -301,6 +301,10 @@ public final class CoreBridge {
   public static native void setViewDistance(int percent);
   /** The minimap: the current room's outline at the bottom left, turning with the player (off by default). */
   public static native void setMinimap(boolean on);
+  /** A radio call's portrait from the mods (CodecPortraits): its name and 64 x 64 ARGB pixels, top row first. */
+  public static native void setCodecPortrait(String name, int[] argb);
+  /** Which portrait each radio call shows: the mods' codec/calls.txt lines ("0-13=hunnigan"), "" the app's own. */
+  public static native void setCodecCallers(String lines);
   /** The laser sight's colour (CONTROLS, LASER SIGHT): 0 the game's red, 1 blue, 2 green, 3 yellow. */
   public static native void setLaserColour(int colour);
   /** Vertex ring (experimental, for Mali): a new renderer takes it. */
