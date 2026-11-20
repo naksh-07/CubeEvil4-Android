@@ -312,10 +312,18 @@ void re4_pad_add(u16 buttons)
 // Buttons a frame hook takes from channel 0 for the frame it runs in (re4_pad_block: runtime/codec_call.cpp, Leon
 // only walks during a remake call), after the controller, the script and re4_pad_add.
 static u16 g_block;
+static u16 g_raw;  // channel 0's buttons at the last read before re4_pad_block took any
 
 void re4_pad_block(u16 buttons)
 {
     g_block |= buttons;
+}
+
+// The buttons of the last read as pressed, also those a hook took from the game (runtime/codec_call.cpp: START skips
+// a remake radio call, START being the game's no longer meanwhile)
+u16 re4_pad_raw(void)
+{
+    return g_raw;
 }
 
 // The C stick a frame hook sets on channel 0 for the frame it runs in (re4_pad_substick: the mouse wheel's zoom,
@@ -513,6 +521,7 @@ u32 PADRead(PADStatus* status)
         }
         g_add = 0;
     }
+    g_raw = status[0].button;
     if (g_block) {
         status[0].button &= (u16) ~g_block;
         if (g_block & 0x0040) {

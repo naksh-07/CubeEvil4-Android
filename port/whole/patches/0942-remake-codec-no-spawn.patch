@@ -1,0 +1,23 @@
+# Patch 0942 (wish of DevJunior, 19.11.2026: "that in a room no enemy appears until the call is over"). Not a bug of
+# the prototype: a port feature of the mods (patch 0939). game/em_set.cpp EmSetFromList2 (the room scripts' enemies,
+# created on demand): re4_codec_spawn_wait (runtime/codec_call.cpp) lets the scenario task that asks for one sleep
+# while a remake radio call plays, so the enemy comes when the call is over; outside a scenario task, or without a
+# call, it returns at once.
+--- a/src/game/em_set.cpp
++++ b/src/game/em_set.cpp
+@@ -226,11 +226,15 @@
+ 
+ // Creates list entry `no` on demand (room event scripts): same checks as EmSetFromList, the
+ // death bit only with chkDead. Returns the enemy, or errEm when nothing was created.
++extern "C" void re4_codec_spawn_wait(void); /* port (patch 0942): runtime/codec_call.cpp */
++
+ cEm* EmSetFromList2(int no, int flag)
+ {
+     EM_LIST* d = &pG->Em_list[no];
+     cEm* em;
+ 
++    re4_codec_spawn_wait(); /* port (patch 0942, mods): no enemy appears during a remake radio call */
++
+     if (EM_SET_ID_NG(d->id)) {
+         return errEm;
+     }

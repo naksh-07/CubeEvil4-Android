@@ -1,36 +1,118 @@
-# Patch 0938 (wish of DevJunior, 19.11.2026: "the pick-ups of the remake, so you do not stop so much on your way").
-# Not a bug of the prototype: a port feature of the mods (with the app's "Remake movement"). game/sce_at.cpp
-# sceAtFunc_item: money, treasures, grenades (0x01, 0x02, 0x0E) and the ammunition and healing items the case takes by
-# itself (PutInCase) are taken at once, with the game's "obtained" message 0x15 (0x11..0x13 are its questions),
-# without the zoom and the question; the message shows without stopping the game for 45 frames (a no-stop message
-# lasts one frame: set again every frame; none during a remake call, patch 0939); the clean-up is sceAtGetItem's
-# (sceAtQuickItemTask, a free scenario slot: two pick-ups in a row). Everything else (guns, keys, files, a full case) stays the game's.
+# Patch 0938 (wish of DevJunior, 19.11.2026: "the pick-ups of the remake, so you do not stop so much on your way";
+# later "ammunition, treasures, grenades and general items, not weapons" and "the short version of the name: Handgun
+# Ammo (amount)"). Not a bug of the prototype: a port feature of the mods (with the app's "Remake movement").
+# game/sce_at.cpp sceAtFunc_item: money, treasures and what sceAtGetItem takes as it is (types 0, 4, 5, 7, 0xC),
+# grenades (0x01, 0x02, 0x0E), weapon parts and the ammunition and healing items the case takes by itself (PutInCase)
+# are taken at once, without the zoom and the question. The message: the item's short name cut from the game's own
+# question 0x13 in the language played ("Handgun Ammo (10)"; the count for ammunition, else when more than one),
+# shown through a one-message table in MesData file 4; money its own 0x14; the game's "obtained" 0x15 when the
+# question has nothing to cut. It shows without stopping the game for 45 frames (a no-stop message lasts one frame:
+# set again every frame; none during a remake call, patch 0939); the clean-up is sceAtGetItem's (sceAtQuickItemTask,
+# a free scenario slot: two pick-ups in a row). Guns, keys, gems, files and a full case stay the game's.
 --- a/src/game/sce_at.cpp
 +++ b/src/game/sce_at.cpp
-@@ -1491,6 +1491,132 @@
+@@ -1491,6 +1491,223 @@
      SceUpCutEnd();
  }
  
 +/* port (patch 0938, mods): the remake's quick pick-up (DevJunior, 19.11.2026: "the pick-ups, so you do not stop so
-+   much on your way"). With the app's "Remake movement" (re4_quick_pickup_on, runtime/quick_pickup.cpp) money,
-+   treasures, grenades and the ammunition and healing items that go into the case by themselves are taken at once:
-+   no zoom, no question, the game goes on. The message is the game's "obtained" one (0x15; money its own 0x14), a
-+   no-stop one (attribute 0x80: drawn the frame it is set, as act_btn.cpp's), set again every frame for 45 frames
-+   by the pick-up's own task (a free scenario slot, so that two pick-ups in a row each get theirs; the newest one's
-+   message shows); none while a remake radio call shows its subtitles (runtime/codec_call.cpp). The rest of the
-+   clean-up is sceAtGetItem's own (flags, area off, model released, save record, the area freed). */
++   much on your way"; later "ammunition, treasures, grenades and general items, not weapons"). With the app's
++   "Remake movement" (re4_quick_pickup_on, runtime/quick_pickup.cpp) money, treasures, grenades, weapon parts and
++   what sceAtGetItem takes as it is, and the ammunition and healing items that go into the case by themselves, are
++   taken at once: no zoom, no question, the game goes on. Guns, keys, gems, files and a full case stay the game's.
++   The message: the item's short name ("Handgun Ammo (10)"), money its own 0x14; a no-stop one (attribute 0x80:
++   drawn the frame it is set, as act_btn.cpp's), set again every frame for 45 frames by the pick-up's own task (a
++   free scenario slot, so that two pick-ups in a row each get theirs; the newest one's message shows); none while
++   a remake radio call shows its subtitles (runtime/codec_call.cpp). The rest of the clean-up is sceAtGetItem's own
++   (flags, area off, model released, save record, the area freed). */
 +extern "C" int re4_quick_pickup_on(void);
 +extern "C" void re4_quick_pickup_log(int id, int num, int kind);
 +extern "C" int re4_codec_active(void);
-+static int quickMesNo, quickMesAttr, quickMesItem, quickMesSerial;
++static int quickMesNo, quickMesAttr, quickMesItem, quickMesSerial, quickMesShort;
 +static u32 quickMesNum;
++
++/* The short message (DevJunior, 19.11.2026: "the short version of the name, for example: Handgun Ammo (10)"): the
++   item's name and, with a count, " (count)", cut from the game's own question 0x13 ("Take the <name> (<count>)?"
++   in the language played) and shown through a one-message table in MesData file 4 (set only while MesSet takes the
++   text: the name itself is code 0x10's, file 3). 0 when the question has no name (and count) to cut: the game's
++   "obtained" message 0x15 then. */
++static struct {
++    u32 lang[8];  /* per language: the block below (MessageData::getAddr) */
++    u32 x0;
++    u32 count;
++    u32 ofs[1];
++    u16 text[64];
++} quickShort;
++
++static int sceAtQuickShortBuild(int withNum)
++{
++    static const s8 arg[19] = {0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1};
++    u16* src = MesData.getAddr(0x13, 0);
++    int pos[96];
++    int np = 0, i = 0, k, from = -1, name = -1, to = -1, n = 0;
++
++    if (src == 0) {
++        return 0;
++    }
++    while (i < 256 && np < 96) {
++        u16 c = src[i];
++        pos[np++] = i;
++        if (c == 1) {
++            break;
++        }
++        i += 1 + (c < 19 ? arg[c] : 0);
++    }
++    for (k = 0; k < np; k++) {
++        if (src[pos[k]] == 0x10) {
++            name = k;
++            break;
++        }
++    }
++    if (name < 0) {
++        return 0;
++    }
++    from = name > 0 && src[pos[name - 1]] == 6 ? name - 1 : name;  /* the name's colour */
++    if (withNum) {
++        for (k = name + 1; k + 1 < np; k++) {
++            if (src[pos[k]] == 0x0A) {
++                to = src[pos[k + 1]] >= 0x80 ? k + 1 : k;  /* the glyph after the count: ")" */
++                break;
++            }
++        }
++        if (to < 0) {
++            return 0;
++        }
++    } else {
++        to = name + 1 < np && src[pos[name + 1]] == 6 ? name + 1 : name;
++    }
++    quickShort.text[n++] = 0;  /* page start */
++    for (i = pos[from]; i < (to + 1 < np ? pos[to + 1] : pos[to] + 1) && n < 62; i++) {
++        quickShort.text[n++] = src[i];
++    }
++    quickShort.text[n++] = 1;  /* end */
++    for (k = 0; k < 8; k++) {
++        quickShort.lang[k] = (u32) ((u8*) &quickShort.x0 - (u8*) &quickShort);
++    }
++    quickShort.x0 = 0;
++    quickShort.count = 1;
++    quickShort.ofs[0] = (u32) ((u8*) quickShort.text - (u8*) &quickShort.x0);
++    return 1;
++}
 +
 +static void sceAtQuickMesShow()
 +{
 +    int y = 0x129 - cMes.getFontHeight(0) - cMes.getLineGap(0);
++    u8* bak;
 +
 +    cMes.MesSetNumber(0, quickMesNum, 0);
-+    cMes.MesSet(quickMesNo, 0x64, y, quickMesAttr | 0x80, 0, 0, 4);
++    if (quickMesShort) {
++        bak = MesData.m_Data[4];
++        MesData.registData(4, (u8*) &quickShort);
++        cMes.MesSet(0, 0x64, y, 0x10 | 0x80, 0, 0, 4);
++        MesData.registData(4, bak);
++    } else {
++        cMes.MesSet(quickMesNo, 0x64, y, quickMesAttr | 0x80, 0, 0, 4);
++    }
 +    cMes.SetItemName(0, quickMesItem);
 +    cMes.MesSetNumber(0, quickMesNum, 0);
 +}
@@ -64,11 +146,19 @@
 +
 +static void sceAtQuickMes(int no, u32 attr, int item, u32 num)
 +{
++    quickMesShort = 0;
 +    quickMesNo = no;
 +    quickMesAttr = attr;
 +    quickMesItem = item;
 +    quickMesNum = num;
 +    quickMesSerial++;
++}
++
++/* the item's short name, with " (count)" when withNum; else the "obtained" message */
++static void sceAtQuickMesName(int item, u32 num, int withNum)
++{
++    sceAtQuickMes(0x15, 0x11, item, num);
++    quickMesShort = sceAtQuickShortBuild(withNum);
 +}
 +
 +static int sceAtQuickItem(SCE_AT_ITEM* w)
@@ -96,10 +186,13 @@
 +        break;
 +    case 5:    /* treasures (DevJunior, 19.11.2026: "the treasures too") */
 +    case 0xC:
++    case 0:    /* and what sceAtGetItem takes as they are (DevJunior, 19.11.2026: "general items, not weapons") */
++    case 4:
++    case 7:
 +        ItemMgr.get(it->item_id, it->item_num);
-+        SndCall(0, 0x13, 0, 0, 0, 0);
-+        sceAtQuickMes(0x15, 0x11, it->item_id, 0);
-+        re4_quick_pickup_log(it->item_id, 1, 5);
++        SndCall(0, info.type == 7 ? 0 : 0x13, 0, 0, 0, 0);
++        sceAtQuickMesName(it->item_id, it->item_num, it->item_num > 1);
++        re4_quick_pickup_log(it->item_id, it->item_num > 1 ? it->item_num : 1, info.type);
 +        break;
 +    case 3:  /* of the weapons with a count only the grenades (hand, incendiary, flash) */
 +        if (it->item_id != 0x01 && it->item_id != 0x02 && it->item_id != 0x0E) {
@@ -107,6 +200,8 @@
 +        }
 +    case 2:  /* ammunition */
 +    case 6:  /* healing */
++    case 9:  /* weapon parts (scopes, stocks) */
++    case 0xE:
 +        num = it->item_num;
 +        if (num == 0) {
 +            num = info.defNum;
@@ -115,9 +210,9 @@
 +            return 0;  /* no room: the game's own way (it opens the case) */
 +        }
 +        SndCall(0, 0x13, 0, 0, 0, 0);
-+        /* the game's "obtained" message (0x15, the treasures'): 0x11 / 0x12 / 0x13 are its questions ("Take the
-+           Handgun Ammo (10)?", device video of DevJunior 19.11.2026) */
-+        sceAtQuickMes(0x15, 0x11, it->item_id, 0);
++        /* the short name (0x11 / 0x12 / 0x13 are the game's questions: "Take the Handgun Ammo (10)?", device
++           video of DevJunior 19.11.2026); ammunition with its count, the rest when more than one */
++        sceAtQuickMesName(it->item_id, num, info.type == 2 || num > 1);
 +        if (info.type == 3) {
 +            itemInfo(ItemMgr.weaponId(), &info);
 +            if (info.type == 3) {
@@ -140,7 +235,7 @@
  // Type 3 handler (item): keys blocked, the item model prepared (itemZoom) and the pick-up task
  // started (sceAtGetItem or the no-model variant); SceSys.m_item_get = 1 while it runs.
  int sceAtFunc_item(SCE_AT_DATA* w, cModel* m)
-@@ -1499,6 +1625,10 @@
+@@ -1499,6 +1716,10 @@
      int ret;
      SCE_TASK* p;
  

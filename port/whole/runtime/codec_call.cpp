@@ -20,6 +20,12 @@
 //    world matrices): the upper arm and the forearm (parts 13, 14; the hand 16) reach with two bones to a point
 //    beside and under his left ear (the head part 4), the elbow out to the side, blended in over kArmIn frames and
 //    out at the end; only while he is free in the field.
+//  - START skips the call (the frame hook sees its press in the pad's raw buttons: re4_pad_raw; the game does not get
+//    it meanwhile): the voice stops, the subtitles go, the scenario goes on as after the call.
+//  - Nothing else starts meanwhile (DevJunior, 19.11.2026: "control how far the player gets ... and that in a room no
+//    enemy appears until it is over"): patch 0941 holds the areas that start something (re4_codec_holds_area: they
+//    fire after the call if Leon still stands in them), patch 0942 lets a room script's enemy wait for the call's end
+//    (re4_codec_spawn_wait). Doors need A, which is taken anyway.
 //  - The app's box (core_bridge.cpp: Re4CoreSnapshot::codec = the call + 1; core_mode.cpp draws it at the top left).
 //  - The scenario's task ended by the game (room change, game over): the frame hook ends the call (stream, message,
 //    MesData, the data freed if the room is the same: the room heap 4 it came from is replaced otherwise).
@@ -36,6 +42,7 @@
 #include "dvd.h"
 #include "main_mem.h"
 #include "sce.h"
+#include "sce_sys.h"
 
 #include <atomic>
 #include <math.h>
@@ -45,6 +52,7 @@
 extern "C" void re4_log(const char* fmt, ...);
 extern "C" void re4_add_frame_hook(void (*hook)(unsigned));  // runtime/pad.cpp
 extern "C" void re4_pad_block(u16 buttons);                  // runtime/pad.cpp
+extern "C" u16 re4_pad_raw(void);                             // runtime/pad.cpp
 extern "C" int re4_move_on(void);                            // runtime/locomotion.cpp
 extern cPlayer* pPL;
 
@@ -75,6 +83,8 @@ u32 gStr;         // the voice stream (SndStrReq)
 int gRing = -1;   // the radio's tone (SndStrPlayBlock)
 bool gArmWanted;  // the hand to the ear
 f32 gArmW;        // its blend
+std::atomic<bool> gSkip{false};  // START during the call (the frame hook)
+u16 gRawPrev;     // the pad's raw buttons at the last frame (START's press)
 
 bool inField(cPlayer* pl)
 {
@@ -120,7 +130,15 @@ void codecFrame(unsigned)
         finish(true, "ended: its task stopped");
         return;
     }
+    // START skips the call (DevJunior, 19.11.2026: "the ability to skip that talk with a button"): its press while the
+    // game does not get it
+    const u16 raw = re4_pad_raw();
+    const bool startPressed = (raw & 0x1000) && !(gRawPrev & 0x1000);
+    gRawPrev = raw;
     if (inField(pPL)) {
+        if (startPressed && !gSkip.exchange(true)) {
+            re4_log("codec: call %d skipped (START)", gCall.load());
+        }
         re4_pad_block(kBlocked);
     }
 }
@@ -323,6 +341,8 @@ int re4_codec_call(int no)
     gRoom = G_ROOM_ID;
     gTick = pG->Frame_cnt;
     gCall = no;
+    gSkip = false;
+    gRawPrev = re4_pad_raw();
     SubScreenWork* wk = &SubScreenWk;
     wk->cancel = 0;
     wk->opeMdtNo = no;
@@ -332,21 +352,29 @@ int re4_codec_call(int no)
     gArmWanted = true;
     re4_log("codec: call %d (stage %d, voice 0x%x) while Leon walks", no, (int) pG->stage_no, 0x8C + no);
     gRing = SndStrPlayBlock(1, kRingTbl[no], 0.0f);
-    for (int i = 0; i < kRingFrames && gCall.load() == no; i++) {
+    for (int i = 0; i < kRingFrames && gCall.load() == no && !gSkip.load(); i++) {
         step();
     }
     if (gCall.load() != no) {
         return 1;  // ended by the game meanwhile
     }
+    if (gSkip.load()) {
+        finish(true, "skipped before the voice");
+        return 1;
+    }
     SndStrStopBlock(gRing);
     gRing = -1;
     gStr = SndStrReq(1, 0x8C + no, 1, 0, 0, 0.0f);
     int wait = 0;
-    while (gStr && SndStrStatusCk(gStr, 2) == 0 && wait < kStreamWait && gCall.load() == no) {
+    while (gStr && SndStrStatusCk(gStr, 2) == 0 && wait < kStreamWait && gCall.load() == no && !gSkip.load()) {
         step();
         wait++;
     }
     if (gCall.load() != no) {
+        return 1;
+    }
+    if (gSkip.load()) {
+        finish(true, "skipped before the voice");
         return 1;
     }
     if (gStr && wait < kStreamWait) {
@@ -355,7 +383,7 @@ int re4_codec_call(int no)
         re4_log("codec: call %d: the voice was not ready after %d frames: subtitles only", no, wait);
     }
     int idx = 0, count = 0, left = 0, shown = 0;
-    for (int frames = 0; frames < kMaxFrames && gCall.load() == no; frames++) {
+    for (int frames = 0; frames < kMaxFrames && gCall.load() == no && !gSkip.load(); frames++) {
         if (left > 0 && --left == 0) {
             cMes.Delete(0);
         }
@@ -380,9 +408,47 @@ int re4_codec_call(int no)
     }
     if (gCall.load() == no) {
         re4_log("codec: call %d: %d subtitles in %d frames", no, shown, count);
-        finish(true, "ended");
+        finish(true, gSkip.load() ? "skipped" : "ended");
     }
     return 1;
+}
+
+// Patch 0941 (sce_at.cpp, the area check): the areas that start something wait while a call plays (DevJunior,
+// 19.11.2026: "control how far the player gets, so that it does not clash with certain scenes"): doors (1), the
+// scenario's functions (2), flags (4), messages (5), the plain ones (0, 6, 7, 0x14), use (0x11), position jumps
+// (0x13). Items, saving, camera, damage, collision, field info, stooping, ladders and hiding go on.
+int re4_codec_holds_area(u32 kind)
+{
+    if (gCall.load() < 0) {
+        return 0;
+    }
+    switch (kind) {
+    case 0:
+    case 1:
+    case 2:
+    case 4:
+    case 5:
+    case 6:
+    case 7:
+    case 0x11:
+    case 0x13:
+    case 0x14:
+        return 1;
+    }
+    return 0;
+}
+
+// Patch 0942 (em_set.cpp EmSetFromList2, a room script's enemy): no enemy appears while a call plays (DevJunior,
+// 19.11.2026: "that in a room no enemy appears until it is over"); the scenario task that asks sleeps meanwhile
+void re4_codec_spawn_wait(void)
+{
+    if (gCall.load() < 0 || !SceSys.checkCTaskRange()) {
+        return;
+    }
+    re4_log("codec: an enemy of the room's script waits for the call's end");
+    while (gCall.load() >= 0) {
+        SceSleep(1);
+    }
 }
 
 int re4_codec_active(void)  // core_bridge.cpp: Re4CoreSnapshot::codec

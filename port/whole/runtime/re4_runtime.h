@@ -372,6 +372,8 @@ void re4_pad_script_free(void);
 void re4_pad_add(unsigned short buttons);
 /* Buttons taken from channel 0 for the frame the hook runs in (runtime/codec_call.cpp). */
 void re4_pad_block(unsigned short buttons);
+/* The buttons of the last read as pressed, before re4_pad_block. */
+unsigned short re4_pad_raw(void);
 
 /* Every OS thread and where it waits (os_thread.cpp; RE4_WAIT_TRACE=1 records
  * the places): the hang search of host/main.cpp on SIGUSR1. */

@@ -1,0 +1,27 @@
+# Patch 0941 (wish of DevJunior, 19.11.2026: "control how far the player gets during the radio call, so that it does
+# not clash with certain scenes or scenarios"). Not a bug of the prototype: a port feature of the mods (patch 0939).
+# game/sce_at.cpp, the area check (SceAtCheck): while a remake radio call plays, re4_codec_holds_area
+# (runtime/codec_call.cpp) holds the areas that start something (doors, scenario functions, flags, messages, the
+# plain ones, use, position jumps): they are not executed, stay as they are and fire when the call is over and Leon
+# still stands in them. Items, saving, camera, damage, collision, field info, stooping, ladders and hiding go on.
+--- a/src/game/sce_at.cpp
++++ b/src/game/sce_at.cpp
+@@ -245,6 +245,8 @@
+ void sceAtItemFindCheck();
+ static void sceAtDataLoopInit();
+ 
++extern "C" int re4_codec_holds_area(u32 kind); /* port (patch 0941): runtime/codec_call.cpp */
++
+ static SceAtFuncTbl sceAtFunc_tbl[21] = {
+     {sceAtFunc_normal, 0},      // 0x00
+     {sceAtFunc_door, 1},        // 0x01
+@@ -593,6 +595,9 @@
+         if (hit != 0 && sceAtFunc_tbl[ft].exclusive != 0) {
+             continue;
+         }
++        if (re4_codec_holds_area(ft)) { /* port (patch 0941, mods): not during a remake radio call */
++            continue;
++        }
+         SceAtSetExecFlg(w->no);
+         if (sceAtFunc_tbl[ft].func(w, em) == 1) {
+             hit = 1;
