@@ -1455,11 +1455,14 @@ struct SkinFile {
     bool unusable;             // a packed body, no part table, no room ...
     std::vector<SkinEntry> entries;
     std::vector<u32> skinStart;  // the skin's entries (0: empty)
+    std::vector<u32> skinLen;    // their lengths
+    u32 skinSize;                // the body's bytes there
     unsigned char* skin;       // the mod's body in the mods' place, 0 until a bin matched
     bool skinTried;
 };
 
 std::vector<SkinFile> gSkins;
+
 int gSkinsScanned = -2;        // gCurrent the list was made for
 int gSkinsGeneration = -1;     // gModsGeneration it was made for
 
@@ -1547,7 +1550,13 @@ void scanSkins(Disc& d)
         }
         char path[1400];
         entryPath(d, i, path, sizeof(path));  // the disc's own file
-        const char* rel = strstr(path, "/files/");
+        // the disc's own name behind "<root>/files/" (Mods, 22.11.2026, DevJunior: Ashley's and Ada's skins not in the
+        // cutscenes): the first "/files/" of the path was taken before, and on the phone the app's folder itself is
+        // ".../com.ast.cubeevil4.mods/files/game/disc1": no archive was ever looked at there (only on the PC)
+        const size_t rootLen = strlen(d.root);
+        const char* rel = strncmp(path, d.root, rootLen) == 0 && strncmp(path + rootLen, "/files/", 7) == 0
+                              ? path + rootLen
+                              : 0;
         if (!rel || strncmp(rel + 7, "em/pl", 5) != 0 || strchr(rel + 7 + 3, '/') || strlen(rel + 7) >= 32) {
             continue;
         }
@@ -1556,6 +1565,7 @@ void scanSkins(Disc& d)
         f.unusable = true;
         f.skin = 0;
         f.skinTried = false;
+        f.skinSize = 0;
         u32 size = 0;
         unsigned char* file = readWhole(path, &size);
         u32 len = 0;
@@ -1606,8 +1616,10 @@ void* skinEntry(Disc& d, SkinFile& f, u32 index)
             char what[64];
             snprintf(what, sizeof(what), "the skin %s for the cutscenes", f.name);
             f.skin = placeConverted(f.name, body, len, what);
+            f.skinSize = f.skin ? len : 0;
             for (auto& e : ent) {
                 f.skinStart.push_back(e.first);
+                f.skinLen.push_back(e.second);
             }
         }
         free(file);
@@ -1686,6 +1698,65 @@ void* re4_mod_event_bin(const void* header, int index, const char* name, void* d
                 (unsigned) room);
     }
     return data;
+}
+
+// Patch 0946 (event.cpp ExePacket_SetPartsSub, after 0906): an event's own head (ev0101 / ev0201) or eyes (ev0102 /
+// ev0202) of Ashley (pl0100) or Ada (pl0200), whose body in this event came from a skin (patch 0915): the skin's head
+// or face instead (Mods, 22.11.2026, DevJunior: "Ashley no aparece con las skins nuevas ... tampoco Ada Wong en la
+// cinemática"). *bin and *tpl: the skin's model and palette (entries = PL_ARC - 4 of the game's setModel: Ashley pl01
+// and pl05 head 2 / 7, face 3 / 5; pl11 head 2 / 4, face 3 / 7; Ada pl0b and pl0c head 2 / 3, face 4 / 3). 1 = the
+// head, 2 = the face, 0 = the event's own (no skin, its body not the skin's in this event: another skeleton maybe,
+// or the skin's head the disc's). `body`: the model of the event's body (oya), from the skin's place when 0915 took it.
+int re4_mod_event_skin_part(const char* name, const char* oya, const void* body, void** bin, void** tpl)
+{
+    Disc* d = current();
+    if (!d || !d->mods || !name || !oya || !bin || !tpl || strlen(name) != 6 || strncmp(name, "ev0", 3) != 0) {
+        return 0;
+    }
+    const bool ashley = strcmp(oya, "pl0100") == 0 && name[3] == '1';
+    const bool ada = strcmp(oya, "pl0200") == 0 && name[3] == '2';
+    const int part = strcmp(name + 4, "01") == 0 ? 1 : strcmp(name + 4, "02") == 0 ? 2 : 0;
+    if ((!ashley && !ada) || part == 0) {
+        return 0;
+    }
+    if (gSkinsScanned != gCurrent || gSkinsGeneration != gModsGeneration) {
+        scanSkins(*d);
+    }
+    static const char* const kAshley[] = {"em/pl01.", "em/pl05.", "em/pl11."};
+    static const char* const kAda[] = {"em/pl0b.", "em/pl0c."};
+    const char* const* names = ashley ? kAshley : kAda;
+    const int count = ashley ? 3 : 2;
+    for (int k = 0; k < count; k++) {
+        for (SkinFile& f : gSkins) {
+            if (f.unusable || strncmp(f.name, names[k], 8) != 0) {
+                continue;
+            }
+            const unsigned char* b = (const unsigned char*) body;
+            if (!f.skin || !b || b < f.skin || b >= f.skin + f.skinSize) {
+                re4_log("Event: part %s on %s: the event's own (its body is not %s's in this cutscene)", name, oya,
+                        f.name);
+                return 0;
+            }
+            const bool pl11 = strncmp(f.name, "em/pl11.", 8) == 0;
+            const u32 model = ada ? (part == 1 ? 2 : 4) : (part == 1 ? 2 : 3);
+            const u32 pal = ada ? 3 : part == 1 ? (pl11 ? 4 : 7) : (pl11 ? 7 : 5);
+            void* m = skinEntry(*d, f, model);
+            void* t = skinEntry(*d, f, pal);
+            if (!m || !t || model >= f.entries.size() || model >= f.skinLen.size()) {
+                return 0;
+            }
+            const SkinEntry& disc = f.entries[model];
+            if (disc.len == f.skinLen[model] && fnv((const unsigned char*) m, disc.len) == disc.full) {
+                return 0;  // the skin keeps the disc's head: the event's own
+            }
+            *bin = m;
+            *tpl = t;
+            re4_log("Event: part %s on %s: drawn as %s's %s (entries %u, %u)", name, oya, f.name,
+                    part == 1 ? "head" : "face", (unsigned) model, (unsigned) pal);
+            return part;
+        }
+    }
+    return 0;
 }
 
 }  // extern "C"

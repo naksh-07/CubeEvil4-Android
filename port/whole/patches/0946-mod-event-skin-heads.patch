@@ -1,0 +1,48 @@
+# Patch 0946 (wish of DevJunior, 22.11.2026: "Ashley does not show with the new skins I gave her, nor Ada Wong in the
+# cutscene of the mayor's house"). Not a bug of the prototype: a port feature of the mods (as 0906 for Leon).
+# game/event.cpp Event::ExePacket_SetPartsSub: Ashley's (pl0100) and Ada's (pl0200) event bodies take a skin's models
+# where the event's bins are copies of the skinned archive (patch 0915), but their heads and eyes are the event's own
+# models (event/model/ev0100, ev0200). re4_mod_event_skin_part (runtime/dvd.cpp) gives the skin's head or face (and
+# palette) for ev0101 / ev0201 (head) and ev0102 / ev0202 (eyes) when the oya's body model lies in the skin's place
+# (the skeleton is the skin's then); the event's part stays for its motions and offsets, drawn at scale 0.
+--- a/src/game/event.cpp
++++ b/src/game/event.cpp
+@@ -980,6 +980,7 @@
+ // Creates the parts cModelInfo from bin/tpl and adds it to parent `oya` (the ev*02 head parts also
+ // set the parent's parts offset); registered as model type 3.
+ extern "C" int re4_mod_event_head(const char* name, const char* oya); /* port (patch 0906): runtime/dvd.cpp */
++extern "C" int re4_mod_event_skin_part(const char* name, const char* oya, const void* body, void** bin, void** tpl); /* port (patch 0946): runtime/dvd.cpp */
+ extern "C" void re4_mod_shape_pair(void* event_info, void* event_model, void* skin_info, void* skin_model); /* port (patch 0907): runtime/dvd.cpp */
+ int Event::ExePacket_SetPartsSub(char* nm, char* bin, char* tpl, char* oya)
+ {
+@@ -1034,6 +1035,30 @@
+                     && *(u32*) ((u8*) skin->model_addr + skin->model_addr->shapeOfs)
+                            >= *(u32*) ((u8*) info->model_addr + info->model_addr->shapeOfs)) {
+                     re4_mod_shape_pair(info, info->model_addr, skin, skin->model_addr);
++                }
++            }
++        }
++    }
++    /* port (patch 0946, mods): Ashley's and Ada's skins in the cutscenes with their own head and face too
++       (DevJunior, 22.11.2026): when the event's body of pl0100 / pl0200 came from the skin (patch 0915), the
++       event's head ev0101 / ev0201 and eyes ev0102 / ev0202 are drawn at scale 0 and the skin's added, as 0906 */
++    {
++        void* sb;
++        void* st;
++        int own = re4_mod_event_skin_part(nm, oya, m->pModelInfo != 0 ? m->pModelInfo->model_addr : 0, &sb, &st);
++
++        if (own != 0) {
++            cModelInfo* skin = ModInfoMgr.create(sb, st);
++
++            if (skin != 0) {
++                info->mat[0][0] = 0.0f;
++                info->mat[1][1] = 0.0f;
++                info->mat[2][2] = 0.0f;
++                m->addModel(skin);
++                if (own == 1 && skin->model_addr->shapeOfs != 0 && info->model_addr->shapeOfs != 0
++                    && *(u32*) ((u8*) skin->model_addr + skin->model_addr->shapeOfs)
++                           >= *(u32*) ((u8*) info->model_addr + info->model_addr->shapeOfs)) {
++                    re4_mod_shape_pair(info, info->model_addr, skin, skin->model_addr);
+                 }
+             }
+         }
