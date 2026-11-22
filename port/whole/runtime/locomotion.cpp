@@ -125,6 +125,11 @@ const f32 kTurnSpeed = 1.35f;  // the turns' speed against the remake's own (its
 const f32 kTurnInPlace = 2.1f;
 const int kClipHokan = 5;      // frames a clip blends in
 const int kLoopHokan = 6;      // frames the loop after it blends in
+// (Mods, 21.11.2026, DevJunior: "the change from jog to run and from walk to run smooth, for the eye, but without it
+// getting slow") into the sprint while moving and out of it: the loop at the frame with the same foot forward, its pose
+// blended over kSprintBlend frames and its speed too (Mot_attr 0x400: MotionMoveCore blends the step from the last
+// motion's), from the first frame on: no waiting, no foot that jumps
+const int kSprintBlend = 8;
 int gApplied = -1;         // what the table holds: 1 the remake's, 0 the game's, -1 unknown
 
 u32 be32At(const u8* p)
@@ -610,6 +615,41 @@ bool isClip(const void* m)
     return false;
 }
 
+bool rightStrike(const Move& m, f32* at);
+
+// The key of `dst` with the same foot forward as `from` at its sequence frame `seqFrame` (64ths); -1 when unknown
+int phaseKey(const Move& from, u16 seqFrame, const Move& dst)
+{
+    f32 rf = 0.0f, rt = 0.0f;
+    if (!from.last || !dst.last || !rightStrike(from, &rf) || !rightStrike(dst, &rt)) {
+        return -1;
+    }
+    f32 frac = ((f32) seqFrame / 64.0f - rf) / (f32) from.last;
+    frac -= floorf(frac);
+    f32 at = rt + frac * (f32) dst.last;
+    at -= at >= (f32) dst.last ? (f32) dst.last : 0.0f;
+    const int keys = dst.seq[0];
+    const int i = (int) (at * (f32) keys / (f32) dst.last + 0.5f);
+    return i >= keys ? 0 : i;
+}
+
+// Motion `dst` (a loop: gMove or the sprint's clip) taken over from the current one in step, pose and speed blended
+void blendInStep(cPlayer* pl, const Move* from, Move& dst)
+{
+    const int i = from ? phaseKey(*from, pl->Motion.Seq.Frame, dst) : -1;
+    MotionSetCore(pl, &pl->Motion, dst.mot, dst.seq, kSprintBlend, 5 | 0x400, i < 0 ? 0 : i);
+    if (pl->pMotionB) {
+        pl->pMotionB->Brate = 0.0f;
+    }
+    static int said;
+    if (said < 4) {
+        said++;
+        re4_log("move: %s, at its frame %d of %d (the same foot forward), pose and speed blended over %d frames",
+                &dst == &gClip[8] ? "into the sprint" : "out of the sprint into the jog", i, (int) dst.seq[0],
+                kSprintBlend);
+    }
+}
+
 void play(cPlayer* pl, int i)
 {
     Move& c = gClip[i];
@@ -638,7 +678,7 @@ void transitions(cPlayer* pl)
     if (gPlaying == 8 && cur == (const void*) gClip[8].mot && (r1 != 3 || !gSprintKey)) {
         // the sprint let go: back to the jog (the run routine), its stop when the game stands him
         if (r1 == 3 && gMove[2].mot) {
-            MotionSetCore(pl, &pl->Motion, gMove[2].mot, gMove[2].seq, 8, 5, 0);
+            blendInStep(pl, &gClip[8], gMove[2]);
             gPlaying = -1;
             gWasMoving = 3;
             return;
@@ -679,8 +719,15 @@ void transitions(cPlayer* pl)
         gWasMoving = 1;
     } else if (cur == (const void*) gMove[2].mot && gMove[2].mot) {
         if (r1 == 3 && gSprintKey && gClip[8].mot) {
-            // into the sprint: from standing its start, from the jog its way in (or its loop)
-            play(pl, fresh && gWasMoving == 0 && gClip[9].mot ? 9 : gClip[11].mot ? 11 : 8);
+            // into the sprint: from standing its start; from the jog or the walk (the game's run routine has just set
+            // the jog in step with the walk) the sprint's loop in step, blended (before 21.11.2026: its way in from
+            // frame 0, the feet jumped)
+            if (fresh && gWasMoving == 0 && gClip[9].mot) {
+                play(pl, 9);
+            } else {
+                blendInStep(pl, &gMove[2], gClip[8]);
+                gPlaying = 8;
+            }
             gWasMoving = 4;
             return;
         }
