@@ -106,9 +106,10 @@ const char* const kClipNames[kClips] = {"walk start",   "walk stop",      "run s
 // it from the jog). aim_options.cpp re4_run_held asks re4_move_sprint.
 // The jog at kJogPace of the game's run (device report 18.11.2026: "lower the speed by at least 10 %": the jog 140 a frame
 // then, the sprint 1.1 times its pace, its own strides 1.2 times as long: 180); the sprint at the jog's pace and its own
-// longer strides (about 143 a frame, the game's run)
+// longer strides (about 143 a frame, the game's run); (Mods, 21.11.2026, DevJunior: "lower the running speed by 5 %")
+// the sprint played 5 % slower: about 136 a frame
 const f32 kJogPace = 0.85f;
-const f32 kSprintSpeed = 1.0f;
+const f32 kSprintSpeed = 0.95f;
 bool gSprintKey;  // the run key held (the sprint)
 std::atomic<int> gJogPresses(0);  // L3 presses not yet seen (any thread)
 bool gJog;                        // he jogs (L3 while walking)

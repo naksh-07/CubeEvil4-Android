@@ -254,6 +254,22 @@ class Fit:
         self.rows, self.root = rows, root
         return math.degrees(turn)
 
+    def game_wrists(self, wrists):
+        """The hands turned as in a motion of the game's own (`wrists`: per game frame {part: 3x3 local rotation}),
+        taken at the same share of the motion (Mods, 21.11.2026, DevJunior: "the hands look odd when I shoot the
+        Ganados"): the remake's Ganados flinch empty-handed, their wrists bent up to 120 degrees off any the game
+        uses, and the axe or sickle in the hand pointed every which way."""
+        n, m = len(self.rows), len(wrists)
+        rows = []
+        for i, row in enumerate(self.rows):
+            src = wrists[min(m - 1, int(round(i * (m - 1) / float(max(1, n - 1)))))]
+            local = dict(row[0])
+            for part, rot in src.items():
+                if part in local:
+                    local[part] = rot
+            rows.append((local,) + tuple(row[1:]))
+        self.rows = rows
+
     def motion(self, world_scale):
         fixed = None
         if self.game_like:
@@ -591,14 +607,31 @@ REACT_STEP = 3.0
 REACT_TRAVEL = 1600.0  # mm a reaction carries the Ganado at most (the game's own: up to 1.5 m; the remake's: 3 m)
 
 
-def reacts(root, model, tol, out_path):
+REACT_WRISTS = 0x37  # em10.drs: the game's own flinch (body, from the front) whose hands the reactions keep
+
+
+def game_wrists(model, data):
+    """Per game frame the hands' (parts 10, 16) local rotations of a motion of the game's own."""
+    from tools.motion import evalhost
+    player = evalhost.Player(model, fcv.parse(data), ik=False)
+    out = []
+    for f in range(int(player.lib.mot_model_max_frame(player.handle)) + 1):
+        pose = player.frame(f)
+        out.append({p: np.array(pose.l_mat[p], dtype=np.float64).reshape(3, 4)[:, :3] for p in (10, 16)})
+    return out
+
+
+def reacts(root, model, tol, out_path, ganado_arc=None):
     """The Ganados' hit reactions (see --react)."""
     _v, mots = R.read_motlist(root / DAMAGE)
+    wrists = game_wrists(model, ganado_arc.entry(REACT_WRISTS)) if ganado_arc is not None else None
     entries, table = [b""], []
     for cls, names in REACTS:
         for name in names:
             m = next(x for x in mots if x.name.endswith(name))
             fit = Fit(m, model, "ganado", REACT_STEP, tol, m.frames, game_like=True)
+            if wrists:
+                fit.game_wrists(wrists)
             far = max(math.hypot(t[0], t[2]) for t in fit.track(fit.scale))
             k = min(1.0, REACT_TRAVEL / far) if far > 1.0 else 1.0
             data = fcv.serialise(fit.motion(fit.scale * k))
@@ -682,7 +715,7 @@ def main(argv=None):
     if a.kicks:
         kicks(root, leon_model, a.tolerance, a.kicks, a.no_fingers, a.box_from, a.box_kick)
     if a.react:
-        reacts(root, ganado_model, a.tolerance, a.react)
+        reacts(root, ganado_model, a.tolerance, a.react, U.Archive(Path(a.ganado.partition(":")[0]).read_bytes(), ">"))
     if a.move:
         moves(root, leon_model, a.tolerance, a.move)
     want = set(a.only.split(",")) if a.only else None

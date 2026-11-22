@@ -394,6 +394,7 @@ final class TouchControls implements CoreTouch.Host {
   @Override public void r3(boolean down) { host.r3(down); }
 
   @Override public void reload() { CoreBridge.requestReload(); }
+  @Override public void jog() { CoreBridge.toggleJog(); }
   @Override public void zoom(int direction, boolean down) { host.zoom(direction, down); }
 
   /** Before the window's touch event goes to the views (CoreActivity.dispatchTouchEvent). */

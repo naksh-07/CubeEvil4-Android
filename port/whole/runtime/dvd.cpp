@@ -1653,7 +1653,14 @@ void* re4_mod_event_bin(const void* header, int index, const char* name, void* d
         }
     }
     const unsigned char* p = (const unsigned char*) data;
+    // (Mods, 21.11.2026, DevJunior: Ada's skin not in the mayor's house's cutscene) the lines per cutscene, not per
+    // session: the first cutscenes of the village used them all up before the later ones were looked at
     static int told;
+    static const void* toldFor;
+    if (header != toldFor || index == 0) {
+        toldFor = header;
+        told = 0;
+    }
     for (SkinFile& f : gSkins) {
         if (f.unusable) {
             continue;

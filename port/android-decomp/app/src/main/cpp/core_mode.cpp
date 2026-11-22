@@ -2797,9 +2797,12 @@ bool drawGx() {
       gxHitShotsLeft--;
     }
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - now).count();
-    // (Mods, 19.11.2026) the target follows the pictures' pace: 60 FPS makes one every 16.7 ms
+    // (Mods, 19.11.2026) the target follows the pictures' pace: 60 FPS makes one every 16.7 ms; (Mods, 21.11.2026,
+    // testers: drops on Snapdragon phones) with headroom, 70 % of it (11.7 / 23.3 ms): at the whole interval Android
+    // lowered the render thread's clocks until its work filled it (the log: 787 MHz, 47 % of the pictures off their
+    // vsync), and a heavier picture came late
     {
-      const long long target = smoothOn ? 16666667LL : 33333333LL;
+      const long long target = smoothOn ? 11666667LL : 23333333LL;
       if (renderHint.On() && renderHint.TargetNs() != target) {
         renderHint.Target(target);
         if (renderHint.TargetNs() == target)
@@ -2880,8 +2883,8 @@ bool drawGx() {
         LOG("cores: the render thread %s", cores);
         const int tid = re4cpu::ThreadId();
         const char *why = "";
-        renderHint.Open(&tid, 1, 33333333LL, &why);
-        LOG("performance hint: %s (the render thread, 33.3 ms a picture)", why);
+        renderHint.Open(&tid, 1, 23333333LL, &why);
+        LOG("performance hint: %s (the render thread, 23.3 ms of a picture's 33.3 ms)", why);
       } else {
         renderHint.Close();
         if (!first) re4cpu::ReleaseCores();

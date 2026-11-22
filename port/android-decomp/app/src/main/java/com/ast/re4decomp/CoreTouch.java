@@ -54,6 +54,10 @@ final class CoreTouch {
       // runs (runtime/free_move.cpp, patch 0900). In the default layout left of B, and in the editor's ACTION
       // right after B (the editor's cycle had it last, after the C stick, where it was not found)
       RELOAD = "reload",
+      // the jog of the remake's movements (wish of DevJunior, 21.11.2026: "the jog button for the touch controls"): each
+      // press toggles walking and jogging, as L3 on a controller (CoreBridge.toggleJog); in the default layout right of
+      // the move stick, in the editor's ACTION after RLOAD
+      JOG = "jog",
       // the C stick as an analog stick the editor adds (RetroTouch's stick action, registerStickAction)
       C_STICK = "cstick",
       // the aim stick (R held, its tilt aims) and the knife stick (L held), sticks the editor adds (1.0)
@@ -73,9 +77,9 @@ final class CoreTouch {
    * graphics capture for error reports, as on a controller; not in the default layout, the editor
    * adds it.
    */
-  static final String[] ACTIONS = {A, B, RELOAD, X, Y, Z, L, R, START, MENU, R3, C_STICK, ZOOM_IN, ZOOM_OUT, AIM_STICK,
+  static final String[] ACTIONS = {A, B, RELOAD, JOG, X, Y, Z, L, R, START, MENU, R3, C_STICK, ZOOM_IN, ZOOM_OUT, AIM_STICK,
       KNIFE_STICK};
-  static final String[] LABELS = {"A", "B", "RLOAD", "X", "Y", "Z", "L", "R", "START", "MENU", "R3", "C", "+", "\u2212",
+  static final String[] LABELS = {"A", "B", "RLOAD", "JOG", "X", "Y", "Z", "L", "R", "START", "MENU", "R3", "C", "+", "\u2212",
       "AIM", "KNIFE"};
   // the GameCube's official colours (the project owner's palette, 19.10.2026): A green, B red,
   // Z purple, the C stick yellow, the others grey (RetroTouch writes dark labels on the light grey
@@ -84,7 +88,7 @@ final class CoreTouch {
       GC_GREY = rgb(0xDD, 0xDD, 0xDD), GC_YELLOW = rgb(0xF7, 0xC8, 0x1E);
   /** The border of every button (wish of the project owner, 03.11.2026). */
   static final int BORDER = 0xFF3E3C29;
-  static final int[] COLOURS = {GC_GREEN, GC_RED, GC_GREY, GC_GREY, GC_GREY, GC_PURPLE, GC_GREY, GC_GREY, GC_GREY, GC_GREY,
+  static final int[] COLOURS = {GC_GREEN, GC_RED, GC_GREY, GC_GREY, GC_GREY, GC_GREY, GC_PURPLE, GC_GREY, GC_GREY, GC_GREY, GC_GREY,
       GC_GREY, GC_YELLOW, GC_GREY, GC_GREY, GC_GREY, GC_GREY};
 
   /** Whether an action zooms (the editor's + and -), not a GameCube button. */
@@ -141,6 +145,7 @@ final class CoreTouch {
       Control.button(A, 0.875f, 0.68f, 0.17f),
       Control.button(B, 0.76f, 0.86f, 0.11f),
       Control.button(RELOAD, 0.645f, 0.89f, 0.08f),
+      Control.button(JOG, 0.335f, 0.89f, 0.08f),
       Control.button(MENU, 0.42f, 0.08f, 0.085f),
       Control.button(START, 0.58f, 0.08f, 0.085f),
   };
@@ -154,6 +159,8 @@ final class CoreTouch {
     void r3(boolean down);
     /** RLOAD went down: reload without aiming (the core's request). */
     void reload();
+    /** JOG went down: walking and jogging toggled (the core's request). */
+    void jog();
     /** A zoom button went down or up: 1 in, -1 out (the scope and the binoculars). */
     void zoom(int direction, boolean down);
   }
@@ -234,6 +241,8 @@ final class CoreTouch {
       host.r3(down);
     } else if (RELOAD.equals(action)) {
       if (down) host.reload();
+    } else if (JOG.equals(action)) {
+      if (down) host.jog();
     } else if (isZoom(action)) {
       host.zoom(ZOOM_IN.equals(action) ? 1 : -1, down);
     } else if (latch && (L.equals(action) || R.equals(action))) {
