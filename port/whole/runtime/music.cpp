@@ -62,6 +62,17 @@ int gNearFrames, gCalmFrames;
 int gTrack = -1;
 int gBlocked;
 
+// (Mods, 21.11.2026: DevJunior's log, a crash on the way from r109 to r10a after the church, ARM64, a wild pointer
+// read at cEm::next) a work of the enemy manager's array: while a room is torn down and the next one loaded, the
+// alive list can point into memory already reused (as state_trace.cpp's inArray). The walk keeps to the array
+// and to its length, so a garbage list can neither crash it nor turn it into an endless loop (a black screen).
+bool inEmArray(const cEm* m)
+{
+    const unsigned long a = (unsigned long) m, base = (unsigned long) EmMgr.pArray;
+    return base >= 0x80000000ul && EmMgr.size != 0 && a >= base &&
+           a < base + (unsigned long) EmMgr.nArray * EmMgr.size && (a - base) % EmMgr.size == 0;
+}
+
 bool ganado(const cEm* m)
 {
     return m->id >= 0x10 && m->id <= 0x20 && m->id != 0x18;
@@ -145,7 +156,8 @@ void frame(unsigned)
     const bool call = re4_codec_active() != 0;
     re4_mod_music_cut(call ? 1 : 0);
     const bool hard = call || !pG || !pPL || pG->pl_type != 0 || StaFlagChk(pG, STA_MOVIE_ON) || StaFlagChk(pG, STA_DIEDEMO);
-    const bool soft = !hard && (StaFlagChk(pG, STA_EVENT) || StaFlagChk(pG, STA_SUSPEND));
+    // (Mods, 21.11.2026) only while the room's main loop runs (Rno0 3): not while a room is loaded or torn down
+    const bool soft = !hard && (pG->Rno0 != 3 || StaFlagChk(pG, STA_EVENT) || StaFlagChk(pG, STA_SUSPEND));
     gBlocked = hard || soft ? gBlocked + 1 : 0;
     if (hard && !call && gBattle) {
         // Leon's death, a movie: the fight is over (after a continue the room starts anew with the same id)
@@ -164,7 +176,8 @@ void frame(unsigned)
         }
         bool near = false, far = false;
         int nearId = 0;
-        for (cEm* m = EmMgr.getActiveWork(); m; m = EmMgr.getNext(m)) {
+        int guard = 0;
+        for (cEm* m = EmMgr.getActiveWork(); m && inEmArray(m) && guard < (int) EmMgr.nArray; m = EmMgr.getNext(m), guard++) {
             if (m == (cEm*) pPL || !threat(m)) {
                 continue;
             }
