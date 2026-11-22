@@ -28,6 +28,7 @@ public final class CoreTouchTests {
     @Override public void latched(String action, boolean on) { calls.add(action + " " + on); }
     @Override public void r3(boolean down) { calls.add("r3 " + down); }
     @Override public void reload() { calls.add("reload"); }
+    @Override public void jog() { calls.add("jog"); }
     @Override public void zoom(int direction, boolean down) { calls.add("zoom " + direction + " " + down); }
   }
 
@@ -55,6 +56,11 @@ public final class CoreTouchTests {
     t.action(CoreTouch.RELOAD, true);
     t.action(CoreTouch.RELOAD, false);
     check(in.pad()[0] == 0 && host.calls.size() == 1 && host.calls.get(0).equals("reload"));
+    host.calls.clear();
+    // JOG: the core's toggle when it goes down (the remake's walk and jog, as L3), no GameCube button
+    t.action(CoreTouch.JOG, true);
+    t.action(CoreTouch.JOG, false);
+    check(in.pad()[0] == 0 && host.calls.size() == 1 && host.calls.get(0).equals("jog"));
     host.calls.clear();
     // R3: the app's graphics capture, no GameCube button; offered to the editor with its label
     host.calls.clear();
@@ -550,7 +556,7 @@ public final class CoreTouchTests {
       check(!CoreTouch.LABELS[i].isEmpty() && CoreTouch.LABELS[i].length() <= 5);
       check(CoreTouch.label(a).equals(CoreTouch.LABELS[i]));
       boolean noButton = a.equals(CoreTouch.MENU) || a.equals(CoreTouch.R3) || a.equals(CoreTouch.RELOAD)
-          || CoreTouch.isStick(a) || CoreTouch.isZoom(a);  // app / C stick / zoom actions
+          || a.equals(CoreTouch.JOG) || CoreTouch.isStick(a) || CoreTouch.isZoom(a);  // app / C stick / zoom actions
       check(noButton ? CoreTouch.gcButton(a) == 0 : CoreTouch.gcButton(a) != 0);
     }
     Set<String> ids = new HashSet<>(), used = new HashSet<>();
