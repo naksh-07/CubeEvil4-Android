@@ -123,6 +123,9 @@ void finish(bool sameRoom, const char* why)
     }
     gOp = 0;
     gArmWanted = false;
+    if (sameRoom) {
+        SysFlagOff(pG, SYS_SCREEN_STOP);  // as the end of OpeSetOpenTerm
+    }
     re4_log("codec: call %d %s", gCall.load(), why);
     gCall = -1;
 }
@@ -368,6 +371,14 @@ int re4_codec_call(int no)
     gMesBak = MesData.m_Data[2];
     MesData.registData(2, mes);
     gArmWanted = true;
+    // the picture goes on: the game's codec screen clears SYS_SCREEN_STOP once it has begun (sscrn.cpp
+    // OpeSetOpenTerm, after its first sleep, and at its end). An event before the call may leave it set (r117
+    // r117_EventAshleyFind: SysFlagOn after the s00 event, then the call 10): kept, the picture stood still for the
+    // whole call and after it (DevJunior's report 22.11.2026, "no me permite avanzar")
+    if (SysFlagChk(pG, SYS_SCREEN_STOP)) {
+        SysFlagOff(pG, SYS_SCREEN_STOP);
+        re4_log("codec: call %d: the picture was held (SYS_SCREEN_STOP): released, as the codec screen does", no);
+    }
     re4_log("codec: call %d (stage %d, voice 0x%x) while Leon walks", no, (int) pG->stage_no, 0x8C + no);
     gRing = SndStrPlayBlock(1, kRingTbl[no], 0.0f);
     for (int i = 0; i < kRingFrames && gCall.load() == no && !gSkip.load(); i++) {
