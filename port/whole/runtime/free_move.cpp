@@ -76,6 +76,8 @@ extern "C" void re4_parry_input(cPlayer* pl);         // runtime/parry.cpp
 extern "C" int re4_ashley_gun_input(cPlayer* pl, int freeCam);  // runtime/ashley_gun.cpp (patch 0913)
 extern "C" int re4_move_turn(void* pl, float diff, int armed);   // runtime/locomotion.cpp (the remake's turns)
 extern "C" int re4_move_heavy_legs(void* pl);  // runtime/locomotion.cpp (the remake's legs under a big weapon)
+extern "C" int re4_move_strafe(void* pl, float sx, float sy, float want, const void* cur, float curFrame, void** mot,
+                               void** seq, int* flip, float* speed, int* start);  // runtime/locomotion.cpp
 extern "C" int re4_quick_slots_on(void);       // runtime/aim_options.cpp
 
 namespace {
@@ -150,6 +152,7 @@ Quaternion gHipQ;
 bool gHipMean = false;
 MOTION_INFO gWalk;
 void* gWalkMot = 0;
+int gWalkFlags = 4;  // MotionSetCore's flags it was set with (0x40: mirrored, a side step)
 cPlayer* gWalkPl = 0;
 bool gWalkUpper;  // the parts it was found for: the upper body (overlay's `upper`), else the legs
 f32 gLegW = 0.0f;
@@ -616,7 +619,7 @@ void findLegs(cPlayer* pl, int n, bool upper)
 // `at` >= 0: the motion at that sequence frame (the caller keeps it in step), else it advances by `speed`.
 // Shared by the legs while aiming (legs) and the remake's legs under a big weapon (runtime/locomotion.cpp).
 bool overlay(cPlayer* pl, void* mot, void* seq, int start, f32 speed, f32 at, f32 legW, f32 swayW, f32 shiftW,
-             bool upper = false)
+             bool upper = false, int flags = 4)
 {
     int n = 0;
     for (cParts* p = pl->pList; p; p = p->pList) {
@@ -631,11 +634,12 @@ bool overlay(cPlayer* pl, void* mot, void* seq, int start, f32 speed, f32 at, f3
     }
     Mtx modelMat;
     PSMTXCopy(pl->mat, modelMat);
-    if (mot != gWalkMot || pl != gWalkPl || upper != gWalkUpper) {
+    if (mot != gWalkMot || pl != gWalkPl || upper != gWalkUpper || flags != gWalkFlags) {
         memset(&gWalk, 0, sizeof gWalk);
         // keep the model's blend motion (cMot3's pitch blend); IKInit below, on the copy only
         gWalk.Mot_flag = 0x20000000 | 0x10000000;
-        MotionSetCore(pl, &gWalk, mot, seq, 0, 4, start);
+        MotionSetCore(pl, &gWalk, mot, seq, 0, flags, start);
+        gWalkFlags = flags;
         gWalk.Mot_flag |= 0x40000000;  // MotionMoveCore: leave the model's matrix alone
         memset(gWalkHist, 0, sizeof gWalkHist);
         gWalkMot = mot;
@@ -771,6 +775,26 @@ void legs(cPlayer* pl)
         gLegW = 0.0f;
         gWalkMot = 0;
         return;
+    }
+    // (Mods, 21.11.2026, DevJunior: "the movements to the sides") aiming, sideways or aslant: Leon's own side steps of
+    // the remake (runtime/locomotion.cpp re4_move_strafe), at the aiming walk's speed, with the same foot forward as
+    // the step before; straight forward or back his walk and back step as before
+    const bool runReload = gLegRun && directReload(pl);
+    if (!runReload) {
+        void* sm = 0;
+        void* ss = 0;
+        int flip = 0, start = 0;
+        f32 sp = 1.0f;
+        // the speed he really moves at: aiming kAimWalk, reloading on the move his walk (moveReload)
+        const f32 want = (reload && !pl->isKamae() ? gWalkSpeed : kAimWalk) * (gAimMag > 0.2f ? gAimMag : 0.2f);
+        if (re4_move_strafe(pl, gAimSx, gAimSy, want, gWalkMot,
+                            (f32) gWalk.Seq.Frame / 64.0f, &sm, &ss, &flip, &sp, &start)) {
+            if (!overlay(pl, sm, ss, start, sp, -1.0f, gLegW * (reload ? 1.0f : kLegMax),
+                         gLegW * (reload ? 1.0f : kSwayAim), gLegW, false, 4 | flip)) {
+                gLegW = 0.0f;
+            }
+            return;
+        }
     }
     // the walk motion, the back step when he moves back (as the routines choose them: dmMotCk, player.cpp)
     const bool back = gAimSy < -0.3f && -gAimSy > fabsf(gAimSx);

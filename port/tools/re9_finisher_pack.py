@@ -479,6 +479,11 @@ CLIPS = [(0x80, "0400_walk_F_start"), (0x81, "0406_walk_F_end"), (0x82, "0510_jo
          (0x88, "0720_dash_loop"), (0x89, "0710_dash_start_R0"), (0x8A, "0740_dash_end"),
          (0x8B, "0718_dash_from_jog_R")]
 CLIP_LOOPS = {0x88}
+# the side steps while aiming (wish of DevJunior, 21.11.2026: "the movements to the sides"; runtime/free_move.cpp,
+# "Move while aiming"): Leon's own walk loops of cha0_general to the left, right, forward-left and back-right, one
+# seamless cycle each (find_loop); forward-right and back-left are the last two mirrored (the game's flip table)
+STRAFES = [(0x8C, "0433_walk_L_loop", (40, 90)), (0x8D, "0473_walk_R_loop", (40, 90)),
+           (0x8E, "0413_walk_FL_loop", (40, 90)), (0x8F, "0453_walk_BR_loop", (40, 90))]
 LOOP_BONES = ["Hip", "Spine_0", "Spine_2", "Neck_0", "Head", "R_UpperArm", "R_Forearm", "L_UpperArm", "L_Forearm",
               "R_Thigh", "R_Shin", "R_Foot", "L_Thigh", "L_Shin", "L_Foot"]
 
@@ -579,6 +584,21 @@ def moves(root, model, tol, out_path):
         print("clip %-22s 0x%x: %d game frames, %d bytes, ends %.0f mm ahead, %.0f mm aside, turned %.0f deg, steps %s; "
               "check %.1f/%.1f deg" % (name, code, len(fit.frames), len(data), end[2], end[0], math.degrees(end[3]),
                                        [i for i, _f in st], c[0], c[1]))
+    for code, name, lengths in STRAFES:
+        m = next(x for x in mots if x.name.endswith(name))
+        first, length = find_loop(m, lengths)
+        fit = Fit(m, model, "leon", 2.0, tol, m.frames, True,
+                  frames=list(np.arange(first, first + length + 1e-6, 2.0)), loop=True)
+        data = fcv.serialise(fit.motion(fit.scale))
+        c = fit.check(data)
+        entries.append(data)
+        table.append(struct.pack(">BBHHHHH", code, 1, len(entries) - 1, len(fit.frames) - 1, 0xFFFF, 0xFFFF, 0))
+        st = [(i, f) for i, f in contacts(m, fit.frames) if i < len(fit.frames) - 1]
+        steps.append(st)
+        end = fit.track(fit.scale)[-1]
+        print("side step %-18s 0x%x: source %d..%d, %d game frames, %d bytes, a cycle %.0f mm ahead, %.0f mm aside, "
+              "steps %s; check %.1f/%.1f deg" % (name, code, first, first + length, len(fit.frames), len(data), end[2],
+                                                  end[0], [i for i, _f in st], c[0], c[1]))
     stk = b"STK1"
     for st in steps:
         st = st[:24]

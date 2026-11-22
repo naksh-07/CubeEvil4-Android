@@ -93,10 +93,13 @@ int gCount;
 // the transitions' clips: 0 / 1 setting off into / stopping from a walk, 2 / 3 a run, 4 / 5 the run's turn about to the
 // left / right, 6 / 7 the turn about standing (move.dat codes 0x80 + i)
 // 8..11 the sprint: its loop, setting off into it from standing, stopping from it, going into it from the jog
-const int kClips = 12;
+// 12..15 the side steps while aiming (Mods, 21.11.2026): walking left, right, forward-left, back-right (re4_move_strafe)
+const int kClips = 16;
 const char* const kClipNames[kClips] = {"walk start",   "walk stop",      "run start",  "run stop",
                                         "run turn left", "run turn right", "turn left",  "turn right",
-                                        "sprint",        "sprint start",   "sprint stop", "sprint from the jog"};
+                                        "sprint",        "sprint start",   "sprint stop", "sprint from the jog",
+                                        "side step left", "side step right", "side step forward-left",
+                                        "side step back-right"};
 // The sprint (wish of DevJunior, 17.11.2026: "jog with the stick, really run with the run button, as the remake"):
 // with the remake's movements and Free movement the stick walks; the left stick pressed (L3, the app's "Jog" action,
 // a toggling bit of the aim words: re4_move_jog_press) while he walks makes him jog (the game's run routine: the
@@ -477,6 +480,19 @@ void fitClip(int i)
 {
     Move& c = gClip[i];
     if (!c.mot) {
+        return;
+    }
+    if (i >= 12) {
+        // the side steps: at their own pace (runtime/free_move.cpp plays them on the legs at the aiming walk's speed)
+        scaleRoot(c, 1.0f);
+        const int keys = c.last < 2 ? 2 : c.last > kSeqMax ? kSeqMax : c.last;
+        c.time = 1.0f;
+        memset(c.seq, 0, sizeof(c.seq));
+        c.seq[0] = (u16) keys;
+        SEQUENCE_DATA* key = (SEQUENCE_DATA*) (c.seq + 2);
+        for (int k = 0; k < keys; k++) {
+            key[k].Frame = (u16) ((f32) k * (f32) c.last / (f32) keys * 64.0f + 0.5f);
+        }
         return;
     }
     const Move* base = i < 2 ? &gMove[1] : i < 6 || i >= 8 ? &gMove[2] : 0;
@@ -1019,6 +1035,71 @@ int re4_move_turn(void* p, float diff, int armed)
 
 // free_move.cpp re4_player_after_routine (after the routines, when "Move while aiming" walks no legs): the remake's
 // legs under a big weapon; 1 when they are posed
+// runtime/free_move.cpp (the legs while aiming, wish of DevJunior, 21.11.2026: "the movements to the sides"): for
+// the move relative to the aim (sx right, sy forward, both -1..1) Leon's own side step of the remake (left, right,
+// forward-left, back-right; forward-right and back-left mirrored when his model has the flip table, else the nearest
+// one of the others): its motion, sequence, Mot_attr flip (0x40), the speed to play it at for `want` mm a frame, and
+// the key to start at with the same foot forward as `cur` at `curFrame` (sequence frames). 0: forward or back (the
+// caller's walk and back step), or no side steps.
+int re4_move_strafe(void* p, float sx, float sy, float want, const void* cur, float curFrame, void** mot, void** seq,
+                    int* flip, float* speed, int* start)
+{
+    static int last = -1;
+    cPlayer* pl = (cPlayer*) p;
+    if (!pl || !on() || !gClip[12].mot || !gClip[13].mot) {
+        last = -1;
+        return 0;
+    }
+    // 0 forward, 90 right, -90 left, 180 back; a sector of 45 degrees each, kept 10 degrees beyond its edge
+    const f32 a = atan2f(sx, sy) * 57.29578f;
+    static const f32 kMid[8] = {0.0f, 45.0f, 90.0f, 135.0f, 180.0f, -135.0f, -90.0f, -45.0f};
+    int sector = (int) floorf((a + 22.5f) / 45.0f);
+    sector = ((sector % 8) + 8) % 8;
+    if (last >= 0 && last != sector) {
+        f32 d = a - kMid[last];
+        d -= d > 180.0f ? 360.0f : d < -180.0f ? -360.0f : 0.0f;
+        if (fabsf(d) < 32.5f) {
+            sector = last;
+        }
+    }
+    last = sector;
+    // sector -> clip (-1: the caller's), mirrored
+    static const int kClip[8] = {-1, 14, 13, 15, -1, 15, 12, 14};
+    static const bool kFlip[8] = {false, true, false, false, false, true, false, false};
+    int c = kClip[sector];
+    bool mirror = kFlip[sector];
+    if (c >= 0 && mirror && !pl->pXFlip) {
+        c = sector == 1 ? 13 : 12;  // forward-right: right; back-left: left
+        mirror = false;
+    }
+    if (c < 0 || !gClip[c].mot) {
+        return 0;
+    }
+    Move& m = gClip[c];
+    f32 dx = 0.0f, dz = 0.0f;
+    const f32 per = travel(m.mot, &dx, &dz) && m.last ? sqrtf(dx * dx + dz * dz) / (f32) m.last : 0.0f;
+    *speed = per > 1.0f ? want / per : 1.0f;
+    *speed = *speed < 0.3f ? 0.3f : *speed > 1.6f ? 1.6f : *speed;
+    *mot = m.mot;
+    *seq = m.seq;
+    *flip = mirror ? 0x40 : 0;
+    const Move* from = 0;
+    for (int i = 12; i < 16; i++) {
+        if (gClip[i].mot && cur == (const void*) gClip[i].mot) {
+            from = &gClip[i];
+        }
+    }
+    const int k = from && from != &m ? phaseKey(*from, (u16) (curFrame * 64.0f), m) : -1;
+    *start = k < 0 ? 0 : k;
+    static int said;
+    if (!(said & (1 << c))) {
+        said |= 1 << c;
+        re4_log("move: the remake's %s while aiming%s (%u frames, %.0f mm a frame of its own, played at %.2f)",
+                kClipNames[c], mirror ? " (mirrored)" : "", (unsigned) m.last, (double) per, (double) *speed);
+    }
+    return 1;
+}
+
 int re4_move_heavy_legs(void* p)
 {
     return heavyUpper((cPlayer*) p);
