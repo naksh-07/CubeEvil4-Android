@@ -123,6 +123,13 @@ Move gClip[kClips];
 // level; re4_move_reload, patch 0944)
 u8* gReload[3];
 u16 gReloadLast[3];
+// (Mods, 21.11.2026, DevJunior: "add the animation of taking objects") the remake's hand reaching for an item, on the
+// upper body (move.dat codes 0xA0 on the move, 0xA1 standing for a low item, 0xA2 at a table's height; re4_move_pickup)
+Move gPick[3];
+int gPickNow = -1;     // the one playing, -1 none
+f32 gPickFrame;        // its frame
+const f32 kPickSpeed = 0.85f;  // its frames per game frame (the remake's at 30 a second a little hurried)
+const f32 kPickFade = 4.0f;    // frames its share takes in and out
 int gPlaying = -1;     // the clip Leon plays (-1 none)
 int gWasMoving = 0;    // the movement he was in (1 walk, 3 run; 0 none): the stop's clip
 const f32 kTurnStart = 2.4f;   // radians the stick points away from him for a turn about (about 140 degrees)
@@ -302,12 +309,18 @@ void load()
     memset(clips, 0, sizeof(clips));
     u8* reload[3] = {0, 0, 0};
     u16 reloadLast[3] = {0, 0, 0};
+    u8* pick[3] = {0, 0, 0};
+    u16 pickLast[3] = {0, 0, 0};
     for (u32 i = 0; ok && i < n; i++) {
         const u8* r = tab + 8 + i * 12;
         const u16 entry = be16At(r + 2), last = be16At(r + 4);
         if (entry == 0 || entry >= count || last < 2 || be16At(base + at[entry]) != last || !base[at[entry] + 2]) {
             ok = false;
             break;
+        }
+        if (r[0] >= 0xA0 && r[0] < 0xA3 && last <= kSeqMax) {
+            pick[r[0] - 0xA0] = base + at[entry];
+            pickLast[r[0] - 0xA0] = last;
         }
         if (r[0] >= 0x90 && r[0] < 0x93) {
             reload[r[0] - 0x90] = base + at[entry];
@@ -396,6 +409,26 @@ void load()
     }
     if (nReload) {
         re4_log("move: %s: the remake's shotgun reload, %d levels", path, nReload);
+    }
+    int nPick = 0;
+    for (int i = 0; i < 3; i++) {
+        Move& m = gPick[i];
+        memset(&m, 0, sizeof(m));
+        m.mot = pick[i];
+        m.last = pickLast[i];
+        m.scale = m.time = 1.0f;
+        if (m.mot) {
+            nPick++;
+            m.seq[0] = m.last;
+            SEQUENCE_DATA* key = (SEQUENCE_DATA*) (m.seq + 2);
+            for (int k = 0; k < m.last; k++) {
+                key[k].Frame = (u16) (k * 64);
+            }
+        }
+    }
+    gPickNow = -1;
+    if (nPick) {
+        re4_log("move: %s: the remake's taking of items, %d ways", path, nPick);
     }
     int nClips = 0;
     for (int i = 0; i < kClips; i++) {
@@ -1145,9 +1178,49 @@ void* re4_move_reload(int weapon, int level, void* mot)
     return gReload[level];
 }
 
+// Patch 0945 (sce_at.cpp sceAtQuickItem, the game thread): an item taken on the move (the remake's quick pick-up):
+// Leon's hand reaches for it (on the move the running grab; standing the low one, or the one at a table's height
+// when the item lies 60 cm or more above his feet), on his upper body over what he does (re4_move_heavy_legs)
+void re4_move_pickup(void* item)
+{
+    cPlayer* pl = pPL;
+    if (!pl || !on() || !gPick[0].mot || pl->r_no_0 != 0 || pl->r_no_1 > 4) {
+        return;
+    }
+    const cModel* m = (const cModel*) item;
+    const bool moving = pl->r_no_1 == 1 || pl->r_no_1 == 3;
+    const f32 dy = m ? m->pos.y - pl->pos.y : 0.0f;
+    const int i = moving ? 0 : (dy >= 600.0f && gPick[2].mot) ? 2 : gPick[1].mot ? 1 : 0;
+    gPickNow = i;
+    gPickFrame = 0.0f;
+    static int said;
+    if (!(said & (1 << i))) {
+        said |= 1 << i;
+        re4_log("move: the remake's taking of an item (%s, %u frames)",
+                i == 0 ? "on the move" : i == 1 ? "low, standing" : "at a table's height", (unsigned) gPick[i].last);
+    }
+}
+
 int re4_move_heavy_legs(void* p)
 {
-    return heavyUpper((cPlayer*) p);
+    cPlayer* pl = (cPlayer*) p;
+    if (gPickNow >= 0) {
+        Move& m = gPick[gPickNow];
+        if (!pl || !m.mot || pl->r_no_0 != 0 || pl->r_no_1 > 4 || gPickFrame >= (f32) m.last) {
+            gPickNow = -1;  // over, or another action took him
+        } else {
+            const f32 in = gPickFrame / kPickFade, out = ((f32) m.last - gPickFrame) / (kPickFade * kPickSpeed);
+            f32 w = in < out ? in : out;
+            w = w > 1.0f ? 1.0f : w < 0.15f ? 0.15f : w;
+            const int ok = re4_legs_overlay(pl, m.mot, m.seq, 0, 0.0f, gPickFrame, w, 0.0f, 0.0f, 1);
+            gPickFrame += kPickSpeed;
+            if (ok) {
+                return 1;
+            }
+            gPickNow = -1;
+        }
+    }
+    return heavyUpper(pl);
 }
 
 // For the tests: the movements the active archive holds

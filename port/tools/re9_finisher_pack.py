@@ -559,6 +559,12 @@ WEP_RELOAD_SHOTGUN = "cha0_wp4100H.motlist.663"
 SHOTGUN_LEVELS = [(0x26, 12, 48, 63, 78, 90), (0x28, 12, 40, 54, 64, 73), (0x2A, 9, 27, 36, 46, 50)]
 
 
+# Taking an item (wish of DevJunior, 21.11.2026: "add the animation of taking objects"): the remake's hand reaching for
+# it, on the upper body (runtime/locomotion.cpp re4_move_pickup): on the move (0xA0), standing for a low item (0xA1),
+# for one at a table's height (0xA2). The remake has them only as Ada's (cha8_general2, "General Animations Corrector").
+PICKUPS = [(0xA0, "0406_item_up_run"), (0xA1, "0408_item_up_lower"), (0xA2, "0410_item_up_middle_F")]
+
+
 def rest_from(motion, ref):
     """A motion of a mod whose bones stand at a hundredth of their length (its exporter's units): the reference's rest
     translations by name, the others times 100."""
@@ -621,7 +627,7 @@ def shotgun_reloads(motdir, ref, model, tol, wep):
     return out
 
 
-def moves(root, model, tol, out_path, weapons=None, wep07=None):
+def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None):
     """Leon's movements (see --move)."""
     _v, mots = R.read_motlist(root / CHA0)
     entries, table, steps = [b""], [], []
@@ -671,6 +677,18 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None):
         print("side step %-18s 0x%x: source %d..%d, %d game frames, %d bytes, a cycle %.0f mm ahead, %.0f mm aside, "
               "steps %s; check %.1f/%.1f deg" % (name, code, first, first + length, len(fit.frames), len(data), end[2],
                                                   end[0], [i for i, _f in st], c[0], c[1]))
+    if general2:
+        _v, g2 = R.read_motlist(Path(general2))
+        for code, name in PICKUPS:
+            m = next(x for x in g2 if x.name.endswith(name))
+            fit = Fit(m, model, "leon", 2.0, tol, m.frames, True)
+            data = fcv.serialise(fit.motion(fit.scale))
+            c = fit.check(data)
+            entries.append(data)
+            table.append(struct.pack(">BBHHHHH", code, 0, len(entries) - 1, len(fit.frames) - 1, 0xFFFF, 0xFFFF, 0))
+            steps.append([])
+            print("pick-up %-24s 0x%x: %d game frames, %d bytes; check %.1f/%.1f deg" % (
+                name, code, len(fit.frames), len(data), c[0], c[1]))
     if weapons and wep07:
         warc = U.Archive(Path(wep07).read_bytes(), ">")
         for code, data in shotgun_reloads(weapons, mots[0], model, tol, warc):
@@ -794,6 +812,7 @@ def main(argv=None):
     ap.add_argument("--weapons", help="with --move: the folder of Leon's weapon motlists (cha0_wp4100H …, the "
                     "'Tactical First-Person Mode' mod's _Chainsaw/Animation/ch/cha0/motlist)")
     ap.add_argument("--wep07", help="with --weapons: the disc's shotgun archive (em/wep07.drs)")
+    ap.add_argument("--general2", help="with --move: the remake's cha8_general2.motlist.663 (taking items)")
     a = ap.parse_args(argv)
 
     # the mod's natives/stm folder (its _re9_melee_proto and _chainsaw)
@@ -819,7 +838,7 @@ def main(argv=None):
     if a.react:
         reacts(root, ganado_model, a.tolerance, a.react, U.Archive(Path(a.ganado.partition(":")[0]).read_bytes(), ">"))
     if a.move:
-        moves(root, leon_model, a.tolerance, a.move, a.weapons, a.wep07)
+        moves(root, leon_model, a.tolerance, a.move, a.weapons, a.wep07, a.general2)
     want = set(a.only.split(",")) if a.only else None
     entries = [("FIN", b"")]
     made = {}

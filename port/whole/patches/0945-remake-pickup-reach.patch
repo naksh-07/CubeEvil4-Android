@@ -1,0 +1,21 @@
+# Port patch (mods; wish of DevJunior, 21.11.2026: "add the animation of taking objects"): an item the remake's quick
+# pick-up (patch 0938) takes makes Leon's hand reach for it (runtime/locomotion.cpp re4_move_pickup: the remake's
+# grab on his upper body, from move.dat). Without it in move.dat, or with the remake's movements off, nothing changes.
+--- a/src/game/sce_at.cpp
++++ b/src/game/sce_at.cpp
+@@ -1508,6 +1508,7 @@
+    (flags, area off, model released, save record, the area freed). */
+ extern "C" int re4_quick_pickup_on(void);
+ extern "C" void re4_quick_pickup_log(int id, int num, int kind);
++extern "C" void re4_move_pickup(void* item); /* port (patch 0945): runtime/locomotion.cpp */
+ extern "C" int re4_codec_active(void);
+ static int quickMesNo, quickMesAttr, quickMesItem, quickMesSerial, quickMesShort;
+ static u32 quickMesNum;
+@@ -1707,6 +1708,7 @@
+     default:
+         return 0;
+     }
++    re4_move_pickup(it->pModel); /* port (patch 0945): Leon's hand reaches for it, as in the remake */
+     p = SceExec(0x12, (TaskFunc) sceAtQuickItemTask, w, 0, SCE_PRIO_15, 0);
+     if (p != 0) {
+         p->setNoSuspend(1);
