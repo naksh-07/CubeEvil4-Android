@@ -549,7 +549,79 @@ def plants(motion, first, length, back=False):
     return out
 
 
-def moves(root, model, tol, out_path):
+# The shotgun's reload of the 2023 game (wish of DevJunior, 21.11.2026: Leon's own weapon animations, from the
+# "Tactical First-Person Mode" mod's cha0_wp4100H): start, loop (one shell a cycle), end (with the pump). The game's
+# reload stays as long as it is at each level (its frame for the rounds, its sounds and the gun's own motion: the two
+# shells, then the pump), the remake's played over it in pieces: (segment, source frame) -> game frame. Per level
+# (weapon_lv_reload 0..2): the first shell, the second's end, the pump's start and end, the length (wep07 motions
+# 0x27 / 0x29 / 0x2B, the gun's part 2 the shell, parts 1 / 4 the fore-end).
+WEP_RELOAD_SHOTGUN = "cha0_wp4100H.motlist.663"
+SHOTGUN_LEVELS = [(0x26, 12, 48, 63, 78, 90), (0x28, 12, 40, 54, 64, 73), (0x2A, 9, 27, 36, 46, 50)]
+
+
+def rest_from(motion, ref):
+    """A motion of a mod whose bones stand at a hundredth of their length (its exporter's units): the reference's rest
+    translations by name, the others times 100."""
+    rb = {b.name: b for b in ref.bones}
+    for b in motion.bones:
+        if b.name in rb:
+            b.trans = rb[b.name].trans
+        else:
+            b.trans = tuple(x * 100.0 for x in b.trans[:3]) + tuple(b.trans[3:])
+
+
+def shotgun_reloads(motdir, ref, model, tol, wep):
+    """The rows (code, entry data) of the shotgun's reload per level for move.dat (codes 0x90 + level)."""
+    _v, mots = R.read_motlist(Path(motdir) / WEP_RELOAD_SHOTGUN)
+    seg = {}
+    for key, name in (("start", "0805_reload_start"), ("loop", "0810_reload_loop"), ("end", "0815_reload_end")):
+        seg[key] = next(x for x in mots if x.name.endswith(name))
+        rest_from(seg[key], ref)
+    out = []
+    for lv, (entry, s1, e2, p0, p1, n) in enumerate(SHOTGUN_LEVELS):
+        # (game frame, segment, source frame) keypoints, linear between them
+        hold = max(0, p0 - 8 - e2)
+        keys = [(0, "start", 48.0), (s1, "start", 80.0), (s1, "loop", 0.0), (e2, "loop", 76.0),
+                (e2 + hold, "loop", min(190.0, 76.0 + hold * 2.0)), (p0 - 8, "end", 0.0), (p0, "end", 32.0),
+                (p1, "end", 48.0), (n, "end", 87.0)]
+        plan = []
+        for g in range(n + 1):
+            k = max(i for i in range(len(keys)) if keys[i][0] <= g and (i + 1 == len(keys) or keys[i + 1][0] > g
+                                                                        or keys[i][0] == g))
+            g0, sg, f0 = keys[k]
+            if k + 1 < len(keys) and keys[k + 1][1] == sg and keys[k + 1][0] > g0:
+                g1, _s, f1 = keys[k + 1]
+                f = f0 + (f1 - f0) * (g - g0) / float(g1 - g0)
+            else:
+                f = f0
+            plan.append((sg, min(f, seg[sg].frames)))
+        rows, order = [], None
+        i = 0
+        while i < len(plan):
+            j = i
+            while j < len(plan) and plan[j][0] == plan[i][0]:
+                j += 1
+            fit = Fit(seg[plan[i][0]], model, "leon", 2.0, tol, seg[plan[i][0]].frames, True,
+                      frames=[f for _s, f in plan[i:j]])
+            rows += fit.rows
+            order = order or fit.order
+            i = j
+        fixed = {p: model.parts[p].pos for p in (10, 16, 20, 24) if p in order}
+        mot = RT.build_motion(rows, order, tol, root=None, fixed_pos=fixed)
+        game = fcv.parse(wep.entry(entry))
+        # the game's own hand-held parts (32, 110: the shell and the left hand's prop) at the game's times
+        # (ours keep part 32 at rest: one joint per part, else the game's key histories clash, "Invalid key history")
+        mot.joints = [j for j in mot.joints if j.parts_no not in (32, 110)]
+        mot.joints += [j for j in game.joints if j.parts_no in (32, 110)]
+        mot.layout = list(range(len(mot.joints)))
+        data = fcv.serialise(mot)
+        print("shotgun reload level %d: %d game frames (the game's %d), %d bytes; shells by %d / %d, pump %d..%d" % (
+            lv, len(rows) - 1, n, len(data), s1, e2, p0, p1))
+        out.append((0x90 + lv, data))
+    return out
+
+
+def moves(root, model, tol, out_path, weapons=None, wep07=None):
     """Leon's movements (see --move)."""
     _v, mots = R.read_motlist(root / CHA0)
     entries, table, steps = [b""], [], []
@@ -599,6 +671,13 @@ def moves(root, model, tol, out_path):
         print("side step %-18s 0x%x: source %d..%d, %d game frames, %d bytes, a cycle %.0f mm ahead, %.0f mm aside, "
               "steps %s; check %.1f/%.1f deg" % (name, code, first, first + length, len(fit.frames), len(data), end[2],
                                                   end[0], [i for i, _f in st], c[0], c[1]))
+    if weapons and wep07:
+        warc = U.Archive(Path(wep07).read_bytes(), ">")
+        for code, data in shotgun_reloads(weapons, mots[0], model, tol, warc):
+            entries.append(data)
+            table.append(struct.pack(">BBHHHHH", code, 0, len(entries) - 1, fcv.parse(data).max_frame, 0xFFFF, 0xFFFF,
+                                     0))
+            steps.append([])
     stk = b"STK1"
     for st in steps:
         st = st[:24]
@@ -712,6 +791,9 @@ def main(argv=None):
                     "default motion *%s (the 'Kick That Box' mod's cha0_general2)" % KICK_BOX)
     ap.add_argument("--react", help="also write the Ganados' hit reactions of the 2023 game (melee/react.dat)")
     ap.add_argument("--move", help="also write Leon's movements of the 2023 game (melee/move.dat)")
+    ap.add_argument("--weapons", help="with --move: the folder of Leon's weapon motlists (cha0_wp4100H …, the "
+                    "'Tactical First-Person Mode' mod's _Chainsaw/Animation/ch/cha0/motlist)")
+    ap.add_argument("--wep07", help="with --weapons: the disc's shotgun archive (em/wep07.drs)")
     a = ap.parse_args(argv)
 
     # the mod's natives/stm folder (its _re9_melee_proto and _chainsaw)
@@ -737,7 +819,7 @@ def main(argv=None):
     if a.react:
         reacts(root, ganado_model, a.tolerance, a.react, U.Archive(Path(a.ganado.partition(":")[0]).read_bytes(), ">"))
     if a.move:
-        moves(root, leon_model, a.tolerance, a.move)
+        moves(root, leon_model, a.tolerance, a.move, a.weapons, a.wep07)
     want = set(a.only.split(",")) if a.only else None
     entries = [("FIN", b"")]
     made = {}

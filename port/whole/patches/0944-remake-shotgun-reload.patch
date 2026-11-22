@@ -1,0 +1,23 @@
+# Port patch (mods; wish of DevJunior, 21.11.2026: Leon's own weapon animations of the 2023 remake): the shotgun's
+# reload (wep07, weapon_no 7) asks runtime/locomotion.cpp re4_move_reload for the remake's in place of the game's motion
+# of that reload level: the remake's start, shells and pump played over the game's length (the rounds' frame, the
+# sounds and the gun's own motion stay the game's). Without move.dat's reload, or with the remake's movements off, the
+# game's motion.
+--- a/src/wep/pl_shotgun.cpp
++++ b/src/wep/pl_shotgun.cpp
+@@ -489,6 +489,7 @@
+ // r_no_2 == 4: the reload state. The weapon object (mode 4) loads the shells on its motion, and
+ // aiming can take over from PlReloadEndTbl's frame on.
+ extern "C" int re4_reload_quick_end(void); /* port (patch 0909): runtime/free_move.cpp */
++extern "C" void* re4_move_reload(int weapon, int level, void* mot); /* port (patch 0944): runtime/locomotion.cpp */
+ static void wep07_r2_reload(cPlayer* pl)
+ {
+     switch (pl->r_no_3) {
+@@ -507,6 +508,7 @@
+             mot = WEP_ARC_PTR(0x2E);
+             break;
+         }
++        mot = re4_move_reload(pG->weapon_no, pG->weapon_lv_reload, mot);
+         MotionSetCore(pl, &pl->Motion, mot, 0, 3, 5, 0);
+         pl->motionMove();
+         pl->Wep->m_ShotCancelCtr = 0;

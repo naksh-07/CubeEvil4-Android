@@ -119,6 +119,10 @@ bool gJog;                        // he jogs (L3 while walking)
 int gJogIdle;                     // frames he has stood (gJog ends after kJogIdle)
 const int kJogIdle = 6;
 Move gClip[kClips];
+// (Mods, 21.11.2026) Leon's own weapon motions of the remake: the shotgun's reload per level (move.dat codes 0x90 +
+// level; re4_move_reload, patch 0944)
+u8* gReload[3];
+u16 gReloadLast[3];
 int gPlaying = -1;     // the clip Leon plays (-1 none)
 int gWasMoving = 0;    // the movement he was in (1 walk, 3 run; 0 none): the stop's clip
 const f32 kTurnStart = 2.4f;   // radians the stick points away from him for a turn about (about 140 degrees)
@@ -296,12 +300,18 @@ void load()
     memset(found, 0, sizeof(found));
     static Move clips[kClips];
     memset(clips, 0, sizeof(clips));
+    u8* reload[3] = {0, 0, 0};
+    u16 reloadLast[3] = {0, 0, 0};
     for (u32 i = 0; ok && i < n; i++) {
         const u8* r = tab + 8 + i * 12;
         const u16 entry = be16At(r + 2), last = be16At(r + 4);
         if (entry == 0 || entry >= count || last < 2 || be16At(base + at[entry]) != last || !base[at[entry] + 2]) {
             ok = false;
             break;
+        }
+        if (r[0] >= 0x90 && r[0] < 0x93) {
+            reload[r[0] - 0x90] = base + at[entry];
+            reloadLast[r[0] - 0x90] = last;
         }
         if (r[0] >= 0x80 && r[0] < 0x80 + kClips && last <= kSeqMax) {
             Move& c = clips[r[0] - 0x80];
@@ -377,6 +387,15 @@ void load()
             gCount++;
             re4_log("move: %s: the remake's %s, %u frames", path, kNames[k], (unsigned) gMove[k].last);
         }
+    }
+    int nReload = 0;
+    for (int i = 0; i < 3; i++) {
+        gReload[i] = reload[i];
+        gReloadLast[i] = reloadLast[i];
+        nReload += reload[i] ? 1 : 0;
+    }
+    if (nReload) {
+        re4_log("move: %s: the remake's shotgun reload, %d levels", path, nReload);
     }
     int nClips = 0;
     for (int i = 0; i < kClips; i++) {
@@ -1098,6 +1117,32 @@ int re4_move_strafe(void* p, float sx, float sy, float want, const void* cur, fl
                 kClipNames[c], mirror ? " (mirrored)" : "", (unsigned) m.last, (double) per, (double) *speed);
     }
     return 1;
+}
+
+// Patch 0944 (pl_shotgun.cpp wep07_r2_reload, the game thread): the motion of the shotgun's reload at `level`: the
+// remake's (Leon's own, the game's length) for the shotgun (weapon_no 7) when move.dat has it and the remake's movements
+// are on, else the game's `mot`. Only when the game's motion is as long as the one it was made for (another disc or
+// another pack: the game's).
+void* re4_move_reload(int weapon, int level, void* mot)
+{
+    if (weapon != 7 || level < 0 || level > 2 || !gReload[level] || !on() || !mot) {
+        return mot;
+    }
+    const unsigned own = get16((const u8*) mot) & 0x3FFF;
+    static int said;
+    if (own != gReloadLast[level]) {
+        if (!(said & (8 << level))) {
+            said |= 8 << level;
+            re4_log("move: the shotgun's reload at level %d is %u frames on this disc, the remake's was made for %u: "
+                    "the game's", level, own, (unsigned) gReloadLast[level]);
+        }
+        return mot;
+    }
+    if (!(said & (1 << level))) {
+        said |= 1 << level;
+        re4_log("move: the remake's shotgun reload (level %d, %u frames)", level, own);
+    }
+    return gReload[level];
 }
 
 int re4_move_heavy_legs(void* p)
