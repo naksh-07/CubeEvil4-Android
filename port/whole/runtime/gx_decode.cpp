@@ -554,12 +554,11 @@ void hintChunk()
                 re4_log("cores: the %d vertex threads %s", gHintTidCount - 1, cores);
             }
             const char* why = "";
-            // (Mods, 21.11.2026, testers: drops on Snapdragon phones) the target with headroom, 70 % of a game
-            // picture's 33.3 ms: told the work may take the whole picture, Android (Qualcomm's governor the most)
-            // lowered the clocks until the work filled it, and the next heavier picture came late
-            gHint.Open(gHintTids, gHintTidCount, 23333333LL, &why);
-            re4_log("performance hint: %s (the game thread and %d vertex threads, 23.3 ms of a picture's 33.3 ms)",
-                    why, gHintTidCount - 1);
+            // (Mods, 21.11.2026: a target with headroom tried and taken back the same day, DevJunior: "I don't want it
+            // to heat the phones"; drops on Snapdragon go to a dynamic rendering and effects step instead)
+            gHint.Open(gHintTids, gHintTidCount, 33333333LL, &why);
+            re4_log("performance hint: %s (the game thread and %d vertex threads, 33.3 ms a picture)", why,
+                    gHintTidCount - 1);
         } else {
             gHint.Close();
             if (!first) {
