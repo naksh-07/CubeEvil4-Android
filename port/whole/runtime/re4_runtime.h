@@ -204,13 +204,17 @@ void* re4_mod_shape_twin(void* info, void* model, void** skin_model);
  * CONS_R_NPRIM) is sized for the disc's models; a converted skin skins tens of thousands of vertices
  * into it each frame. What no longer fits comes from here, one half per frame buffer (DblBufIdx) as
  * the game's own; 0 when this is full too. Reset when the game starts a frame buffer half. */
-#define RE4_MEM1_PRIM_EXTRA_ADDR 0x82C00000u
+/* (22.11.2026) a block of the mods' place (re4_mod_place_alloc), taken at the first overflow: 0x82C00000 of MEM1
+ * before, which is the larger etc/core.das's since upstream's 1.1.0 (re4_mem1_map.h; DevJunior's crash entering r118
+ * with the "Remake HUD" mod's core.das, 22.11.2026: Esp08_Trans on the overwritten core). */
 /* The place for the mods' character archives (runtime/mod_place.cpp, patch 0914): RE4_MOD_PLACE_SIZE bytes above
  * MEM1, taken when a mod's archive first asks; the graphics processor and ARAM see it at RE4_MOD_PLACE_PHYSICAL..
  * Its first RE4_MOD_PLACE_EM bytes hold the characters' archives; behind them RE4_MOD_PLAYER_MAX bytes hold a player
  * archive larger than RE4_MEM1_PLAYER_ALT_MAX (DevJunior's approval, 12.11.2026: more room for the skins' hair). */
-#define RE4_MOD_PLACE_SIZE 0x01800000u
-#define RE4_MOD_PLACE_EM 0x01000000u
+/* (22.11.2026) 8 MB more for the archives: the mods' blocks that lay in MEM1 before (the primitive buffer's
+ * overflow, Ashley's pistol, the weapon on the back) are here since upstream's 1.1.0 filled MEM1 (re4_mem1_map.h). */
+#define RE4_MOD_PLACE_SIZE 0x02000000u
+#define RE4_MOD_PLACE_EM 0x01800000u
 #define RE4_MOD_PLAYER_MAX 0x00800000u
 #define RE4_MOD_PLACE_PHYSICAL 0x04000000u
 void* re4_mod_player_place(unsigned int size);

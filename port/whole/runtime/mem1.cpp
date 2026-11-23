@@ -113,11 +113,24 @@ extern "C" void* re4_prim_extra(int half, unsigned size)
         }
         return 0;
     }
-    void* p = (void*) (unsigned long) (RE4_MEM1_PRIM_EXTRA_ADDR + half * RE4_MEM1_PRIM_EXTRA_HALF + gPrimExtraUsed[half]);
+    static unsigned char* place;
+    static bool tried;
+    if (!place && !tried) {
+        tried = true;
+        place = (unsigned char*) re4_mod_place_alloc(2ul * RE4_MEM1_PRIM_EXTRA_HALF, "the primitive buffer's overflow");
+    }
+    if (!place) {
+        static int toldNone;
+        if (toldNone++ < 4) {
+            re4_log("MEM1: the room's primitive buffer is full and its overflow has no place (%u bytes asked)", size);
+        }
+        return 0;
+    }
+    void* p = place + half * RE4_MEM1_PRIM_EXTRA_HALF + gPrimExtraUsed[half];
     gPrimExtraUsed[half] += size;
     if (gPrimExtraUsed[half] > gPrimExtraPeak) {
         if (gPrimExtraPeak == 0) {
-            re4_log("MEM1: the room's primitive buffer is full: more from its overflow at 0x%08x", RE4_MEM1_PRIM_EXTRA_ADDR);
+            re4_log("MEM1: the room's primitive buffer is full: more from its overflow at %p (the mods' place)", place);
         }
         gPrimExtraPeak = gPrimExtraUsed[half];
     }

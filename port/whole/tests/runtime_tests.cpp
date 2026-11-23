@@ -518,13 +518,17 @@ static void testDvdMods()
     }
     re4_prim_extra_reset(0);
     re4_prim_extra_reset(1);
-    CHECK(re4_prim_extra(1, 0x21) == (void*) (unsigned long) (RE4_MEM1_PRIM_EXTRA_ADDR + RE4_MEM1_PRIM_EXTRA_HALF));
-    CHECK(re4_prim_extra(1, 0x20) ==
-          (void*) (unsigned long) (RE4_MEM1_PRIM_EXTRA_ADDR + RE4_MEM1_PRIM_EXTRA_HALF + 0x40));
-    CHECK(re4_prim_extra(0, RE4_MEM1_PRIM_EXTRA_HALF + 1) == 0);
-    CHECK(re4_prim_extra(0, 0x20) == (void*) (unsigned long) RE4_MEM1_PRIM_EXTRA_ADDR);
-    re4_prim_extra_reset(1);
-    CHECK(re4_prim_extra(1, 0x20) == (void*) (unsigned long) (RE4_MEM1_PRIM_EXTRA_ADDR + RE4_MEM1_PRIM_EXTRA_HALF));
+    {
+        // (22.11.2026) a block of the mods' place, one half per frame buffer
+        unsigned char* const x = (unsigned char*) re4_prim_extra(1, 0x21);
+        CHECK(x && re4_mod_place_holds(x - RE4_MEM1_PRIM_EXTRA_HALF, 2 * RE4_MEM1_PRIM_EXTRA_HALF));
+        unsigned char* const base = x - RE4_MEM1_PRIM_EXTRA_HALF;
+        CHECK(re4_prim_extra(1, 0x20) == (void*) (base + RE4_MEM1_PRIM_EXTRA_HALF + 0x40));
+        CHECK(re4_prim_extra(0, RE4_MEM1_PRIM_EXTRA_HALF + 1) == 0);
+        CHECK(re4_prim_extra(0, 0x20) == (void*) base);
+        re4_prim_extra_reset(1);
+        CHECK(re4_prim_extra(1, 0x20) == (void*) (base + RE4_MEM1_PRIM_EXTRA_HALF));
+    }
     re4_prim_extra_reset(0);
     re4_prim_extra_reset(1);
 

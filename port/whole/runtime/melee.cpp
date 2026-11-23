@@ -95,6 +95,18 @@ namespace {
 // the app's switches: bit 0 "Neck break", bit 1 the mods' motions off, bit 2 "Axe strike", bit 3 the random mix off
 std::atomic<int> gBits(0);
 const int kVariants = 8;      // a mod's moves of each kind
+// (22.11.2026) the small melee archive and the axe attack's copy in one block of the mods' place, taken once: their
+// fixed MEM1 places (RE4_MEM1_MELEE_ADDR, RE4_MEM1_MELEE_AXE_ADDR) lie in the game's heaps since upstream's 1.1.0
+u8* smallPlace()
+{
+    static u8* place;
+    static bool tried;
+    if (!place && !tried) {
+        tried = true;
+        place = (u8*) re4_mod_place_alloc(RE4_MEM1_MELEE_MAX + RE4_MEM1_MELEE_AXE_MAX, "the mods' melee (small archive, axe)");
+    }
+    return place;
+}
 char gLoaded[1600];           // the archive at RE4_MEM1_MELEE_ADDR ("" none; a path that failed counts as read)
 void* gMod[2][kVariants];     // its motions: on a standing enemy, on a kneeling one
 void* gBoxMot;                // its box strike's motion (entry 16; patch 0916), played from gBoxFrames[0] to [2]
@@ -323,8 +335,8 @@ void load()
     }
     // a larger archive (the RE9 mod's kicks: 0.4 MB, port/tools/re9_finisher_pack.py --kicks) goes to the place for the
     // mods' character archives, at most kBigMax bytes; the fixed place stays for the small ones
-    u8* base = (u8*) (unsigned long) RE4_MEM1_MELEE_ADDR;
-    size_t room = RE4_MEM1_MELEE_MAX;
+    u8* base = smallPlace();
+    size_t room = base ? RE4_MEM1_MELEE_MAX : 0;
     if (fileSize > (long) RE4_MEM1_MELEE_MAX && fileSize <= (long) kBigMax) {
         if (!gBig || gBigSize < (unsigned long) fileSize) {
             if (gBig) {
@@ -586,7 +598,12 @@ void* axeMotion(PlArc* arc)
         say(8, "the Ganado's archive has no axe attack that fits (motion 0x80): the knife's chop");
         return 0;
     }
-    u8* const dst = (u8*) (unsigned long) RE4_MEM1_MELEE_AXE_ADDR;
+    u8* const small = smallPlace();
+    if (!small) {
+        say(8, "no room in the mods' place for the axe attack: the knife's chop");
+        return 0;
+    }
+    u8* const dst = small + RE4_MEM1_MELEE_MAX;
     memcpy(dst, src, size);
     u32 off[256];
     u16 kind[256];
@@ -688,7 +705,7 @@ void* axeMotion(PlArc* arc)
     if (!logged) {
         logged = true;
         re4_log("melee: the Ganados' axe attack (motion 0x80, %u frames) for Leon: %u of %u joints, %u bytes at 0x%08x",
-                (unsigned) get16(src), m, n, (unsigned) size, (unsigned) RE4_MEM1_MELEE_AXE_ADDR);
+                (unsigned) get16(src), m, n, (unsigned) size, (unsigned) (unsigned long) dst);
     }
     return dst;
 }

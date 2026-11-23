@@ -250,6 +250,12 @@ int re4_mod_place_selftest(void)
         return 1;
     }
     if (re4_game_top != gBase + kSize - 1 || (re4_game_top & 0x80000000u) == 0) bad |= 2;
+    // (22.11.2026) the blocks earlier tests took (the primitive buffer's overflow) set aside, given back at the end
+    Block saved[kBlocks];
+    pthread_mutex_lock(&gLock);
+    memcpy(saved, gBlock, sizeof(saved));
+    memset(gBlock, 0, sizeof(gBlock));
+    pthread_mutex_unlock(&gLock);
     // three blocks by hand, as re4_mod_em_place gives them (no disc file in the test)
     pthread_mutex_lock(&gLock);
     const unsigned long a = firstFit(0x300000);
@@ -284,6 +290,9 @@ int re4_mod_place_selftest(void)
         bad |= 0x400;
     else
         memset(pl, 0x33, RE4_MOD_PLAYER_MAX);  // writable
+    pthread_mutex_lock(&gLock);
+    memcpy(gBlock, saved, sizeof(saved));
+    pthread_mutex_unlock(&gLock);
     return bad;
 }
 
