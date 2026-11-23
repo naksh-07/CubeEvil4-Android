@@ -627,6 +627,116 @@ def shotgun_reloads(motdir, ref, model, tol, wep):
     return out
 
 
+# The shotgun's aim (wish of DevJunior, 21.11.2026: "the idle positions of the weapons", "do it"): the remake's hold
+# loop (cha0_wp4100H 0160) in place of the game's three-way aim idle (mot3: level, up, down = wep07 0x16, 0x1C, 0x1E,
+# PL_ARC 0x1A / 0x20 / 0x22), one cycle as long as the game's (60 frames). The remake has one aim pose (its aiming
+# turns the body by itself): up and down are it with the upper body turned from the waist so that the gun (the line
+# from the right hand to the left one) points where the game's own pose points it; the level one so too.
+SHOTGUN_AIMS = [(0x94, 0x16), (0x95, 0x1C), (0x96, 0x1E)]
+
+
+def rotation_between(a, b):
+    """The smallest rotation turning direction a into b."""
+    a = a / np.linalg.norm(a)
+    b = b / np.linalg.norm(b)
+    v = np.cross(a, b)
+    c = float(np.dot(a, b))
+    s = float(np.linalg.norm(v))
+    if s < 1e-9:
+        return np.eye(3)
+    k = v / s
+    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    ang = math.atan2(s, c)
+    return np.eye(3) + math.sin(ang) * K + (1.0 - math.cos(ang)) * (K @ K)
+
+
+def axis_angle(m):
+    """The axis and angle of a rotation matrix."""
+    ang = math.acos(max(-1.0, min(1.0, (np.trace(m) - 1.0) / 2.0)))
+    if ang < 1e-9:
+        return np.array([0.0, 1.0, 0.0]), 0.0
+    v = np.array([m[2, 1] - m[1, 2], m[0, 2] - m[2, 0], m[1, 0] - m[0, 1]])
+    return v / np.linalg.norm(v), ang
+
+
+def rot_axis(axis, ang):
+    K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+    return np.eye(3) + math.sin(ang) * K + (1.0 - math.cos(ang)) * (K @ K)
+
+
+# how the aim's turn spreads: the waist (1), the chest (2), the shoulders (5, 11); the neck (3) turns back by a share
+# of the body's (the head follows the gun less than the arms, as the game's poses do)
+AIM_SPREAD = (0.35, 0.35, 0.30)
+AIM_NECK_BACK = 0.5
+
+
+def spread_aim(local, axis, ang):
+    """The rows' local turns with the upper body turned by `ang` about `axis` (model space), spread over its joints."""
+    a1, a2, a3 = (ang * f for f in AIM_SPREAD)
+    out = dict(local)
+    w1 = local[1]
+    w2 = w1 @ local[2]
+    out[1] = rot_axis(axis, a1) @ w1
+    out[2] = w1.T @ rot_axis(axis, a2) @ w1 @ local[2]
+    for sh in (5, 11):
+        if sh in local:
+            out[sh] = w2.T @ rot_axis(axis, a3) @ w2 @ local[sh]
+    if 3 in local:
+        out[3] = w2.T @ rot_axis(axis, -(a1 + a2) * AIM_NECK_BACK) @ w2 @ local[3]
+    return out
+
+
+def gun_line(model, data, frames):
+    """The mean direction from the right hand (part 10) to the left one (16) over `frames` (model space)."""
+    from tools.motion import evalhost
+    pl = evalhost.Player(model, fcv.parse(data), ik=False)
+    d = np.zeros(3)
+    for f in frames:
+        p = pl.frame(f)
+        v = np.array(p.world[16]) - np.array(p.world[10])
+        d += v / np.linalg.norm(v)
+    return d / np.linalg.norm(d)
+
+
+def shotgun_aims(motdir, ref, model, tol, wep):
+    """The rows (code, entry data) of the shotgun's three aim poses for move.dat."""
+    _v, mots = R.read_motlist(Path(motdir) / WEP_RELOAD_SHOTGUN)
+    m = next(x for x in mots if x.name.endswith("0160_hold_loop"))
+    rest_from(m, ref)
+    out = []
+    for code, entry in SHOTGUN_AIMS:
+        game = fcv.parse(wep.entry(entry))
+        n = game.max_frame
+        first, length = find_loop(m, (2 * n, 2 * n))
+        fit = Fit(m, model, "leon", 2.0, tol, m.frames, True,
+                  frames=list(np.arange(first, first + length + 1e-6, 2.0)), loop=True)
+        fixed = {p: model.parts[p].pos for p in (10, 16, 20, 24) if p in fit.order}
+        plain = RT.build_motion(fit.rows, fit.order, tol, root=None, fixed_pos=fixed)
+        want = gun_line(model, wep.entry(entry), [0, n // 2])
+        have = gun_line(model, fcv.serialise(plain), range(0, n + 1, 6))
+        turn = rotation_between(have, want)
+        axis, ang = axis_angle(turn)
+        rows = [(spread_aim(row[0], axis, ang),) + tuple(row[1:]) for row in fit.rows]
+        # what is left (the joints' pivots differ): the waist alone, twice
+        for _i in range(2):
+            have = gun_line(model, fcv.serialise(RT.build_motion(rows, fit.order, tol, root=None, fixed_pos=fixed)),
+                            range(0, n + 1, 6))
+            rest = rotation_between(have, want)
+            rows = [({**row[0], 1: rest @ row[0][1]},) + tuple(row[1:]) for row in rows]
+        mot = RT.build_motion(rows, fit.order, tol, root=None, fixed_pos=fixed)
+        ours = set(j.parts_no for j in mot.joints)
+        mot.joints = [j for j in mot.joints if j.parts_no not in (32,)]
+        mot.joints += [j for j in game.joints if j.parts_no not in ours or j.parts_no == 32]
+        mot.layout = list(range(len(mot.joints)))
+        data = fcv.serialise(mot)
+        got = gun_line(model, data, range(0, n + 1, 6))
+        print("shotgun aim 0x%x (game 0x%x): %d frames, %d bytes, the waist turned %.0f deg, the gun %.1f deg off the "
+              "game's" % (code, entry, n, len(data), math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(turn) - 1) / 2)))),
+                          math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(got, want))))))))
+        out.append((code, data))
+    return out
+
+
 def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None):
     """Leon's movements (see --move)."""
     _v, mots = R.read_motlist(root / CHA0)
@@ -691,7 +801,8 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None):
                 name, code, len(fit.frames), len(data), c[0], c[1]))
     if weapons and wep07:
         warc = U.Archive(Path(wep07).read_bytes(), ">")
-        for code, data in shotgun_reloads(weapons, mots[0], model, tol, warc):
+        for code, data in shotgun_reloads(weapons, mots[0], model, tol, warc) + shotgun_aims(weapons, mots[0], model,
+                                                                                            tol, warc):
             entries.append(data)
             table.append(struct.pack(">BBHHHHH", code, 0, len(entries) - 1, fcv.parse(data).max_frame, 0xFFFF, 0xFFFF,
                                      0))
