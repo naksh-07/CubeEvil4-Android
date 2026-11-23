@@ -588,7 +588,7 @@ def rest_from(motion, ref):
             b.trans = tuple(x * 100.0 for x in b.trans[:3]) + tuple(b.trans[3:])
 
 
-def shotgun_reloads(motdir, ref, model, tol, wep):
+def shotgun_reloads(motdir, ref, model, tol, wep, hand_off=None):
     """The rows (code, entry data) of the shotgun's reload per level for move.dat (codes 0x90 + level)."""
     _v, mots = R.read_motlist(motlist_in(motdir, WEP_RELOAD_SHOTGUN))
     seg = {}
@@ -621,7 +621,8 @@ def shotgun_reloads(motdir, ref, model, tol, wep):
                 j += 1
             fit = Fit(seg[plan[i][0]], model, "leon", 2.0, tol, seg[plan[i][0]].frames, True,
                       frames=[f for _s, f in plan[i:j]])
-            rows += fit.rows
+            rows += fit.rows if hand_off is None else [
+                ({**r[0], 10: r[0].get(10, np.eye(3)) @ hand_off},) + tuple(r[1:]) for r in fit.rows]
             order = order or fit.order
             i = j
         fixed = {p: model.parts[p].pos for p in (10, 16, 20, 24) if p in order}
@@ -789,7 +790,7 @@ def shotgun_aims(motdir, ref, model, tol, wep):
     return out
 
 
-def grip_frame(model, data, frames):
+def grip_frame(model, data, frames, hand=10):
     """How the game's right hand holds the gun: in the hand's own frame (part 10) the gun's line (to the left hand, 16)
     and its up (the world's up across the line), averaged over `frames` of the game's motion `data`."""
     from tools.motion import evalhost
@@ -797,7 +798,7 @@ def grip_frame(model, data, frames):
     d, u = np.zeros(3), np.zeros(3)
     for f in frames:
         p = pl.frame(f)
-        h = np.array(p.mat[10]).reshape(3, 4)[:, :3]
+        h = np.array(p.mat[hand]).reshape(3, 4)[:, :3]
         h = h / np.linalg.norm(h, axis=0)
         line = np.array(p.world[16]) - np.array(p.world[10])
         line /= np.linalg.norm(line)
@@ -850,7 +851,7 @@ def point_arms(rows, model, target, steps=3):
     return out
 
 
-def grip_fix(rows, model, grip):
+def grip_fix(rows, model, grip, hand=10):
     """The right hand turned so that the gun it holds as the game does (`grip`: grip_frame) lies on the line to the
     left hand, its top up (device report 23.11.2026: the carried shotgun sideways, flat across the belly): the
     remake's hands are on its gun, but its hand bones hold the gun otherwise than the game's hand does."""
@@ -879,11 +880,74 @@ def grip_fix(rows, model, grip):
         up = np.array([0.0, 1.0, 0.0]) - line[1] * line
         up /= np.linalg.norm(up)
         ft = np.column_stack([line, up, np.cross(line, up)])
-        r9, _p9 = world(par[10])
+        r9, _p9 = world(par[hand])
         new = dict(local)
-        new[10] = r9.T @ (ft @ fc.T)
+        new[hand] = r9.T @ (ft @ fc.T)
         out.append((new,) + tuple(row[1:]))
     return out
+
+
+# (Mods, 23.11.2026, DevJunior's videos 117215/117216 and a picture of the remake: "it does not look like the remake",
+# "the reload still fails") the carried shotgun as the remake holds it on the move: across the chest, the stock at the
+# right breast, the muzzle down to the left, the left hand on the fore-end by the left hip. Where the hands go, in the
+# chest's frame (part 2: x Leon's left, y up, z ahead, mm), and where the elbows point; the arms bent to them (two
+# bones: the upper arm 7 / 13, the forearm 8 / 14), the shoulders (5, 11) left as the remake moves them (turning
+# them hunched Leon over, v24).
+CARRY_HANDS = {10: np.array([-50.0, -10.0, 260.0]), 16: np.array([240.0, -260.0, 320.0])}
+CARRY_POLES = {10: np.array([-1.0, -1.0, -0.6]), 16: np.array([1.0, -1.0, -0.3])}
+ARM_CHAIN = {10: (7, 8, 6), 16: (13, 14, 12)}
+
+
+def carry_ik(rows, model):
+    """The arms of `rows` bent so that the hands lie at CARRY_HANDS (see there)."""
+    par = [p.parent for p in model.parts]
+    out = []
+    for row in rows:
+        local = dict(row[0])
+        for hand, (sh, el, twist) in ARM_CHAIN.items():
+            rot, pos = fk(model, (local,) + tuple(row[1:]))
+            want = pos[2] + rot[2] @ CARRY_HANDS[hand]
+            s0, e0, w0 = pos[sh], pos[el], pos[hand]
+            a, b = np.linalg.norm(e0 - s0), np.linalg.norm(w0 - e0)
+            t = want - s0
+            d = min(np.linalg.norm(t), a + b - 1.0)
+            t /= np.linalg.norm(t)
+            pole = rot[2] @ CARRY_POLES[hand]
+            perp = pole - np.dot(pole, t) * t
+            perp /= np.linalg.norm(perp)
+            ca = max(-1.0, min(1.0, (a * a + d * d - b * b) / (2.0 * a * d)))
+            elbow = s0 + t * a * ca + perp * a * math.sqrt(1.0 - ca * ca)
+            w = rot[par[sh]]
+            q = w.T @ rotation_between(e0 - s0, elbow - s0) @ w
+            local[sh] = q @ local.get(sh, np.eye(3))
+            local[twist] = q @ local.get(twist, np.eye(3))
+            rot, pos = fk(model, (local,) + tuple(row[1:]))
+            w = rot[par[el]]
+            local[el] = w.T @ rotation_between(pos[hand] - pos[el], want - pos[el]) @ w @ local.get(el, np.eye(3))
+        out.append((local,) + tuple(row[1:]))
+    return out
+
+
+def hand_offset(motdir, ref, model, tol, grip):
+    """The turn that makes the game's gun lie in our right hand (part 10) as the remake's lies in its: from the remake's
+    hold loop (both hands on the gun), the hand's turn of grip_fix there, averaged (the remake's hand bone holds the
+    gun otherwise than the game's hand; device report 23.11.2026: the gun off in the reload)."""
+    _v, mots = R.read_motlist(motlist_in(motdir, WEP_RELOAD_SHOTGUN))
+    m = next(x for x in mots if x.name.endswith("0160_hold_loop"))
+    rest_from(m, ref)
+    fit = Fit(m, model, "leon", 2.0, tol, m.frames, True, frames=list(np.arange(0, m.frames, 4.0)))
+    fixed = grip_fix(fit.rows, model, grip)
+    acc, each = np.zeros((3, 3)), []
+    for r0, r1 in zip(fit.rows, fixed):
+        c = fk(model, r0)[0][10].T @ fk(model, r1)[0][10]
+        acc += c
+        each.append(c)
+    u, _s, vt = np.linalg.svd(acc)
+    off = u @ vt
+    spread = max(math.degrees(axis_angle(off.T @ c)[1]) for c in each)
+    print("shotgun grip: the game's gun in the remake's hand turned %.0f deg, within %.0f deg over the hold loop" % (
+        math.degrees(axis_angle(off)[1]), spread))
+    return off
 
 
 def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, general=None):
@@ -910,8 +974,9 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
             if wep07:
                 warc7 = U.Archive(Path(wep07).read_bytes(), ">")
                 g7 = warc7.entry(SHOTGUN_AIMS[0][1])  # the level aim
-                cf.rows = grip_fix(point_arms(cf.rows, model, CARRY_LINE), model,
-                                   grip_frame(model, g7, range(0, fcv.parse(g7).max_frame + 1, 6)))
+                gf = range(0, fcv.parse(g7).max_frame + 1, 6)
+                cf.rows = grip_fix(grip_fix(carry_ik(cf.rows, model), model, grip_frame(model, g7, gf)), model,
+                                   grip_frame(model, g7, gf, 16), 16)
             carry.append((0x98 + MOVES.index((slot, name, lengths, flags)), fcv.serialise(cf.motion(cf.scale)),
                           len(cf.frames) - 1))
         dist = np.linalg.norm(np.array(fit.root[-1][0]) - np.array(fit.root[0][0])) * fit.scale
@@ -962,8 +1027,11 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
                 name, code, len(fit.frames), len(data), c[0], c[1]))
     if weapons and wep07:
         warc = U.Archive(Path(wep07).read_bytes(), ">")
-        for code, data in shotgun_reloads(weapons, mots[0], model, tol, warc) + shotgun_aims(weapons, mots[0], model,
-                                                                                            tol, warc):
+        # the aims stay the game's (device report 23.11.2026, v24: the head turned away on firing: the game's fire
+        # motions follow its own aim pose); shotgun_aims is kept for a later try
+        g7 = warc.entry(SHOTGUN_AIMS[0][1])
+        off = hand_offset(weapons, mots[0], model, tol, grip_frame(model, g7, range(0, fcv.parse(g7).max_frame + 1, 6)))
+        for code, data in shotgun_reloads(weapons, mots[0], model, tol, warc, off):
             entries.append(data)
             table.append(struct.pack(">BBHHHHH", code, 0, len(entries) - 1, fcv.parse(data).max_frame, 0xFFFF, 0xFFFF,
                                      0))

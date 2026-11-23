@@ -19938,3 +19938,11 @@ Der Platz sollte früh reserviert werden (beim Laden von `libre4_platform`).
 - `port/tools/re9_finisher_pack.py`: Zielen (0x94..0x96) nutzt jetzt die Arme des Spiels (Griff aus `wep07`, Einträge 0x16/0x1C/0x1E) auf dem Oberkörper des Remakes; Hüfte und Brust werden gedreht, bis die Waffe auf der Linie des Spiels liegt (0,0° Abweichung).
 - Tragen (0x98..0x9B): Schultern richten die Waffe auf die tiefe Bereitschaftshaltung (`CARRY_LINE`), die rechte Hand bekommt den Griff des Spiels aus dem waagerechten Zielen (0x16), damit die Waffe nicht seitlich liegt. Abstand der Hände 407–453 mm.
 - Geprüft: Linien und Handabstand numerisch, Bild im Studio-Renderer (ohne Waffe), `RE4_TEST_MOVE_DAT` im i686-Host-Test (0 Fehler). Nicht geprüft: auf dem Gerät; Nachladen, Schießen und Oberkörper beim Gehen sind noch offen.
+
+### Mods: Schrotflinte, zweiter Versuch (move.dat v25, 23.11.2026)
+
+- Gerätebericht zu v24 (Videos 117215/117216, Bild aus dem Remake): Leon beim Laufen vornübergebeugt, beim Schießen dreht der Kopf weg, Nachladen weiter falsch.
+- Zielen: keine eigenen Posen mehr (0x94..0x96 nicht im Paket), das Spiel nimmt wieder seine eigenen; dessen Schussbewegungen passen zu ihnen (Kopf dreht nicht weg).
+- Tragen: Schultern bleiben wie im Remake (das Drehen der Schultern hat Leon gebeugt); stattdessen werden Ober- und Unterarm so gebeugt, dass die Hände wie im Remake liegen (rechte Hand an der Brust, linke am Vorderschaft neben der linken Hüfte, Mündung schräg nach unten links). Beide Hände bekommen den Griff des Spiels.
+- Nachladen: die Waffe sitzt in der Hand des Remakes um 132° anders als in der des Spiels (aus der Halte-Schleife des Remakes gemessen); die rechte Hand wird darum gedreht. Vorher zeigte die Waffe beim Nachladen nach rechts hinten, jetzt nach vorn oben wie im Spiel.
+- Geprüft: Handlagen und Waffenrichtung numerisch, Bild im Studio-Renderer (ohne Waffe), `RE4_TEST_MOVE_DAT` im i686-Host-Test. Nicht geprüft: auf dem Gerät.
