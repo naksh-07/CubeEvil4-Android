@@ -1,0 +1,24 @@
+# Patch 0948 (with 0947, wish of DevJunior, 22.11.2026). Not a bug of the prototype: a port feature of the mods.
+# game/act_btn.cpp cActionButton::move: the prompt shown is a scenario area's (ACT_FUNC_SCE_AT): re4_pickup_preview
+# (game/sce_at.cpp, patch 0947) adds the item's name when that area is an item.
+--- a/src/game/act_btn.cpp
++++ b/src/game/act_btn.cpp
+@@ -11,6 +11,8 @@
+ #include "main.h"
+ #include "player.h"
+ #include "pl_sub.h"
++
++extern "C" void re4_pickup_preview(void* arg); /* port (patch 0948): game/sce_at.cpp (patch 0947) */
+ #include "sce_sys.h"
+ #include "sce_at.h"
+ 
+@@ -64,6 +66,9 @@
+         setActive(1);
+         if (!DpfFlagChk(pG, DPF_ACTBTN) && !(w->flags & ACTCTR_NO_DISP)) {
+             disp(w);
++            if (w->type == ACT_FUNC_SCE_AT) {
++                re4_pickup_preview(w->arg); /* port (patch 0948, mods): the item's name before it is taken */
++            }
+         }
+         if (checkButton(w) == 1 && w->func != 0) {
+             int flag = 1;

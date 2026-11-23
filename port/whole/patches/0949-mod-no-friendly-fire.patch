@@ -1,0 +1,19 @@
+# Patch 0949 (wish of DevJunior, 22.11.2026: "Ashley is hurt by our melee and shots, take it out", device videos
+# 116782/116783). Not a bug of the prototype (the finished game too lets Leon hurt her): a port feature of the mods.
+# game/pl_wep.cpp PlWepHitCheck2: a hit whose shooter is the player (his guns, his knife, the mods' melee in
+# runtime/melee.cpp) skips Ashley (em id 3) in the target list. Hits without a shooter (explosions of grenades,
+# rockets, barrels, the Ganados' dynamite) stay as the game's.
+--- a/src/game/pl_wep.cpp
++++ b/src/game/pl_wep.cpp
+@@ -335,6 +335,11 @@
+         YARARE_INFO* part = list[i].pAt;
+         cDmgInfo* dmg = &em->dmg;
+ 
++        /* port (patch 0949, mods; DevJunior, 22.11.2026: "our melee and shots hurt Ashley, take it out"): Leon's
++           own hits (his guns, his knife, the mods' melee: the shooter is the player) spare Ashley */
++        if (em->id == 3 && pPl != 0 && pPl == (cModel*) pPL) {
++            continue;
++        }
+         switch (weapon_no) {
+         case 0x14:
+             if (em->id == 3) {

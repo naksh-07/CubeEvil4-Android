@@ -1,0 +1,70 @@
+# Patch 0947 (wish of DevJunior, 22.11.2026: "I need to know which bullets and grenades I will take, the same text
+# before taking them, when near"). Not a bug of the prototype: a port feature of the mods (with the app's "Remake
+# movement", as the quick pick-up of patch 0938). game/sce_at.cpp: re4_pickup_preview shows the quick pick-up's short
+# name ("Handgun Ammo (10)") for the item the action button offers, drawn the frame it is set (act_btn.cpp, patch
+# 0948); not money, not while a pick-up's own message or a remake radio call shows.
+--- a/src/game/sce_at.cpp
++++ b/src/game/sce_at.cpp
+@@ -1512,6 +1512,7 @@
+ extern "C" int re4_codec_active(void);
+ static int quickMesNo, quickMesAttr, quickMesItem, quickMesSerial, quickMesShort;
+ static u32 quickMesNum;
++static int quickMesBusy;  /* port (patch 0947): pick-up messages showing */
+ 
+ /* The short message (DevJunior, 19.11.2026: "the short version of the name, for example: Handgun Ammo (10)"): the
+    item's name and, with a count, " (count)", cut from the game's own question 0x13 ("Take the <name> (<count>)?"
+@@ -1616,14 +1617,17 @@
+         Mem_free(w);
+         DelPrim(&pS->ot[15], (u32*) w);
+     }
++    quickMesBusy++;  /* port (patch 0947): no preview while it shows */
+     for (i = 0; i < 45 && mine == quickMesSerial; i++) {
+         if (!re4_codec_active()) {
+             sceAtQuickMesShow();
+         }
+         SceSleep(1);
+     }
++    quickMesBusy--;
+ }
+ 
++
+ static void sceAtQuickMes(int no, u32 attr, int item, u32 num)
+ {
+     quickMesShort = 0;
+@@ -1641,6 +1645,36 @@
+     quickMesShort = sceAtQuickShortBuild(withNum);
+ }
+ 
++/* port (patch 0947, mods; DevJunior, 22.11.2026: "I need to know which bullets and grenades I will take, the same
++   text before taking them, when near"): while the action button offers an item (act_btn.cpp, patch 0948), the same
++   short name as the quick pick-up's message ("Handgun Ammo (10)"), at its place, drawn that frame only (no-stop
++   attribute 0x80). Not money (its amount shows as it is taken), not while a pick-up's own message or a remake call
++   shows; with the remake's movements on, as the quick pick-up. */
++extern "C" void re4_pickup_preview(void* arg)
++{
++    SCE_AT_ITEM* w = (SCE_AT_ITEM*) arg;
++    ITEM_INFO info;
++    int num;
++
++    if (w == 0 || w->id != SCEAT_ID_ITEM || !re4_quick_pickup_on() || quickMesBusy > 0 || re4_codec_active()) {
++        return;
++    }
++    itemInfo(w->item.item_id, &info);
++    if (info.type == 8) {
++        return;
++    }
++    num = w->item.item_num;
++    if (num == 0) {
++        num = info.defNum;
++    }
++    sceAtQuickMes(0x15, 0x11, w->item.item_id, num);
++    quickMesSerial--;  /* not a new pick-up: a running pick-up task keeps its count */
++    quickMesShort = sceAtQuickShortBuild(info.type == 2 || num > 1);
++    if (quickMesShort) {
++        sceAtQuickMesShow();
++    }
++}
++
+ static int sceAtQuickItem(SCE_AT_ITEM* w)
+ {
+     SCE_AT_DATA_ITEM* it = &w->item;
