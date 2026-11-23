@@ -565,6 +565,17 @@ SHOTGUN_LEVELS = [(0x26, 12, 48, 63, 78, 90), (0x28, 12, 40, 54, 64, 73), (0x2A,
 PICKUPS = [(0xA0, "0406_item_up_run"), (0xA1, "0408_item_up_lower"), (0xA2, "0410_item_up_middle_F")]
 
 
+def motlist_in(folder, name):
+    """A motlist of a folder whatever its case (REtool writes the remake's names in small letters)."""
+    p = Path(folder) / name
+    if p.exists():
+        return p
+    for q in Path(folder).iterdir():
+        if q.name.lower() == name.lower():
+            return q
+    raise SystemExit("%s: no %s" % (folder, name))
+
+
 def rest_from(motion, ref):
     """A motion of a mod whose bones stand at a hundredth of their length (its exporter's units): the reference's rest
     translations by name, the others times 100."""
@@ -578,7 +589,7 @@ def rest_from(motion, ref):
 
 def shotgun_reloads(motdir, ref, model, tol, wep):
     """The rows (code, entry data) of the shotgun's reload per level for move.dat (codes 0x90 + level)."""
-    _v, mots = R.read_motlist(Path(motdir) / WEP_RELOAD_SHOTGUN)
+    _v, mots = R.read_motlist(motlist_in(motdir, WEP_RELOAD_SHOTGUN))
     seg = {}
     for key, name in (("start", "0805_reload_start"), ("loop", "0810_reload_loop"), ("end", "0815_reload_end")):
         seg[key] = next(x for x in mots if x.name.endswith(name))
@@ -700,7 +711,7 @@ def gun_line(model, data, frames):
 
 def shotgun_aims(motdir, ref, model, tol, wep):
     """The rows (code, entry data) of the shotgun's three aim poses for move.dat."""
-    _v, mots = R.read_motlist(Path(motdir) / WEP_RELOAD_SHOTGUN)
+    _v, mots = R.read_motlist(motlist_in(motdir, WEP_RELOAD_SHOTGUN))
     m = next(x for x in mots if x.name.endswith("0160_hold_loop"))
     rest_from(m, ref)
     out = []
@@ -737,9 +748,9 @@ def shotgun_aims(motdir, ref, model, tol, wep):
     return out
 
 
-def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None):
+def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, general=None):
     """Leon's movements (see --move)."""
-    _v, mots = R.read_motlist(root / CHA0)
+    _v, mots = R.read_motlist(Path(general) if general else root / CHA0)
     entries, table, steps = [b""], [], []
     for slot, name, lengths, flags in MOVES:
         m = next(x for x in mots if x.name.endswith(name))
@@ -923,7 +934,9 @@ def main(argv=None):
     ap.add_argument("--weapons", help="with --move: the folder of Leon's weapon motlists (cha0_wp4100H …, the "
                     "'Tactical First-Person Mode' mod's _Chainsaw/Animation/ch/cha0/motlist)")
     ap.add_argument("--wep07", help="with --weapons: the disc's shotgun archive (em/wep07.drs)")
-    ap.add_argument("--general2", help="with --move: the remake's cha8_general2.motlist.663 (taking items)")
+    ap.add_argument("--general2", help="with --move: the remake's cha0_general2.motlist.663 (taking items; before 23.11.2026 "
+                    "Ada's cha8_general2 of the 'General Animations Corrector' mod)")
+    ap.add_argument("--general", help="with --move: the remake's own cha0_general.motlist.663 (else the one under ROOT)")
     a = ap.parse_args(argv)
 
     # the mod's natives/stm folder (its _re9_melee_proto and _chainsaw)
@@ -949,7 +962,7 @@ def main(argv=None):
     if a.react:
         reacts(root, ganado_model, a.tolerance, a.react, U.Archive(Path(a.ganado.partition(":")[0]).read_bytes(), ">"))
     if a.move:
-        moves(root, leon_model, a.tolerance, a.move, a.weapons, a.wep07, a.general2)
+        moves(root, leon_model, a.tolerance, a.move, a.weapons, a.wep07, a.general2, a.general)
     want = set(a.only.split(",")) if a.only else None
     entries = [("FIN", b"")]
     made = {}

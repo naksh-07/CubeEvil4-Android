@@ -123,6 +123,11 @@ Move gClip[kClips];
 // level; re4_move_reload, patch 0944)
 u8* gReload[3];
 u16 gReloadLast[3];
+// (Mods, 23.11.2026) the shotgun's three aim poses (move.dat codes 0x94..0x96 for the game's WEP entries 0x16, 0x1C,
+// 0x1E: PL_ARC 0x1A, 0x20, 0x22 of wep07_r3_set00 / fire00), the remake's hold loop with the gun on the game's line;
+// re4_move_aim, patch 0950
+u8* gAim[3];
+u16 gAimLast[3];
 // (Mods, 21.11.2026, DevJunior: "add the animation of taking objects") the remake's hand reaching for an item, on the
 // upper body (move.dat codes 0xA0 on the move, 0xA1 standing for a low item, 0xA2 at a table's height; re4_move_pickup)
 Move gPick[3];
@@ -308,6 +313,8 @@ void load()
     static Move clips[kClips];
     memset(clips, 0, sizeof(clips));
     u8* reload[3] = {0, 0, 0};
+    u8* aim[3] = {0, 0, 0};
+    u16 aimLast[3] = {0, 0, 0};
     u16 reloadLast[3] = {0, 0, 0};
     u8* pick[3] = {0, 0, 0};
     u16 pickLast[3] = {0, 0, 0};
@@ -321,6 +328,10 @@ void load()
         if (r[0] >= 0xA0 && r[0] < 0xA3 && last <= kSeqMax) {
             pick[r[0] - 0xA0] = base + at[entry];
             pickLast[r[0] - 0xA0] = last;
+        }
+        if (r[0] >= 0x94 && r[0] < 0x97) {
+            aim[r[0] - 0x94] = base + at[entry];
+            aimLast[r[0] - 0x94] = last;
         }
         if (r[0] >= 0x90 && r[0] < 0x93) {
             reload[r[0] - 0x90] = base + at[entry];
@@ -409,6 +420,15 @@ void load()
     }
     if (nReload) {
         re4_log("move: %s: the remake's shotgun reload, %d levels", path, nReload);
+    }
+    int nAim = 0;
+    for (int i = 0; i < 3; i++) {
+        gAim[i] = aim[i];
+        gAimLast[i] = aimLast[i];
+        nAim += aim[i] ? 1 : 0;
+    }
+    if (nAim) {
+        re4_log("move: %s: the remake's shotgun aim, %d poses", path, nAim);
     }
     int nPick = 0;
     for (int i = 0; i < 3; i++) {
@@ -1176,6 +1196,33 @@ void* re4_move_reload(int weapon, int level, void* mot)
         re4_log("move: the remake's shotgun reload (level %d, %u frames)", level, own);
     }
     return gReload[level];
+}
+
+// Patch 0950 (pl_shotgun.cpp wep07_r3_set00 / wep07_r3_fire00, the game thread): the shotgun's aim pose of PL_ARC
+// `index` (0x1A, 0x20, 0x22: the three of mot3): the remake's (Leon's hold loop, the gun on the game's line) for the
+// shotgun (weapon_no 7) when move.dat has it and the remake's movements are on, else the game's `mot`; only when the
+// game's motion is as long as the one it was made for.
+void* re4_move_aim(int weapon, int index, void* mot)
+{
+    const int i = index == 0x1A ? 0 : index == 0x20 ? 1 : index == 0x22 ? 2 : -1;
+    if (weapon != 7 || i < 0 || !gAim[i] || !on() || !mot) {
+        return mot;
+    }
+    const unsigned own = get16((const u8*) mot) & 0x3FFF;
+    static int said;
+    if (own != gAimLast[i]) {
+        if (!(said & (8 << i))) {
+            said |= 8 << i;
+            re4_log("move: the shotgun's aim 0x%x is %u frames on this disc, the remake's was made for %u: the game's",
+                    index, own, (unsigned) gAimLast[i]);
+        }
+        return mot;
+    }
+    if (!(said & (1 << i))) {
+        said |= 1 << i;
+        re4_log("move: the remake's shotgun aim 0x%x (%u frames)", index, own);
+    }
+    return gAim[i];
 }
 
 // Patch 0945 (sce_at.cpp sceAtQuickItem, the game thread): an item taken on the move (the remake's quick pick-up):

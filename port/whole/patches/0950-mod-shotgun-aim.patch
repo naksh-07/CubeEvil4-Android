@@ -1,0 +1,36 @@
+# Patch 0950 (wish of DevJunior, 23.11.2026: "the improvements of Leon's animations", the remake's own motions he
+# extracted). Not a bug of the prototype: a port feature of the mods (with the app's "Remake movement", as 0944).
+# wep/pl_shotgun.cpp wep07_r3_set00 and the return from the reload: the three aim poses of mot3 (PL_ARC 0x1A, 0x20,
+# 0x22) through re4_move_aim (runtime/locomotion.cpp): the remake's hold loop of the W-870 (move.dat 0x94..0x96, the
+# gun on the game's line) for the shotgun, else the game's. The fire motions (0x1E, 0x21, 0x23) stay the game's.
+--- a/src/wep/pl_shotgun.cpp
++++ b/src/wep/pl_shotgun.cpp
+@@ -18,6 +18,10 @@
+ 
+ 
+ 
++extern "C" void* re4_move_aim(int weapon, int index, void* mot); /* port (patch 0950): runtime/locomotion.cpp */
++/* port (patch 0950, mods): the shotgun's aim poses of the remake (DevJunior, 23.11.2026: Leon's weapon animations as
++   in the remake), the game's where move.dat has none */
++#define AIM_PTR(arc, i) re4_move_aim(pG->weapon_no, (i), PL_ARC_PTR(arc, i))
+ static void wep07_r2_ready(cPlayer* pl);
+ static void wep07_r3_ready00(cPlayer* pl);
+ static void wep07_r3_ready10(cPlayer* pl);
+@@ -243,7 +247,7 @@
+ {
+     PlArc* arc = pG->pWep;
+ 
+-    mot3.set(pl, PL_ARC_PTR(arc, 0x1A), PL_ARC_PTR(arc, 0x20), PL_ARC_PTR(arc, 0x22), 0, 3, 0, 4, 0);
++    mot3.set(pl, AIM_PTR(arc, 0x1A), AIM_PTR(arc, 0x20), AIM_PTR(arc, 0x22), 0, 3, 0, 4, 0);
+     mot3.move(m3r);
+     pl->motionMove();
+     pl->r_no_3 = 1;
+@@ -600,7 +604,7 @@
+     case 2: {
+         PlArc* arc = pG->pWep;
+ 
+-        mot3.set(pl, PL_ARC_PTR(arc, 0x1A), PL_ARC_PTR(arc, 0x20), PL_ARC_PTR(arc, 0x22), 0, 9, 0, 4, 0);
++        mot3.set(pl, AIM_PTR(arc, 0x1A), AIM_PTR(arc, 0x20), AIM_PTR(arc, 0x22), 0, 9, 0, 4, 0);
+         pl->m_Work0 = 0;
+         pl->r_no_3 = 3;
+     }
