@@ -311,7 +311,7 @@ void load()
     }
     const u8* tab = ok ? base + at[0] : 0;
     const u32 n = ok && at[1] - at[0] >= 8 && memcmp(tab, "MOV1", 4) == 0 ? be32At(tab + 4) : 0;
-    ok = ok && n >= 1 && n <= 32 && 8 + n * 12 <= at[1] - at[0];
+    ok = ok && n >= 1 && n <= 64 && 8 + n * 12 <= at[1] - at[0];  // (23.11.2026: 33 rows with the shotgun carried; 32 before)
     Move found[kMoves];
     memset(found, 0, sizeof(found));
     static Move clips[kClips];

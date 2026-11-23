@@ -860,6 +860,8 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
         table.append(struct.pack(">BBHHHHH", code, 0, len(entries) - 1, last, 0xFFFF, 0xFFFF, 0))
         steps.append([])
         print("shotgun carry 0x%x: %d game frames, %d bytes" % (code, last + 1, len(data)))
+    if len(table) > 64:  # runtime/locomotion.cpp takes 64 rows at most (32 before 23.11.2026)
+        raise SystemExit("move.dat: %d movements, the game takes 64" % len(table))
     stk = b"STK1"
     for st in steps:
         st = st[:24]
