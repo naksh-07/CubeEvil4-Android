@@ -104,7 +104,7 @@ const int kAskHold = 90;       // frames the partner command button is held to a
                                // 23.11.2026: DevJunior wants her to keep it, a plain press must not take it)
 const u16 kPistols[] = {0x23, 0x24, 0x21, 0x22, 0x40, 0x25, 0x26, 0x27, 0x28, 0x03, 0x29, 0x2A, 0x2B, 0x37};
 
-const f32 kRange = 12000.0f;   // 12 m
+const f32 kRange = 7000.0f;    // 7 m (DevJunior, 23.11.2026: "not so much range, so that it is balanced"; 12 m before)
 const f32 kCone = 1.4f;        // radians either side of where she faces, while she walks
 const f32 kTurn = 0.12f;       // radians a frame she turns standing
 const int kMag = 10;

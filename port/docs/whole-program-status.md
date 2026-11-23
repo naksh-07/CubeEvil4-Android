@@ -19988,3 +19988,4 @@ Der Platz sollte früh reserviert werden (beim Laden von `libre4_platform`).
 - Schussabstand: 21 Bilder (0,7 s), ohne Zufall (Wunsch „el ritmo de disparo sea 7“).
 - Leitern: der Bericht zeigt am Brunnen nur den Fußbereich der Leiter (Stufe +5, 5 m unter ihr, 0,5 m daneben), keinen Bereich zum Hinabsteigen. `ashley_ladder.cpp`: eine Leiter nach oben, deren Fuß 1–20 m unter ihr liegt, nimmt sie von oben: Standpunkt über die Leiterlinie gespiegelt, auf ihrer Höhe, Blick zum Abgrund, so viele Sprossen wie hinauf.
 - Geprüft: i686 Build und alle Prüfungen. Nicht geprüft: auf dem Gerät.
+- Ashleys Reichweite: 7 m statt 12 m (`kRange`, Wunsch „que no tuviera tanto rango de disparo, para que sea balanceado“). Geprüft: i686 Build und alle Prüfungen; nicht auf dem Gerät.
