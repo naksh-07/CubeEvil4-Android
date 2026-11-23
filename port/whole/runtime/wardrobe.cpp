@@ -39,6 +39,7 @@
 #include <string.h>
 
 extern "C" void re4_log(const char* fmt, ...);
+extern "C" void* re4_mod_place_alloc(unsigned long size, const char* what);  // runtime/mod_place.cpp
 extern "C" void re4_formats_part_loaded(const char* name, int nest, int index, const void* part, unsigned addr);
 extern "C" void re4_add_frame_hook(void (*hook)(unsigned));  // runtime/pad.cpp
 extern "C" int re4_player_modded(void);                        // runtime/dvd.cpp: the player's file is a mod
@@ -46,10 +47,20 @@ int PlSetCostume();                                            // pl_sub.cpp
 
 namespace {
 
-// the weapon's archive: behind the cheats' places (up to 0x824E0000), before the larger player archive's
-// (RE4_MEM1_PLAYER_ALT_ADDR, 0x82600000)
-const u32 kBackAddr = 0x82500000u;
+// the weapon's archive: a block of the mods' place (placeOf below; 0x82500000 of MEM1 until 22.11.2026)
 const u32 kBackMax = 0x100000u;
+u32 gBackAt;
+// (Mods, 22.11.2026) a block of the mods' place (runtime/mod_place.cpp), taken once and kept: the fixed address of
+// MEM1 used before lies in the game's heaps since upstream's 1.1.0 (re4_mem1_map.h, room heap 4 to 0x826F4000), where
+// the archive overwrote the room's data (DevJunior's crash entering r118 with her pistol, 22.11.2026: Esp08_Trans)
+u32 placeOf(u32& at, u32 size, const char* what)
+{
+    if (!at) {
+        at = (u32) (unsigned long) re4_mod_place_alloc(size, what);
+    }
+    return at;
+}
+u32 backAddr() { return placeOf(gBackAt, kBackMax, "the weapon on the back"); }
 
 std::atomic<int> gOutfit(0);     // 0 the story's rule, 1 the first outfit, 2 the second
 std::atomic<bool> gBack(false);  // the weapon on the back
@@ -206,6 +217,12 @@ bool loadArchive(const char* file)
     DVDFileInfo fi;
     if (!DVDOpen((char*) file, &fi)) {
         re4_log("wardrobe: %s not readable: no weapon on the back", file);
+        return false;
+    }
+    const u32 kBackAddr = backAddr();
+    if (!kBackAddr) {
+        DVDClose(&fi);
+        re4_log("wardrobe: no room in the mods' place for %s: no weapon on the back", file);
         return false;
     }
     u8* const base = (u8*) (unsigned long) kBackAddr;
@@ -483,7 +500,7 @@ void showBack(cModel* carrier)
             gLoadedNo = gLastNo;
             gLoadedType = gLastType;
         }
-        arc = (const PlArc*) (unsigned long) kBackAddr;
+        arc = (const PlArc*) (unsigned long) gBackAt;
     } else {
         arc = pG->pPlayer;
     }

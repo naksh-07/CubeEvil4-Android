@@ -43,8 +43,8 @@
 //    hit; she fires at the pistol's own rate (PlShotFrameTbl at its speed level, at least kFireGap frames).
 //  - Ammunition: kMag rounds; one comes back every kRegen frames.
 //  - The pistol in her hand: the handgun's model (em/wep02.drs, entries 6 / 5 as wep02's objects take them) read
-//    once to kGunAddr (Krauser's weapon buffer of cheats.cpp: only his own game uses it, and only Leon's story has
-//    her as the partner here), an event body (SetObj18) hung on her hand part (OyaSetObj18), hidden in events,
+//    once to a block of the mods' place (runtime/mod_place.cpp; until 22.11.2026 a fixed MEM1 address the game's
+//    heaps now reach), an event body (SetObj18) hung on her hand part (OyaSetObj18), hidden in events,
 //    sub screens and movies; never destroyed while it is shown (runtime/wardrobe.cpp: hidden, destroyed later).
 //  - Each step is logged ("ashley: ...").
 #include "types.h"
@@ -70,13 +70,25 @@
 #include <string.h>
 
 extern "C" void re4_log(const char* fmt, ...);
+extern "C" void* re4_mod_place_alloc(unsigned long size, const char* what);  // runtime/mod_place.cpp
 extern "C" void re4_add_frame_hook(void (*hook)(unsigned));  // runtime/pad.cpp
 extern "C" void re4_formats_part_loaded(const char* name, int nest, int index, const void* part, unsigned addr);
 
 namespace {
 
-const u32 kGunAddr = 0x82200000u;  // cheats.cpp kWepPlaceAddr (Krauser's own game only)
 const u32 kGunMax = 0x100000u;
+u32 gGunAt;
+// (Mods, 22.11.2026) a block of the mods' place (runtime/mod_place.cpp), taken once and kept: the fixed address of
+// MEM1 used before lies in the game's heaps since upstream's 1.1.0 (re4_mem1_map.h, room heap 4 to 0x826F4000), where
+// the archive overwrote the room's data (DevJunior's crash entering r118 with her pistol, 22.11.2026: Esp08_Trans)
+u32 placeOf(u32& at, u32 size, const char* what)
+{
+    if (!at) {
+        at = (u32) (unsigned long) re4_mod_place_alloc(size, what);
+    }
+    return at;
+}
+u32 gunAddr() { return placeOf(gGunAt, kGunMax, "Ashley's pistol (em/wep02.drs)"); }
 const char* const kGunFile = "em/wep02.drs";
 const int kGunBin = 6, kGunTpl = 5;
 
@@ -675,6 +687,12 @@ bool loadGun()
         re4_log("ashley: %s not readable: no pistol in her hand", kGunFile);
         return false;
     }
+    const u32 kGunAddr = gunAddr();
+    if (!kGunAddr) {
+        DVDClose(&fi);
+        re4_log("ashley: no room in the mods' place for %s: no pistol in her hand", kGunFile);
+        return false;
+    }
     u8* const base = (u8*) (unsigned long) kGunAddr;
     u32 partOfs = 0, partSize = 0;
     if (DVDReadPrio(&fi, base, 0x400, 0, 2) == 0x400) {
@@ -800,7 +818,7 @@ void gunFrame(unsigned)
             return;
         }
     }
-    const PlArc* arc = (const PlArc*) (unsigned long) kGunAddr;
+    const PlArc* arc = (const PlArc*) (unsigned long) gGunAt;
     void* bin = arcEntry(arc, kGunBin);
     void* tpl = arcEntry(arc, kGunTpl);
     if (!bin || !tpl) {

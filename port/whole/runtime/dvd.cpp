@@ -1132,20 +1132,17 @@ void* re4_player_data_place(const char* name, unsigned fixedMax)
     if (size <= fixedMax) {
         return 0;
     }
-    if (size > RE4_MEM1_PLAYER_ALT_MAX) {
-        // larger than the place in MEM1: behind the mods' character archives (runtime/mod_place.cpp, 12.11.2026)
-        if (void* p = re4_mod_player_place(size)) {
-            re4_log("DVD: %s: player data of %u bytes (fixed place %u), read to %p (the mods' place)", name, size,
-                    fixedMax, p);
-            return p;
-        }
-        re4_log("DVD: %s: player data of %u bytes, larger than the %u bytes of every place: the fixed one, "
-                "it runs over the weapon data", name, size, RE4_MOD_PLAYER_MAX);
-        return 0;
+    // (Mods, 22.11.2026) always the mods' place (runtime/mod_place.cpp): the MEM1 place used before for up to 6 MB
+    // (RE4_MEM1_PLAYER_ALT_ADDR, 0x82600000) lies in the game's heaps and the cheats' places since upstream's 1.1.0
+    // (re4_mem1_map.h)
+    if (void* p = re4_mod_player_place(size)) {
+        re4_log("DVD: %s: player data of %u bytes (fixed place %u), read to %p (the mods' place)", name, size,
+                fixedMax, p);
+        return p;
     }
-    re4_log("DVD: %s: player data of %u bytes (fixed place %u), read to 0x%08x", name, size, fixedMax,
-            RE4_MEM1_PLAYER_ALT_ADDR);
-    return (void*) (unsigned long) RE4_MEM1_PLAYER_ALT_ADDR;
+    re4_log("DVD: %s: player data of %u bytes, larger than the %u bytes of every place: the fixed one, "
+            "it runs over the weapon data", name, size, RE4_MOD_PLAYER_MAX);
+    return 0;
 }
 
 // The place of the option menu's data (patch 0121, read.cpp OptionDataRead): the debug build reads

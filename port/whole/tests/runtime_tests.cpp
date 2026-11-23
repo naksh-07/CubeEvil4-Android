@@ -487,8 +487,11 @@ static void testDvdMods()
     CHECK(re4_player_data_place("em/pl10.drs", 0x118000) == 0);
     CHECK(writeFile(base + "/mods/c/em/pl10.drs", large.data(), large.size()));
     re4_set_data_dir(root);
-    CHECK(re4_player_data_place("em/pl10.drs", 0x118000) == (void*) (unsigned long) RE4_MEM1_PLAYER_ALT_ADDR &&
-          re4_player_modded());
+    {
+        // (22.11.2026) up to 6 MB too in the mods' place: MEM1's former place lies in the heaps since 1.1.0
+        void* p = re4_player_data_place("em/pl10.drs", 0x118000);
+        CHECK(p && p == re4_mod_player_place(0x780000) && re4_player_modded());
+    }
     // cutscenes: a skin's jacket parts in costume 0 take its pl000e, nothing else
     CHECK(re4_mod_event_part("ev000e", "b", "t", "pl0000", 0) && re4_mod_event_part("ev001e", "b", "t", "pl0000", 0));
     CHECK(!re4_mod_event_part("ev000e", "b", "t", "pl0000", 1) && !re4_mod_event_part("ev0002", "b", "t", "pl0000", 0));
