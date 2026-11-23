@@ -1697,60 +1697,107 @@ void* re4_mod_event_bin(const void* header, int index, const char* name, void* d
     return data;
 }
 
-// Patch 0946 (event.cpp ExePacket_SetPartsSub, after 0906): an event's own head (ev0101 / ev0201) or eyes (ev0102 /
-// ev0202) of Ashley (pl0100) or Ada (pl0200), whose body in this event came from a skin (patch 0915): the skin's head
-// or face instead (Mods, 22.11.2026, DevJunior: "Ashley no aparece con las skins nuevas ... tampoco Ada Wong en la
-// cinemática"). *bin and *tpl: the skin's model and palette (entries = PL_ARC - 4 of the game's setModel: Ashley pl01
-// and pl05 head 2 / 7, face 3 / 5; pl11 head 2 / 4, face 3 / 7; Ada pl0b and pl0c head 2 / 3, face 4 / 3). 1 = the
-// head, 2 = the face, 0 = the event's own (no skin, its body not the skin's in this event: another skeleton maybe,
-// or the skin's head the disc's). `body`: the model of the event's body (oya), from the skin's place when 0915 took it.
-int re4_mod_event_skin_part(const char* name, const char* oya, const void* body, void** bin, void** tpl)
+// Patch 0946 (event.cpp ExePacket_SetPartsSub, after 0906): Ashley (pl0100) and Ada (pl0200) in a cutscene with a skin
+// (Mods, 22./23.11.2026, DevJunior: "Ashley no aparece con las skins nuevas ... tampoco Ada Wong en la cinemática").
+// The events draw them with models of their own (event/model/ev0100: ev0101..ev0105 on pl0100, ev0200 on pl0200).
+//  * The oya's body came from the skin (patch 0915, the event's bins copies of the skinned archive): the event's head
+//    (ev0X01) and eyes (ev0X02) give way to the skin's head or face, the rest is the skin's already. Returns 1 (head) or
+//    2 (face), one model in bins[0] / tpls[0].
+//  * The oya's body is the event's own (DevJunior's report 23.11.2026, r117s00: only event/model/ev0100 parts): every
+//    part of the character gives way to the skin's whole figure, as the game puts it together in the field (pl11.cpp
+//    cSubAshley: body, face, head, outfits, hands; entries = PL_ARC - 4). Returns 0x100 | the count: the patch hides
+//    the event's part and, once per model, the oya's own body and hangs the skin's parts on. Only when the skin's body
+//    has no more parts (joints) than the oya: the same skeleton then (the events' Ashley is the field's rig).
+//  0: the event's own (no skin, a skin with the disc's models, another skeleton).
+int re4_mod_event_skin_part(const char* name, const char* oya, const void* body, int oyaParts, void** bins, void** tpls,
+                            int max)
 {
     Disc* d = current();
-    if (!d || !d->mods || !name || !oya || !bin || !tpl || strlen(name) != 6 || strncmp(name, "ev0", 3) != 0) {
+    if (!d || !d->mods || !name || !oya || !bins || !tpls || max < 8 || strlen(name) != 6 ||
+        strncmp(name, "ev0", 3) != 0) {
         return 0;
     }
     const bool ashley = strcmp(oya, "pl0100") == 0 && name[3] == '1';
     const bool ada = strcmp(oya, "pl0200") == 0 && name[3] == '2';
-    const int part = strcmp(name + 4, "01") == 0 ? 1 : strcmp(name + 4, "02") == 0 ? 2 : 0;
-    if ((!ashley && !ada) || part == 0) {
+    if (!ashley && !ada) {
         return 0;
     }
+    const int part = strcmp(name + 4, "01") == 0 ? 1 : strcmp(name + 4, "02") == 0 ? 2 : 0;
     if (gSkinsScanned != gCurrent || gSkinsGeneration != gModsGeneration) {
         scanSkins(*d);
     }
-    static const char* const kAshley[] = {"em/pl01.", "em/pl05.", "em/pl11."};
+    struct Piece {
+        unsigned char model, tpl;
+    };
+    // body first, then head and face (as the field's), outfits, hands
+    static const Piece kPl01[] = {{0, 1}, {3, 5}, {2, 7}, {4, 1}, {6, 1}, {13, 1}, {16, 1}};
+    static const Piece kPl11[] = {{0, 1}, {3, 7}, {2, 4}, {5, 1}, {6, 1}, {8, 1}, {11, 1}};
+    static const Piece kPl0b[] = {{0, 1}, {2, 3}, {4, 3}, {5, 6}, {13, 1}, {14, 1}};
+    static const char* const kAshley[] = {"em/pl11.", "em/pl01."};  // the partner's archive since r117 first
     static const char* const kAda[] = {"em/pl0b.", "em/pl0c."};
     const char* const* names = ashley ? kAshley : kAda;
-    const int count = ashley ? 3 : 2;
-    for (int k = 0; k < count; k++) {
+    for (int k = 0; k < 2; k++) {
         for (SkinFile& f : gSkins) {
             if (f.unusable || strncmp(f.name, names[k], 8) != 0) {
                 continue;
             }
-            const unsigned char* b = (const unsigned char*) body;
-            if (!f.skin || !b || b < f.skin || b >= f.skin + f.skinSize) {
-                re4_log("Event: part %s on %s: the event's own (its body is not %s's in this cutscene)", name, oya,
-                        f.name);
-                return 0;
-            }
             const bool pl11 = strncmp(f.name, "em/pl11.", 8) == 0;
-            const u32 model = ada ? (part == 1 ? 2 : 4) : (part == 1 ? 2 : 3);
-            const u32 pal = ada ? 3 : part == 1 ? (pl11 ? 4 : 7) : (pl11 ? 7 : 5);
-            void* m = skinEntry(*d, f, model);
-            void* t = skinEntry(*d, f, pal);
-            if (!m || !t || model >= f.entries.size() || model >= f.skinLen.size()) {
+            const Piece* set = ada ? kPl0b : pl11 ? kPl11 : kPl01;
+            const int count = ada ? 6 : 7;
+            const unsigned char* b = (const unsigned char*) body;
+            if (f.skin && b && b >= f.skin && b < f.skin + f.skinSize) {
+                // the body is the skin's: its head and face for the event's
+                if (part == 0) {
+                    return 0;
+                }
+                const Piece pc = ada ? (part == 1 ? set[1] : set[2]) : (part == 1 ? set[2] : set[1]);
+                void* m = skinEntry(*d, f, pc.model);
+                void* t = skinEntry(*d, f, pc.tpl);
+                if (!m || !t || pc.model >= f.entries.size() || pc.model >= f.skinLen.size()) {
+                    return 0;
+                }
+                const SkinEntry& disc = f.entries[pc.model];
+                if (disc.len == f.skinLen[pc.model] && fnv((const unsigned char*) m, disc.len) == disc.full) {
+                    return 0;  // the skin keeps the disc's head: the event's own
+                }
+                bins[0] = m;
+                tpls[0] = t;
+                re4_log("Event: part %s on %s: drawn as %s's %s (entries %u, %u)", name, oya, f.name,
+                        part == 1 ? "head" : "face", (unsigned) pc.model, (unsigned) pc.tpl);
+                return part;
+            }
+            // the event's own figure: the skin's whole one
+            int n = 0;
+            for (int i = 0; i < count; i++) {
+                void* m = skinEntry(*d, f, set[i].model);
+                void* t = skinEntry(*d, f, set[i].tpl);
+                if (!m || !t) {
+                    if (i == 0) {
+                        re4_log("Event: part %s on %s: the event's own (%s has no body to read)", name, oya, f.name);
+                        return 0;
+                    }
+                    continue;
+                }
+                bins[n] = m;
+                tpls[n] = t;
+                n++;
+            }
+            const int skinParts = ((const unsigned char*) bins[0])[0x19];  // cModelData::nParts
+            static const void* toldFor;
+            if (skinParts > oyaParts || oyaParts <= 0) {
+                if (toldFor != body) {
+                    toldFor = body;
+                    re4_log("Event: %s's figure on %s: the event's own (the skin's body has %d joints, the cutscene's "
+                            "%d: another skeleton)", f.name, oya, skinParts, oyaParts);
+                }
                 return 0;
             }
-            const SkinEntry& disc = f.entries[model];
-            if (disc.len == f.skinLen[model] && fnv((const unsigned char*) m, disc.len) == disc.full) {
-                return 0;  // the skin keeps the disc's head: the event's own
+            if (toldFor != body) {
+                toldFor = body;
+                re4_log("Event: %s's whole figure on %s (%d models, %d of the cutscene's %d joints) for the event's "
+                        "own", f.name, oya, n, skinParts, oyaParts);
             }
-            *bin = m;
-            *tpl = t;
-            re4_log("Event: part %s on %s: drawn as %s's %s (entries %u, %u)", name, oya, f.name,
-                    part == 1 ? "head" : "face", (unsigned) model, (unsigned) pal);
-            return part;
+            return 0x100 | n;
         }
     }
     return 0;

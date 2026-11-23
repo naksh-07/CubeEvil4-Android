@@ -245,84 +245,84 @@
  },
  {
   "file": "src/game/event.cpp",
-  "line": 1843,
+  "line": 1874,
   "text": "(u32*) &col.start",
   "use": "deref",
   "type": "u32",
   "element": 1,
   "object": "GXColor",
   "sites": [
-   "src/game/event.cpp:1843"
+   "src/game/event.cpp:1874"
   ],
   "action": "be",
   "reason": "word over byte fields: bytes in GameCube order"
  },
  {
   "file": "src/game/event.cpp",
-  "line": 1845,
+  "line": 1876,
   "text": "(u32*) &col.end",
   "use": "deref",
   "type": "u32",
   "element": 1,
   "object": "GXColor",
   "sites": [
-   "src/game/event.cpp:1845"
+   "src/game/event.cpp:1876"
   ],
   "action": "be",
   "reason": "word over byte fields: bytes in GameCube order"
  },
  {
   "file": "src/game/event.cpp",
-  "line": 1847,
+  "line": 1878,
   "text": "(u32*) &col.start",
   "use": "deref",
   "type": "u32",
   "element": 1,
   "object": "GXColor",
   "sites": [
-   "src/game/event.cpp:1847"
+   "src/game/event.cpp:1878"
   ],
   "action": "be",
   "reason": "word over byte fields: bytes in GameCube order"
  },
  {
   "file": "src/game/event.cpp",
-  "line": 1848,
+  "line": 1879,
   "text": "(u32*) &col.end",
   "use": "deref",
   "type": "u32",
   "element": 1,
   "object": "GXColor",
   "sites": [
-   "src/game/event.cpp:1848"
+   "src/game/event.cpp:1879"
   ],
   "action": "be",
   "reason": "word over byte fields: bytes in GameCube order"
  },
  {
   "file": "src/game/event.cpp",
-  "line": 2580,
+  "line": 2611,
   "text": "(u32*) hdr->tag",
   "use": "deref",
   "type": "u32",
   "element": 1,
   "object": "char[8]",
   "sites": [
-   "src/game/event.cpp:2580"
+   "src/game/event.cpp:2611"
   ],
   "action": "be",
   "reason": "word over byte fields: bytes in GameCube order"
  },
  {
   "file": "src/game/event.cpp",
-  "line": 2760,
+  "line": 2791,
   "text": "(u32*) hdr->tag",
   "use": "deref",
   "type": "u32",
   "element": 1,
   "object": "char[8]",
   "sites": [
-   "src/game/event.cpp:2760"
+   "src/game/event.cpp:2791"
   ],
   "action": "be",
   "reason": "word over byte fields: bytes in GameCube order"
