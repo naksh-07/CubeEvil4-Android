@@ -105,7 +105,7 @@ public class TouchStyleTest {
   @Test public void editorStyleButtonGoesRound() throws Exception {
     TouchControls t = controls();
     RetroTouchView view = (RetroTouchView) t.view();
-    for (int want : new int[] {TouchStyle.GC, TouchStyle.PS2, TouchStyle.XBOX, TouchStyle.RE}) {
+    for (int want : new int[] {TouchStyle.GC, TouchStyle.PS2, TouchStyle.XBOX, TouchStyle.RE4R, TouchStyle.RE}) {
       tapStyleButton(view);
       assertEquals(want, t.look());
       assertEquals(TouchStyle.IDS[want], prefs().getString(TouchControls.SKIN_KEY, null));
@@ -208,6 +208,18 @@ public class TouchStyleTest {
     assertEquals("RS", xbox.getLook(CoreTouch.C_STICK).getLabel());
   }
 
+  @Test public void re4rSkin() {
+    RetroTouchSkin re4r = TouchStyle.re4r(1.6f);
+    assertSame(RetroTouchIcon.HAND, re4r.getLook(CoreTouch.A).getIcon());
+    assertSame(RetroTouchIcon.FOOTPRINTS, re4r.getLook(CoreTouch.B).getIcon());
+    assertSame(RetroTouchIcon.USER, re4r.getLook(CoreTouch.X).getIcon());
+    assertSame(RetroTouchIcon.BRIEFCASE, re4r.getLook(CoreTouch.Y).getIcon());
+    assertSame(RetroTouchIcon.KNIFE_HORIZONTAL, re4r.getLook(CoreTouch.L).getIcon());
+    assertSame(RetroTouchIcon.CROSSHAIR, re4r.getLook(CoreTouch.R).getIcon());
+    assertEquals(TouchStyle.RE4R_COLOURS, re4r.getDefaultColors());
+    assertEquals(RetroTouchStickGate.ROUND, re4r.getStickGate());
+  }
+
   @Test public void layoutKeepsPositionsAndSizes() {
     RetroTouchView view = (RetroTouchView) controls().view();
     for (CoreTouch.Control c : CoreTouch.LAYOUT) {
@@ -230,9 +242,10 @@ public class TouchStyleTest {
 
   @Test public void lookNumbers() {
     assertEquals(TouchStyle.GC, TouchStyle.look("gc"));
+    assertEquals(TouchStyle.RE4R, TouchStyle.look("re4r"));
     assertEquals(TouchStyle.DEFAULT_LOOK, TouchStyle.look("nonsense"));
     assertEquals(TouchStyle.DEFAULT_LOOK, TouchStyle.look(null));
-    assertEquals(TouchStyle.DEFAULT_LOOK, TouchStyle.valid(4));
+    assertEquals(TouchStyle.DEFAULT_LOOK, TouchStyle.valid(5));
     assertEquals(TouchStyle.LOOKS, TouchStyle.NAMES.length);
   }
 

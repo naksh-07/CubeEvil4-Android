@@ -404,7 +404,7 @@ public class CoreMenuLayoutTest {
       // under the touch choices and their help, RE without a host (a new player's look, TouchStyle.DEFAULT_LOOK)
       ArrowSelector icons = selectorNamed(body, activity.getString(R.string.ingame_button_style));
       assertNotNull(icons);
-      assertEquals(4, icons.count());
+      assertEquals(5, icons.count());
       assertEquals("the button style beside the touch choices", rowIndex(auto, body), rowIndex(icons, body));
       assertEquals("in the same row", auto.getParent(), icons.getParent());
       assertEquals("side by side", auto.getTop(), icons.getTop());

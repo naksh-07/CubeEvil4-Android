@@ -33,10 +33,10 @@ final class TouchStyle {
   static final RetroTouchButtonStyle DEFAULT_BUTTON_STYLE = RetroTouchButtonStyle.ICONS;
 
   /** The skins, in the order of the app menu and of the editor's style button. */
-  static final int RE = 0, GC = 1, PS2 = 2, XBOX = 3, LOOKS = 4;
+  static final int RE = 0, GC = 1, PS2 = 2, XBOX = 3, RE4R = 4, LOOKS = 5;
   /** Their IDs (RetroTouch saves the chosen one) and names (the menu's buttons, the editor's style button). */
-  static final String[] IDS = {"re", "gc", "ps2", "xbox"};
-  static final String[] NAMES = {"RE", "GC", "PS2", "XBOX"};
+  static final String[] IDS = {"re", "gc", "ps2", "xbox", "re4r"};
+  static final String[] NAMES = {"RE", "GC", "PS2", "XBOX", "RE4R"};
   /** A new player's skin. */
   static final int DEFAULT_LOOK = RE;
 
@@ -101,6 +101,15 @@ final class TouchStyle {
       XBOX_BLUE = letter(0xFF5B8FF0, 0xFF8DB2FF), XBOX_YELLOW = letter(0xFFF2C94C, 0xFFFFDD80);
   static final RetroTouchColors XBOX_DPAD = colours(0xFF3A3D45, 0xFF8A8D96, 0xFFE6E7EC, 0xFF52555E, 0xFFC0C3CC, 0xFFFFFFFF,
       0xFF454850, 0xFFD0D3DC, 0xFFFFFFFF);
+
+  // ---------------------------------------------------------------- RE4R: iOS Remake translucent dark-glass controls
+  static final int RE4R_FILL = 0x4D121418, RE4R_BORDER = 0x80DCD6CD, RE4R_ICON = 0xFFF0DFB8;
+  static final int RE4R_PRESSED_FILL = 0x994A3F2E, RE4R_PRESSED_BORDER = 0xFFE5B558, RE4R_PRESSED_ICON = 0xFFFFFFFF;
+  static final int RE4R_LATCHED_FILL = 0x803A3326, RE4R_LATCHED_BORDER = 0xFFE5B558, RE4R_LATCHED_ICON = 0xFFFFF1D0;
+
+  static final RetroTouchColors RE4R_COLOURS = colours(RE4R_FILL, RE4R_BORDER, RE4R_ICON,
+      RE4R_PRESSED_FILL, RE4R_PRESSED_BORDER, RE4R_PRESSED_ICON,
+      RE4R_LATCHED_FILL, RE4R_LATCHED_BORDER, RE4R_LATCHED_ICON);
 
   // ---------------------------------------------------------------- own icons (24 x 24, the ink centred in the box)
   static final RetroTouchIcon PLUS = RetroTouchIcon.fromPaths(24f, "M12 5v14", "M5 12h14");
@@ -171,9 +180,9 @@ final class TouchStyle {
     return look.withShape(RetroTouchButtonShape.CAPSULE).withAspect(CAPSULE_ASPECT);
   }
 
-  /** The four skins for L's and R's width over height on this screen (shoulderAspect). */
+  /** The five skins for L's and R's width over height on this screen (shoulderAspect). */
   static RetroTouchSkin[] skins(float shoulder) {
-    return new RetroTouchSkin[] {re(shoulder), gc(shoulder), ps2(), xbox()};
+    return new RetroTouchSkin[] {re(shoulder), gc(shoulder), ps2(), xbox(), re4r(shoulder)};
   }
 
   /** RE: as before (ICONS: the actions' icons and labels, one colour set, L and R and the capsules as wide as before). */
@@ -267,6 +276,37 @@ final class TouchStyle {
         .setLook(CoreTouch.C_STICK, look().withLabel("RS").withColors(XBOX_DARK))
         .setLook(CoreTouch.AIM_STICK, look().withIcon(RetroTouchIcon.CROSSHAIR).withColors(XBOX_DARK))
         .setLook(CoreTouch.KNIFE_STICK, look().withIcon(RetroTouchIcon.KNIFE_HORIZONTAL).withColors(XBOX_DARK));
+  }
+
+  /**
+   * RE4R: Resident Evil 4 Remake iOS style dark-glass translucent controls with golden-amber accents (extracted from
+   * the official iOS 1.0.4 package VirtualPad textures).
+   */
+  static RetroTouchSkin re4r(float shoulder) {
+    RetroTouchLook action = look().withShape(RetroTouchButtonShape.ROUND).withColors(RE4R_COLOURS);
+    RetroTouchLook shoulderButton = look().withShape(RetroTouchButtonShape.ROUNDED_RECT).withAspect(shoulder).withColors(RE4R_COLOURS);
+    return new RetroTouchSkin(IDS[RE4R], NAMES[RE4R], RetroTouchButtonStyle.ICONS)
+        .setDefaultColors(RE4R_COLOURS)
+        .setDpadColors(RE4R_COLOURS)
+        .setStickGate(RetroTouchStickGate.ROUND)
+        .setDpadIcons(RetroTouchIcon.ARROW_UP, RetroTouchIcon.ARROW_DOWN, RetroTouchIcon.ARROW_LEFT, RetroTouchIcon.ARROW_RIGHT)
+        .setMoveStickLook(look().withIcon(RetroTouchIcon.FOOTPRINTS).withColors(RE4R_COLOURS))
+        .setLook(CoreTouch.A, action.withIcon(RetroTouchIcon.HAND))
+        .setLook(CoreTouch.B, action.withIcon(RetroTouchIcon.FOOTPRINTS))
+        .setLook(CoreTouch.X, action.withIcon(RetroTouchIcon.USER))
+        .setLook(CoreTouch.Y, action.withIcon(RetroTouchIcon.BRIEFCASE))
+        .setLook(CoreTouch.Z, look().withIcon(RetroTouchIcon.MAP).withColors(RE4R_COLOURS).withShape(RetroTouchButtonShape.CAPSULE)
+            .withAspect(Z_ASPECT))
+        .setLook(CoreTouch.L, shoulderButton.withIcon(RetroTouchIcon.KNIFE_HORIZONTAL))
+        .setLook(CoreTouch.R, shoulderButton.withIcon(RetroTouchIcon.CROSSHAIR))
+        .setLook(CoreTouch.START, capsule(look().withIcon(RetroTouchIcon.CIRCLE_PAUSE).withColors(RE4R_COLOURS)))
+        .setLook(CoreTouch.MENU, capsule(look().withIcon(RetroTouchIcon.MENU).withColors(RE4R_COLOURS)))
+        .setLook(CoreTouch.R3, label("R3", RE4R_COLOURS))
+        .setLook(CoreTouch.ZOOM_IN, icon(PLUS, RE4R_COLOURS))
+        .setLook(CoreTouch.ZOOM_OUT, icon(MINUS, RE4R_COLOURS))
+        .setLook(CoreTouch.C_STICK, look().withIcon(RetroTouchIcon.CROSSHAIR).withColors(RE4R_COLOURS))
+        .setLook(CoreTouch.AIM_STICK, look().withIcon(RetroTouchIcon.CROSSHAIR).withColors(RE4R_COLOURS))
+        .setLook(CoreTouch.KNIFE_STICK, look().withIcon(RetroTouchIcon.KNIFE_HORIZONTAL).withColors(RE4R_COLOURS));
   }
 
   /**

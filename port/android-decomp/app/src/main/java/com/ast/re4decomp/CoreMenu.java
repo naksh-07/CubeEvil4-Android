@@ -1326,8 +1326,8 @@ final class CoreMenu extends Dialog {
     // choice as the editor's style button, read each time the page opens
     into = touchRow;
     choices(R.string.ingame_button_style, new String[] {s(R.string.ingame_button_icons), s(R.string.ingame_button_labels),
-        s(R.string.ingame_button_ps2), s(R.string.ingame_button_xbox)},
-        new int[] {TouchStyle.RE, TouchStyle.GC, TouchStyle.PS2, TouchStyle.XBOX},
+        s(R.string.ingame_button_ps2), s(R.string.ingame_button_xbox), s(R.string.ingame_button_re4r)},
+        new int[] {TouchStyle.RE, TouchStyle.GC, TouchStyle.PS2, TouchStyle.XBOX, TouchStyle.RE4R},
         host == null ? TouchStyle.DEFAULT_LOOK : host.touchLook(), Integer.MAX_VALUE, look -> host.touchLookChanged(look));
     help(R.string.ingame_touch_help);
     help(R.string.ingame_button_style_help);
