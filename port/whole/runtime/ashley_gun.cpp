@@ -12,8 +12,9 @@
 //    fires, kFireGap frames apart: the same shot, the same rounds that come back with time; none left, the case's
 //    "no" sound.
 //
-//  - Stage 2, patch 0912 (Sscrn/ss_pzzl.cpp): with the switch on and Ashley the partner, "Equip" on a handgun or a
-//    magnum (the D-pad quick slots' up list) opens the case's own "use on" choice, Leon or Ashley. Ashley: she
+//  - Stage 2, patch 0912 (Sscrn/ss_pzzl.cpp): with the switch on and Ashley the partner, "Equip" on the handgun or
+//    magnum Leon already holds (the D-pad quick slots' up list) gives it to her (until 23.11.2026 the case's own
+//    "use on" window, an empty dark box on the debug disc). Ashley: she
 //    takes that pistol out of the case (DevJunior, 11.11.2026: "that it takes no room while she has it"): the
 //    item's inventory type becomes kAway, a set no character's case shows (cItem::type, cItemMgr::m_char 0 Leon,
 //    1 Ashley's chapter), so it goes with the save, its tune levels and its place kept; one pistol at a time (a
@@ -108,9 +109,9 @@ const f32 kCone = 1.4f;        // radians either side of where she faces, while 
 const f32 kTurn = 0.12f;       // radians a frame she turns standing
 const int kMag = 10;
 const int kRegen = 90;         // frames for one round (3 s)
-const int kFireGap = 24;       // frames between shots at least (Luis's pace: one shot per fire motion; DevJunior,
-                               // 23.11.2026: "she fires very fast, base it on Luis's"; 14 until then)
-const int kFireJitter = 6;     // frames added at random, as a person's pace
+const int kFireGap = 21;       // frames between shots at least: 0.7 s (DevJunior, 23.11.2026: "the fire rate 7";
+                               // 24 + 0..6 at random after "base it on Luis's", 14 before)
+const int kFireJitter = 0;     // frames added at random
 const int kAimIn = 6;          // frames to raise the arm
 const f32 kPi = 3.14159265f;
 const f32 kLockCone = 0.6f;    // radians either side of where she faces: her own aim locks on (stage 3)
@@ -1143,8 +1144,8 @@ void re4_ashley_behind(cSubChar* a, Vec* t)
     }
 }
 
-// Patch 0912: 1 = "Equip" on p asks who takes it (Leon or Ashley): the switch on, Leon's game, Ashley the partner
-// (id 3, as the case's "use on" choice asks), p a handgun or a magnum.
+// Patch 0912: 1 = "Equip" on p may give it to Ashley (when Leon already holds p): the switch on, Leon's game,
+// Ashley the partner (id 3), p a handgun or a magnum.
 int re4_ashley_gun_menu(cItem* p)
 {
     return p && (p->flags & 1) && gOn.load(std::memory_order_relaxed) && pG && pG->pl_type == 0 && pSUB &&

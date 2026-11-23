@@ -72,10 +72,26 @@ bool findLadder(cSubChar* a, Vec* use, f32* ang, int* level)
                     w->be_flg & 1, (int) w->ladder.height, sqrtf(flat2(p, a->pos)) / 1000.0f,
                     (p.y - a->pos.y) / 1000.0f, sqrtf(flat2(p, pPL->pos)) / 1000.0f);
         }
-        if (!(w->be_flg & 1) || w->ladder.height >= -1) {
+        if (!(w->be_flg & 1) || (w->ladder.height >= -1 && w->ladder.height <= 1)) {
             continue;
         }
-        if (fabsf(p.y - a->pos.y) > kLevel) {
+        if (w->ladder.height > 1) {
+            // (device report 23.11.2026: the well's ladder has only its foot's area, level 5, 5 m below her) a
+            // ladder going up from below her: she takes it from its top, on the ledge behind its line (the foot's
+            // place mirrored over the ladder), facing the drop, and climbs down as many rungs
+            const f32 drop = a->pos.y - p.y;
+            if (drop < kBelow || drop > 20000.0f) {
+                continue;
+            }
+            const Vec& rec = w->ladder.pos;
+            p.x = rec.x - (p.x - rec.x);
+            p.z = rec.z - (p.z - rec.z);
+            p.y = a->pos.y;
+            r = r + 3.14159265f;
+            if (r > 3.14159265f) {
+                r -= 6.2831853f;
+            }
+        } else if (fabsf(p.y - a->pos.y) > kLevel) {
             continue;
         }
         const f32 d = flat2(p, a->pos);
@@ -92,7 +108,7 @@ bool findLadder(cSubChar* a, Vec* use, f32* ang, int* level)
         best = d;
         *use = p;
         *ang = r;
-        *level = w->ladder.height;
+        *level = w->ladder.height > 1 ? -w->ladder.height : w->ladder.height;
         found = true;
     }
     if (say && !found) {
