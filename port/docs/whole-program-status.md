@@ -19946,3 +19946,10 @@ Der Platz sollte früh reserviert werden (beim Laden von `libre4_platform`).
 - Tragen: Schultern bleiben wie im Remake (das Drehen der Schultern hat Leon gebeugt); stattdessen werden Ober- und Unterarm so gebeugt, dass die Hände wie im Remake liegen (rechte Hand an der Brust, linke am Vorderschaft neben der linken Hüfte, Mündung schräg nach unten links). Beide Hände bekommen den Griff des Spiels.
 - Nachladen: die Waffe sitzt in der Hand des Remakes um 132° anders als in der des Spiels (aus der Halte-Schleife des Remakes gemessen); die rechte Hand wird darum gedreht. Vorher zeigte die Waffe beim Nachladen nach rechts hinten, jetzt nach vorn oben wie im Spiel.
 - Geprüft: Handlagen und Waffenrichtung numerisch, Bild im Studio-Renderer (ohne Waffe), `RE4_TEST_MOVE_DAT` im i686-Host-Test. Nicht geprüft: auf dem Gerät.
+
+### Mods: Schrotflinte, Feinschliff (move.dat v26, 23.11.2026)
+
+- Gerätebericht zu v25 (Bild 117224, Video 117222): Haltung gut; Waffe etwas mehr in die Mitte, linke Hand am Vorderschaft wirkt verdreht, beim Nachladen drehen die Beine seltsam.
+- Tragen: rechte Hand jetzt auf dem Brustbein, linke etwas weiter vorn (`CARRY_HANDS`). Die Verdrehung der Hände um den Unterarm (links waren es 140°) geht zu 60 % in den Drehknochen des Unterarms (9/15), der Rest in den Ellbogen (`unwind`); Handgelenk links jetzt ~30°.
+- Nachladen: das Spiel steht beim Zielen und Nachladen um ~60° nach rechts gedreht, das Remake schaut geradeaus; beim Wechsel drehten die Beine um. Das ganze Nachladen wird jetzt um die Senkrechte gedreht (an Taille 1 und Hüfte 17, nicht an der Wurzel), so dass die Hüfte wie im Spiel steht (`facing_like`, −77°).
+- Geprüft: Handlagen, Handgelenkwinkel und Ausrichtung numerisch, `RE4_TEST_MOVE_DAT` im i686-Host-Test. Nicht geprüft: auf dem Gerät.

@@ -588,6 +588,33 @@ def rest_from(motion, ref):
             b.trans = tuple(x * 100.0 for x in b.trans[:3]) + tuple(b.trans[3:])
 
 
+def facing_like(rows, model, data):
+    """`rows` turned about the upright (the root, part 0) so that the hips (part 1) face, on the mean, as they do in
+    the game's motion `data`; and the turn in degrees."""
+    from tools.motion import evalhost
+    pl = evalhost.Player(model, fcv.parse(data), ik=False)
+    n = fcv.parse(data).max_frame
+    z = np.array([0.0, 0.0, 1.0])
+    yaw = lambda v: math.atan2(v[0], v[2])
+    game = []
+    for f in range(0, n + 1, 5):
+        h = np.array(pl.frame(f).mat[1]).reshape(3, 4)[:, :3]
+        game.append(yaw((h / np.linalg.norm(h, axis=0)) @ z))
+    ours = [yaw(fk(model, r)[0][1] @ z) for r in rows[::5]]
+    mean = lambda a: math.atan2(sum(math.sin(x) for x in a), sum(math.cos(x) for x in a))
+    t = mean(game) - mean(ours)
+    q = rot_axis(np.array([0.0, 1.0, 0.0]), t)
+    # the turn on the root's children (the waist 1, the legs' hip 17), not on the root (the game's motions keep the
+    # root straight: its turn may be the character's own facing)
+    par0 = [i for i, pp in enumerate(model.parts) if pp.parent == 0]
+    out = []
+    for r in rows:
+        r0 = r[0].get(0, np.eye(3))
+        qq = r0.T @ q @ r0
+        out.append(({**r[0], **{c: qq @ r[0].get(c, np.eye(3)) for c in par0}},) + tuple(r[1:]))
+    return out, math.degrees(t)
+
+
 def shotgun_reloads(motdir, ref, model, tol, wep, hand_off=None):
     """The rows (code, entry data) of the shotgun's reload per level for move.dat (codes 0x90 + level)."""
     _v, mots = R.read_motlist(motlist_in(motdir, WEP_RELOAD_SHOTGUN))
@@ -626,6 +653,10 @@ def shotgun_reloads(motdir, ref, model, tol, wep, hand_off=None):
             order = order or fit.order
             i = j
         fixed = {p: model.parts[p].pos for p in (10, 16, 20, 24) if p in order}
+        # (v26, device report 23.11.2026: "the reload turns the legs very oddly") the whole body turned about the
+        # upright to face as the game's reload does (its hips turned some 60 deg to the right, as in its aim, which
+        # the reload follows; the remake's faced ahead, the legs swung round between the two)
+        rows, turn = facing_like(rows, model, wep.entry(entry))
         mot = RT.build_motion(rows, order, tol, root=None, fixed_pos=fixed)
         game = fcv.parse(wep.entry(entry))
         # the game's own hand-held parts (32, 110: the shell and the left hand's prop) at the game's times
@@ -634,8 +665,8 @@ def shotgun_reloads(motdir, ref, model, tol, wep, hand_off=None):
         mot.joints += [j for j in game.joints if j.parts_no in (32, 110)]
         mot.layout = list(range(len(mot.joints)))
         data = fcv.serialise(mot)
-        print("shotgun reload level %d: %d game frames (the game's %d), %d bytes; shells by %d / %d, pump %d..%d" % (
-            lv, len(rows) - 1, n, len(data), s1, e2, p0, p1))
+        print("shotgun reload level %d: %d game frames (the game's %d), %d bytes; shells by %d / %d, pump %d..%d; "
+              "turned %.0f deg" % (lv, len(rows) - 1, n, len(data), s1, e2, p0, p1, turn))
         out.append((0x90 + lv, data))
     return out
 
@@ -893,7 +924,9 @@ def grip_fix(rows, model, grip, hand=10):
 # chest's frame (part 2: x Leon's left, y up, z ahead, mm), and where the elbows point; the arms bent to them (two
 # bones: the upper arm 7 / 13, the forearm 8 / 14), the shoulders (5, 11) left as the remake moves them (turning
 # them hunched Leon over, v24).
-CARRY_HANDS = {10: np.array([-50.0, -10.0, 260.0]), 16: np.array([240.0, -260.0, 320.0])}
+# (v26, device picture 117224: "centre the gun a little more, the arms look off to one side") the right hand on the
+# breastbone, the left one a little more ahead
+CARRY_HANDS = {10: np.array([0.0, 0.0, 240.0]), 16: np.array([240.0, -230.0, 340.0])}
 CARRY_POLES = {10: np.array([-1.0, -1.0, -0.6]), 16: np.array([1.0, -1.0, -0.3])}
 ARM_CHAIN = {10: (7, 8, 6), 16: (13, 14, 12)}
 
@@ -924,6 +957,26 @@ def carry_ik(rows, model):
             rot, pos = fk(model, (local,) + tuple(row[1:]))
             w = rot[par[el]]
             local[el] = w.T @ rotation_between(pos[hand] - pos[el], want - pos[el]) @ w @ local.get(el, np.eye(3))
+        out.append((local,) + tuple(row[1:]))
+    return out
+
+
+def unwind(rows, model, share=0.6):
+    """The hands' turn about the forearm (device picture 117224: the left hand on the fore-end looked upside down, its
+    wrist twisted 140 deg) moved into the forearm: `share` of it into the forearm's twist bone (9, 15), the rest into
+    the elbow (8, 14), both about the forearm's own line (the hand stays where and as it is)."""
+    out = []
+    for row in rows:
+        local = dict(row[0])
+        for el, tw, hand in ((8, 9, 10), (14, 15, 16)):
+            rot, _pos = fk(model, (local,) + tuple(row[1:]))
+            hw = rot[hand]
+            lh = rot[tw].T @ hw
+            t = math.atan2(lh[2, 1] - lh[1, 2], lh[1, 1] + lh[2, 2])
+            local[el] = local.get(el, np.eye(3)) @ rot_axis(np.array([1.0, 0.0, 0.0]), t * (1.0 - share))
+            local[tw] = local.get(tw, np.eye(3)) @ rot_axis(np.array([1.0, 0.0, 0.0]), t * share)
+            rot, _pos = fk(model, (local,) + tuple(row[1:]))
+            local[hand] = rot[tw].T @ hw
         out.append((local,) + tuple(row[1:]))
     return out
 
@@ -975,8 +1028,8 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
                 warc7 = U.Archive(Path(wep07).read_bytes(), ">")
                 g7 = warc7.entry(SHOTGUN_AIMS[0][1])  # the level aim
                 gf = range(0, fcv.parse(g7).max_frame + 1, 6)
-                cf.rows = grip_fix(grip_fix(carry_ik(cf.rows, model), model, grip_frame(model, g7, gf)), model,
-                                   grip_frame(model, g7, gf, 16), 16)
+                cf.rows = unwind(grip_fix(grip_fix(carry_ik(cf.rows, model), model, grip_frame(model, g7, gf)),
+                                          model, grip_frame(model, g7, gf, 16), 16), model)
             carry.append((0x98 + MOVES.index((slot, name, lengths, flags)), fcv.serialise(cf.motion(cf.scale)),
                           len(cf.frames) - 1))
         dist = np.linalg.norm(np.array(fit.root[-1][0]) - np.array(fit.root[0][0])) * fit.scale
