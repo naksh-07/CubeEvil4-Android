@@ -925,9 +925,11 @@ def grip_fix(rows, model, grip, hand=10):
 # bones: the upper arm 7 / 13, the forearm 8 / 14), the shoulders (5, 11) left as the remake moves them (turning
 # them hunched Leon over, v24).
 # (v26, device picture 117224: "centre the gun a little more, the arms look off to one side") the right hand on the
-# breastbone, the left one a little more ahead
-CARRY_HANDS = {10: np.array([0.0, 0.0, 240.0]), 16: np.array([240.0, -230.0, 340.0])}
-CARRY_POLES = {10: np.array([-1.0, -1.0, -0.6]), 16: np.array([1.0, -1.0, -0.3])}
+# breastbone, the left one a little more ahead; (v27, pictures 117232..117234: "the trigger arm a little more open,
+# more angle at the elbow, so that the hand on the fore-end is not so stretched") the right hand higher, its elbow out
+# to the side, the left hand higher and nearer (its arm at nine tenths of its reach, v26 at all of it)
+CARRY_HANDS = {10: np.array([-30.0, 60.0, 250.0]), 16: np.array([210.0, -180.0, 330.0])}
+CARRY_POLES = {10: np.array([-1.0, -0.25, -0.4]), 16: np.array([1.0, -1.0, -0.3])}
 ARM_CHAIN = {10: (7, 8, 6), 16: (13, 14, 12)}
 
 

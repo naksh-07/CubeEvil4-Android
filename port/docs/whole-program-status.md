@@ -19953,3 +19953,9 @@ Der Platz sollte früh reserviert werden (beim Laden von `libre4_platform`).
 - Tragen: rechte Hand jetzt auf dem Brustbein, linke etwas weiter vorn (`CARRY_HANDS`). Die Verdrehung der Hände um den Unterarm (links waren es 140°) geht zu 60 % in den Drehknochen des Unterarms (9/15), der Rest in den Ellbogen (`unwind`); Handgelenk links jetzt ~30°.
 - Nachladen: das Spiel steht beim Zielen und Nachladen um ~60° nach rechts gedreht, das Remake schaut geradeaus; beim Wechsel drehten die Beine um. Das ganze Nachladen wird jetzt um die Senkrechte gedreht (an Taille 1 und Hüfte 17, nicht an der Wurzel), so dass die Hüfte wie im Spiel steht (`facing_like`, −77°).
 - Geprüft: Handlagen, Handgelenkwinkel und Ausrichtung numerisch, `RE4_TEST_MOVE_DAT` im i686-Host-Test. Nicht geprüft: auf dem Gerät.
+
+### Mods: Schrotflinte, Tragen offener (move.dat v27, 23.11.2026)
+
+- Gerätebilder 117232..117234: Waffe mittiger, der Arm am Abzug offener (mehr Winkel im Ellbogen), damit die Hand am Vorderschaft nicht so gestreckt ist.
+- `CARRY_HANDS`/`CARRY_POLES`: rechte Hand höher (Brustmitte), Ellbogen zur Seite (~280 mm seitlich, ~77° gebeugt); linke Hand höher und näher, linker Arm ~120° statt fast gestreckt.
+- Geprüft: Lagen und Winkel numerisch, `RE4_TEST_MOVE_DAT` im i686-Host-Test. Nicht geprüft: auf dem Gerät.
