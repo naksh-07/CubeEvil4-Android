@@ -4197,6 +4197,8 @@ extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_toggleJog(JN
 // The touch RLOAD button: reload without aiming (patch 0900), a toggle of bit 20 of the aim bits.
 extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_requestReload(JNIEnv *, jclass) {
   optReload.fetch_add(1);
+}
+
 // The mouse in the game's title and options menus (1.1.0, runtime/mouse_menu.cpp): the app's pointer, a left click.
 extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_mouseMenu(JNIEnv *, jclass, jfloat u, jfloat v,
                                                                             jboolean click) {
