@@ -739,8 +739,27 @@ def carried(base, arm, first):
     return out
 
 
+# (Mods, 23.11.2026, DevJunior's videos 117199..117207: "it does not hold the gun well aiming, nor shooting") the arms:
+# Leon's right shoulder (5) and left one (11) and every part under them (hands, fingers, the gun's grips)
+ARM_PARTS = (5, 6, 7, 8, 9, 10, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 117, 113,
+             11, 12, 13, 14, 15, 16, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 118, 114)
+
+
+def with_game_arms(rows, order, tol, fixed, game, keep_game=(32,)):
+    """FCV of `rows` with the game's own arms (ARM_PARTS: the hands on the gun as the game holds it) and the game's
+    parts `keep_game`; ours for the rest."""
+    mot = RT.build_motion(rows, order, tol, root=None, fixed_pos=fixed)
+    mot.joints = [j for j in mot.joints if j.parts_no not in ARM_PARTS and j.parts_no not in keep_game]
+    ours = set(j.parts_no for j in mot.joints)
+    mot.joints += [j for j in game.joints if j.parts_no not in ours or j.parts_no in keep_game]
+    mot.layout = list(range(len(mot.joints)))
+    return fcv.serialise(mot)
+
+
 def shotgun_aims(motdir, ref, model, tol, wep):
-    """The rows (code, entry data) of the shotgun's three aim poses for move.dat."""
+    """The rows (code, entry data) of the shotgun's three aim poses for move.dat: the remake's hold loop of the W-870 on
+    the legs and the torso, the game's own arms (the hands on the gun as the game holds it; device report 23.11.2026:
+    the left hand above the gun), the torso turned until the gun lies on the game's line."""
     _v, mots = R.read_motlist(motlist_in(motdir, WEP_RELOAD_SHOTGUN))
     m = next(x for x in mots if x.name.endswith("0160_hold_loop"))
     rest_from(m, ref)
@@ -752,29 +771,118 @@ def shotgun_aims(motdir, ref, model, tol, wep):
         fit = Fit(m, model, "leon", 2.0, tol, m.frames, True,
                   frames=list(np.arange(first, first + length + 1e-6, 2.0)), loop=True)
         fixed = {p: model.parts[p].pos for p in (10, 16, 20, 24) if p in fit.order}
-        plain = RT.build_motion(fit.rows, fit.order, tol, root=None, fixed_pos=fixed)
         want = gun_line(model, wep.entry(entry), [0, n // 2])
-        have = gun_line(model, fcv.serialise(plain), range(0, n + 1, 6))
-        turn = rotation_between(have, want)
-        axis, ang = axis_angle(turn)
-        rows = [(spread_aim(row[0], axis, ang),) + tuple(row[1:]) for row in fit.rows]
-        # what is left (the joints' pivots differ): the waist alone, twice
-        for _i in range(2):
-            have = gun_line(model, fcv.serialise(RT.build_motion(rows, fit.order, tol, root=None, fixed_pos=fixed)),
-                            range(0, n + 1, 6))
-            rest = rotation_between(have, want)
-            rows = [({**row[0], 1: rest @ row[0][1]},) + tuple(row[1:]) for row in rows]
-        mot = RT.build_motion(rows, fit.order, tol, root=None, fixed_pos=fixed)
-        ours = set(j.parts_no for j in mot.joints)
-        mot.joints = [j for j in mot.joints if j.parts_no not in (32,)]
-        mot.joints += [j for j in game.joints if j.parts_no not in ours or j.parts_no == 32]
-        mot.layout = list(range(len(mot.joints)))
-        data = fcv.serialise(mot)
+        rows = fit.rows
+        # the waist and the chest turned until the game's arms on our torso hold the gun on the game's line
+        for _i in range(4):
+            have = gun_line(model, with_game_arms(rows, fit.order, tol, fixed, game), range(0, n + 1, 6))
+            axis, ang = axis_angle(rotation_between(have, want))
+            half = rot_axis(axis, ang * 0.5)
+            rows = [({**row[0], 1: half @ row[0][1],
+                      2: (half @ row[0][1]).T @ half @ (half @ row[0][1]) @ row[0][2]},) + tuple(row[1:])
+                    for row in rows]
+        data = with_game_arms(rows, fit.order, tol, fixed, game)
         got = gun_line(model, data, range(0, n + 1, 6))
-        print("shotgun aim 0x%x (game 0x%x): %d frames, %d bytes, the waist turned %.0f deg, the gun %.1f deg off the "
-              "game's" % (code, entry, n, len(data), math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(turn) - 1) / 2)))),
-                          math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(got, want))))))))
+        print("shotgun aim 0x%x (game 0x%x): %d frames, %d bytes, the game's arms, the gun %.1f deg off the game's" % (
+            code, entry, n, len(data), math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(got, want))))))))
         out.append((code, data))
+    return out
+
+
+def grip_frame(model, data, frames):
+    """How the game's right hand holds the gun: in the hand's own frame (part 10) the gun's line (to the left hand, 16)
+    and its up (the world's up across the line), averaged over `frames` of the game's motion `data`."""
+    from tools.motion import evalhost
+    pl = evalhost.Player(model, fcv.parse(data), ik=False)
+    d, u = np.zeros(3), np.zeros(3)
+    for f in frames:
+        p = pl.frame(f)
+        h = np.array(p.mat[10]).reshape(3, 4)[:, :3]
+        h = h / np.linalg.norm(h, axis=0)
+        line = np.array(p.world[16]) - np.array(p.world[10])
+        line /= np.linalg.norm(line)
+        up = np.array([0.0, 1.0, 0.0]) - line[1] * line
+        up /= np.linalg.norm(up)
+        d += h.T @ line
+        u += h.T @ up
+    d /= np.linalg.norm(d)
+    u -= np.dot(u, d) * d
+    u /= np.linalg.norm(u)
+    return d, u
+
+
+# where the carried gun points (model space of a movement, its root's: x the side the game's aim leans to, y up, z
+# ahead): ahead and to the left by 45 degrees, its muzzle 25 degrees down, the remake's "low ready". The remake's arm
+# layer over the plain movements held it flat across the belly (device report 23.11.2026; in the remake the layer sits
+# on a torso turned with the gun, which the plain movements lack)
+CARRY_LINE = np.array([math.sin(math.radians(45)) * math.cos(math.radians(25)), -math.sin(math.radians(25)),
+                       math.cos(math.radians(45)) * math.cos(math.radians(25))])
+
+
+def fk(model, row):
+    """World rotations and positions of every part for one row (local turns, the hips' position)."""
+    par = [p.parent for p in model.parts]
+    local = row[0]
+    rot, pos = [None] * model.n_parts, [None] * model.n_parts
+    for p in range(model.n_parts):
+        lr = local.get(p, np.eye(3))
+        if par[p] < 0:
+            rot[p], pos[p] = lr, np.array(row[1], dtype=np.float64)
+        else:
+            rot[p] = rot[par[p]] @ lr
+            pos[p] = pos[par[p]] + rot[par[p]] @ np.array(model.parts[p].pos)
+    return rot, pos
+
+
+def point_arms(rows, model, target, steps=3):
+    """Both arms turned from the shoulders (5, 11) until the line from the right hand to the left lies on `target`."""
+    out = []
+    for row in rows:
+        local = dict(row[0])
+        for _i in range(steps):
+            rot, pos = fk(model, (local,) + tuple(row[1:]))
+            line = pos[16] - pos[10]
+            q = rotation_between(line, target)
+            for sh in (5, 11):
+                w = rot[model.parts[sh].parent]
+                local[sh] = w.T @ q @ w @ local.get(sh, np.eye(3))
+        out.append((local,) + tuple(row[1:]))
+    return out
+
+
+def grip_fix(rows, model, grip):
+    """The right hand turned so that the gun it holds as the game does (`grip`: grip_frame) lies on the line to the
+    left hand, its top up (device report 23.11.2026: the carried shotgun sideways, flat across the belly): the
+    remake's hands are on its gun, but its hand bones hold the gun otherwise than the game's hand does."""
+    d, u = grip
+    fc = np.column_stack([d, u, np.cross(d, u)])
+    par = [p.parent for p in model.parts]
+    out = []
+    for row in rows:
+        local = row[0]
+        rot, pos = {}, {}
+
+        def world(p):
+            if p in rot:
+                return rot[p], pos[p]
+            lr = local.get(p, np.eye(3))
+            if par[p] < 0:
+                rot[p], pos[p] = lr, np.array(row[1], dtype=np.float64)
+            else:
+                r0, p0 = world(par[p])
+                rot[p], pos[p] = r0 @ lr, p0 + r0 @ np.array(model.parts[p].pos)
+            return rot[p], pos[p]
+        _r10, p10 = world(10)
+        _r16, p16 = world(16)
+        line = p16 - p10
+        line /= np.linalg.norm(line)
+        up = np.array([0.0, 1.0, 0.0]) - line[1] * line
+        up /= np.linalg.norm(up)
+        ft = np.column_stack([line, up, np.cross(line, up)])
+        r9, _p9 = world(par[10])
+        new = dict(local)
+        new[10] = r9.T @ (ft @ fc.T)
+        out.append((new,) + tuple(row[1:]))
     return out
 
 
@@ -799,6 +907,11 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
             _v, arms = R.read_motlist(motlist_in(weapons, WEP_CARRY_SHOTGUN))
             arm = next(x for x in arms if x.name.endswith(CARRY_ARMS[slot]))
             cf = Fit(carried(m, arm, first), model, "leon", 2.0, tol, m.frames, True, frames=fit.frames, loop=True)
+            if wep07:
+                warc7 = U.Archive(Path(wep07).read_bytes(), ">")
+                g7 = warc7.entry(SHOTGUN_AIMS[0][1])  # the level aim
+                cf.rows = grip_fix(point_arms(cf.rows, model, CARRY_LINE), model,
+                                   grip_frame(model, g7, range(0, fcv.parse(g7).max_frame + 1, 6)))
             carry.append((0x98 + MOVES.index((slot, name, lengths, flags)), fcv.serialise(cf.motion(cf.scale)),
                           len(cf.frames) - 1))
         dist = np.linalg.norm(np.array(fit.root[-1][0]) - np.array(fit.root[0][0])) * fit.scale

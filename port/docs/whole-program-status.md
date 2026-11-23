@@ -19932,3 +19932,9 @@ Der Platz sollte früh reserviert werden (beim Laden von `libre4_platform`).
   `__rlwimi` in den ersten Operanden, die C-Fassung gibt das Ergebnis nur
   zurück. Ein Aufruf als eigene Anweisung (Ergebnis nicht zugewiesen) wirkt im
   Port nicht. In `src/` gab es genau eine solche Stelle (Patch 0042).
+
+### Mods: Schrotflinte halten (move.dat v24, 23.11.2026)
+
+- `port/tools/re9_finisher_pack.py`: Zielen (0x94..0x96) nutzt jetzt die Arme des Spiels (Griff aus `wep07`, Einträge 0x16/0x1C/0x1E) auf dem Oberkörper des Remakes; Hüfte und Brust werden gedreht, bis die Waffe auf der Linie des Spiels liegt (0,0° Abweichung).
+- Tragen (0x98..0x9B): Schultern richten die Waffe auf die tiefe Bereitschaftshaltung (`CARRY_LINE`), die rechte Hand bekommt den Griff des Spiels aus dem waagerechten Zielen (0x16), damit die Waffe nicht seitlich liegt. Abstand der Hände 407–453 mm.
+- Geprüft: Linien und Handabstand numerisch, Bild im Studio-Renderer (ohne Waffe), `RE4_TEST_MOVE_DAT` im i686-Host-Test (0 Fehler). Nicht geprüft: auf dem Gerät; Nachladen, Schießen und Oberkörper beim Gehen sind noch offen.
