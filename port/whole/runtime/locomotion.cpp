@@ -128,6 +128,10 @@ u16 gReloadLast[3];
 // re4_move_aim, patch 0950
 u8* gAim[3];
 u16 gAimLast[3];
+// (Mods, 23.11.2026) the remake's way of carrying the shotgun on the move: its arm layer over the stand, walk, jog and
+// back step (move.dat 0x98 + k, k as gMove, the same frames as gMove[k]); heavyUpper plays them on the upper body in
+// place of the game's own while the shotgun is out
+Move gCarry[kMoves];
 // (Mods, 21.11.2026, DevJunior: "add the animation of taking objects") the remake's hand reaching for an item, on the
 // upper body (move.dat codes 0xA0 on the move, 0xA1 standing for a low item, 0xA2 at a table's height; re4_move_pickup)
 Move gPick[3];
@@ -314,6 +318,8 @@ void load()
     memset(clips, 0, sizeof(clips));
     u8* reload[3] = {0, 0, 0};
     u8* aim[3] = {0, 0, 0};
+    u8* carry[kMoves] = {};
+    u16 carryLast[kMoves] = {};
     u16 aimLast[3] = {0, 0, 0};
     u16 reloadLast[3] = {0, 0, 0};
     u8* pick[3] = {0, 0, 0};
@@ -328,6 +334,10 @@ void load()
         if (r[0] >= 0xA0 && r[0] < 0xA3 && last <= kSeqMax) {
             pick[r[0] - 0xA0] = base + at[entry];
             pickLast[r[0] - 0xA0] = last;
+        }
+        if (r[0] >= 0x98 && r[0] < 0x98 + kMoves && last <= kSeqMax) {
+            carry[r[0] - 0x98] = base + at[entry];
+            carryLast[r[0] - 0x98] = last;
         }
         if (r[0] >= 0x94 && r[0] < 0x97) {
             aim[r[0] - 0x94] = base + at[entry];
@@ -429,6 +439,25 @@ void load()
     }
     if (nAim) {
         re4_log("move: %s: the remake's shotgun aim, %d poses", path, nAim);
+    }
+    int nCarry = 0;
+    for (int i = 0; i < kMoves; i++) {
+        Move& m = gCarry[i];
+        memset(&m, 0, sizeof(m));
+        m.mot = carry[i];
+        m.last = carryLast[i];
+        m.scale = m.time = 1.0f;
+        if (m.mot) {
+            nCarry++;
+            m.seq[0] = m.last;
+            SEQUENCE_DATA* key = (SEQUENCE_DATA*) (m.seq + 2);
+            for (int k = 0; k < m.last; k++) {
+                key[k].Frame = (u16) (k * 64);
+            }
+        }
+    }
+    if (nCarry) {
+        re4_log("move: %s: the remake's shotgun carried on the move, %d movements", path, nCarry);
     }
     int nPick = 0;
     for (int i = 0; i < 3; i++) {
@@ -989,6 +1018,17 @@ int heavyUpper(cPlayer* pl)
         }
         share -= floorf(share);
         at = share * (f32) gkeys;
+    }
+    // the shotgun: the remake's own carrying (its arm layer over the remake's movement, the same frames: in step)
+    const Move& cm = gCarry[gHeavyK];
+    if (pG->weapon_no == 7 && cm.mot && cm.last == mv.last) {
+        const f32 cat = (const void*) pl->Motion.pMot == (const void*) mv.mot ? (f32) pl->Motion.Seq.Frame / 64.0f : -1.0f;
+        static bool saidCarry;
+        if (!saidCarry) {
+            saidCarry = true;
+            re4_log("move: the shotgun carried as in the remake (its %s)", kNames[gHeavyK]);
+        }
+        return re4_legs_overlay(pl, cm.mot, (void*) cm.seq, 0, 1.0f, cat, gHeavyW, 0.0f, 0.0f, 1);
     }
     static bool said;
     if (!said) {

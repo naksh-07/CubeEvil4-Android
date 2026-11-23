@@ -72,6 +72,7 @@ frame, 0x4000 the left foot), for the footstep sounds of the clips and of loops 
 Game files and the PC mod's files never go into the repository; this tool only reads and writes the paths given.
 """
 import argparse
+import copy
 import math
 import struct
 import sys
@@ -709,6 +710,35 @@ def gun_line(model, data, frames):
     return d / np.linalg.norm(d)
 
 
+# (Mods, 23.11.2026, DevJunior: "and running with the shotgun too? ... it looks odd like this") the remake's way of
+# carrying the W-870 on the move: its arm layer (cha0_wp4100M "arm_N": shoulders, arms, hands and fingers, the hands
+# 48 cm apart on the gun) over the stand, walk, jog and back step of cha0_general, as the remake plays it; move.dat
+# 0x98 + the index of MOVES, the same frames as the movement (in step with it). runtime/locomotion.cpp plays them on
+# the upper body in place of the game's (heavyUpper).
+WEP_CARRY_SHOTGUN = "cha0_wp4100M.motlist.663"
+CARRY_ARMS = {0: "0000_arm_1", 2: "0002_arm_3", 6: "0004_arm_5", 8: "0002_arm_3"}
+
+
+class _Shifted:
+    """A track of the arm layer sampled from the movement's first frame on, looped."""
+
+    def __init__(self, track, first, length):
+        self.track, self.first, self.length = track, first, length
+
+    def sample(self, frame):
+        return self.track.sample((frame - self.first) % self.length)
+
+
+def carried(base, arm, first):
+    """`base` (a movement of cha0_general) with the arm layer `arm` on its arm bones from `first` on."""
+    out = copy.copy(base)
+    out.tracks = {k: v for k, v in base.tracks.items() if not any(k[1] == h for (_b, h) in arm.tracks)}
+    by_hash = {b.hash: i for i, b in enumerate(base.bones)}
+    for (bi, h), per in arm.tracks.items():
+        out.tracks[(by_hash.get(h, bi), h)] = {kind: _Shifted(t, first, arm.frames) for kind, t in per.items()}
+    return out
+
+
 def shotgun_aims(motdir, ref, model, tol, wep):
     """The rows (code, entry data) of the shotgun's three aim poses for move.dat."""
     _v, mots = R.read_motlist(motlist_in(motdir, WEP_RELOAD_SHOTGUN))
@@ -752,6 +782,7 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
     """Leon's movements (see --move)."""
     _v, mots = R.read_motlist(Path(general) if general else root / CHA0)
     entries, table, steps = [b""], [], []
+    carry = []
     for slot, name, lengths, flags in MOVES:
         m = next(x for x in mots if x.name.endswith(name))
         first, length = find_loop(m, lengths)
@@ -764,6 +795,12 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
         table.append(struct.pack(">BBHHHHH", slot, flags, len(entries) - 1, len(fit.frames) - 1, feet[0], feet[1], 0))
         # the strikes of a loop: all of them (a loop of several strides), the last frame being the first again
         steps.append([] if not flags & 1 else [(i, f) for i, f in contacts(m, fit.frames) if i < len(fit.frames) - 1])
+        if weapons and slot in CARRY_ARMS:
+            _v, arms = R.read_motlist(motlist_in(weapons, WEP_CARRY_SHOTGUN))
+            arm = next(x for x in arms if x.name.endswith(CARRY_ARMS[slot]))
+            cf = Fit(carried(m, arm, first), model, "leon", 2.0, tol, m.frames, True, frames=fit.frames, loop=True)
+            carry.append((0x98 + MOVES.index((slot, name, lengths, flags)), fcv.serialise(cf.motion(cf.scale)),
+                          len(cf.frames) - 1))
         dist = np.linalg.norm(np.array(fit.root[-1][0]) - np.array(fit.root[0][0])) * fit.scale
         print("move %-22s slot 0x%x: source %d..%d, %d game frames, %d bytes, %.0f mm a cycle, feet %s, steps %s; "
               "check %.1f/%.1f deg" % (name, slot, first, first + length, len(fit.frames), len(data), dist, feet,
@@ -818,6 +855,11 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
             table.append(struct.pack(">BBHHHHH", code, 0, len(entries) - 1, fcv.parse(data).max_frame, 0xFFFF, 0xFFFF,
                                      0))
             steps.append([])
+    for code, data, last in carry:
+        entries.append(data)
+        table.append(struct.pack(">BBHHHHH", code, 0, len(entries) - 1, last, 0xFFFF, 0xFFFF, 0))
+        steps.append([])
+        print("shotgun carry 0x%x: %d game frames, %d bytes" % (code, last + 1, len(data)))
     stk = b"STK1"
     for st in steps:
         st = st[:24]
