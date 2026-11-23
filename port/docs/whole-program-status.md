@@ -19965,3 +19965,9 @@ Der Platz sollte früh reserviert werden (beim Laden von `libre4_platform`).
 - Gerätebilder 117244..117246: die Hand am Vorderschaft wirkt zerknittert (Handgelenk 42–57° abgeknickt), der Arm soll etwas zurück.
 - `left_on_gun`: die linke Hand gleitet entlang der Waffe dorthin, wo ein gerader Unterarm (aus dem Griff des Spiels) den Oberarm trifft; dieser Ellbogen läge vor dem Bauch, darum wird er zur Hälfte (`LEFT_ELBOW_OUT` 0,5) zur Seite gedreht. Handgelenk jetzt 13–29° (Joggen ~40°, dort reicht der Arm nicht weiter), Hände 280–390 mm auseinander.
 - Geprüft: Winkel und Abstände numerisch, `RE4_TEST_MOVE_DAT` im i686-Host-Test. Nicht geprüft: auf dem Gerät.
+
+### Mods: Schrotflinte, linker Ellbogen weiter weg (move.dat v29, 23.11.2026)
+
+- Video 117248: der linke Ellbogen liegt zu nah am Körper.
+- Linke Hand 5 cm weiter außen (`CARRY_HANDS[16]` 260/−170/310), `LEFT_ELBOW_OUT` 0,7: Ellbogen 245–273 mm seitlich der Wirbelsäule (v28 ~186), Handgelenk 21–39°; beim Joggen ~50° (der Arm reicht dort nicht weiter).
+- Geprüft: numerisch, `RE4_TEST_MOVE_DAT` im i686-Host-Test. Nicht geprüft: auf dem Gerät.

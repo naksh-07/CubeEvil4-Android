@@ -928,7 +928,9 @@ def grip_fix(rows, model, grip, hand=10):
 # breastbone, the left one a little more ahead; (v27, pictures 117232..117234: "the trigger arm a little more open,
 # more angle at the elbow, so that the hand on the fore-end is not so stretched") the right hand higher, its elbow out
 # to the side, the left hand higher and nearer (its arm at nine tenths of its reach, v26 at all of it)
-CARRY_HANDS = {10: np.array([-30.0, 60.0, 250.0]), 16: np.array([210.0, -180.0, 330.0])}
+# (v29, video 117248: "move that elbow away from the body, it looks too closed") the left hand 5 cm further out, its
+# elbow 70 % of the way out (LEFT_ELBOW_OUT): ~26 cm to the side of the spine, the wrist ~32 deg
+CARRY_HANDS = {10: np.array([-30.0, 60.0, 250.0]), 16: np.array([260.0, -170.0, 310.0])}
 CARRY_POLES = {10: np.array([-1.0, -0.25, -0.4]), 16: np.array([1.0, -1.0, -0.3])}
 ARM_CHAIN = {10: (7, 8, 6), 16: (13, 14, 12)}
 
@@ -963,7 +965,7 @@ def carry_ik(rows, model):
     return out
 
 
-LEFT_ELBOW_OUT = 0.5
+LEFT_ELBOW_OUT = 0.7
 
 
 def left_on_gun(rows, model, grip16):
