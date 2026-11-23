@@ -588,31 +588,27 @@ def rest_from(motion, ref):
             b.trans = tuple(x * 100.0 for x in b.trans[:3]) + tuple(b.trans[3:])
 
 
-def facing_like(rows, model, data):
-    """`rows` turned about the upright (the root, part 0) so that the hips (part 1) face, on the mean, as they do in
-    the game's motion `data`; and the turn in degrees."""
-    from tools.motion import evalhost
-    pl = evalhost.Player(model, fcv.parse(data), ik=False)
-    n = fcv.parse(data).max_frame
+RELOAD_FACING = -35.0
+
+
+def face_ahead(rows, model, part, yaw=0.0):
+    """`rows` turned about the upright (on the root's children: the waist 1, the legs' hip 17) so that `part` faces
+    `yaw` degrees from ahead (+z, + to the left) on the mean."""
     z = np.array([0.0, 0.0, 1.0])
-    yaw = lambda v: math.atan2(v[0], v[2])
-    game = []
-    for f in range(0, n + 1, 5):
-        h = np.array(pl.frame(f).mat[1]).reshape(3, 4)[:, :3]
-        game.append(yaw((h / np.linalg.norm(h, axis=0)) @ z))
-    ours = [yaw(fk(model, r)[0][1] @ z) for r in rows[::5]]
-    mean = lambda a: math.atan2(sum(math.sin(x) for x in a), sum(math.cos(x) for x in a))
-    t = mean(game) - mean(ours)
+    yaws = [fk(model, r)[0][part] @ z for r in rows]
+    t = math.radians(yaw) - math.atan2(sum(v[0] for v in yaws), sum(v[2] for v in yaws))
     q = rot_axis(np.array([0.0, 1.0, 0.0]), t)
-    # the turn on the root's children (the waist 1, the legs' hip 17), not on the root (the game's motions keep the
-    # root straight: its turn may be the character's own facing)
-    par0 = [i for i, pp in enumerate(model.parts) if pp.parent == 0]
+    kids = [i for i, pp in enumerate(model.parts) if pp.parent == 0]
     out = []
     for r in rows:
         r0 = r[0].get(0, np.eye(3))
         qq = r0.T @ q @ r0
-        out.append(({**r[0], **{c: qq @ r[0].get(c, np.eye(3)) for c in par0}},) + tuple(r[1:]))
-    return out, math.degrees(t)
+        out.append(({**r[0], **{c: qq @ r[0].get(c, np.eye(3)) for c in kids}},) + tuple(r[1:]))
+    return out
+
+
+# the legs (under the root, part 0, through the hip 17) held still in the reload
+RELOAD_STILL = (17, 18, 19, 20, 21, 22, 23, 24, 25, 31)
 
 
 def shotgun_reloads(motdir, ref, model, tol, wep, hand_off=None):
@@ -653,10 +649,15 @@ def shotgun_reloads(motdir, ref, model, tol, wep, hand_off=None):
             order = order or fit.order
             i = j
         fixed = {p: model.parts[p].pos for p in (10, 16, 20, 24) if p in order}
-        # (v26, device report 23.11.2026: "the reload turns the legs very oddly") the whole body turned about the
-        # upright to face as the game's reload does (its hips turned some 60 deg to the right, as in its aim, which
-        # the reload follows; the remake's faced ahead, the legs swung round between the two)
-        rows, turn = facing_like(rows, model, wep.entry(entry))
+        # (v30, device report 23.11.2026: "it still turns to reload"; v26 turned the reload some 77 deg to face as the
+        # game's does, which turned Leon round from and back to the remake's forward-facing carry) the remake's
+        # facing kept, its legs and hips' place held still as at the reload's first frame (the three pieces put
+        # together stepped about, v25: "the reload turns the legs very oddly")
+        rows = [({**r[0], **{q: rows[0][0][q] for q in RELOAD_STILL if q in rows[0][0]}}, rows[0][1]) + tuple(r[2:])
+                for r in rows]
+        # and the whole body turned so that the legs stand as in the remake's stand with the gun (carry 0x98: some
+        # 35 deg to the right; the reload's first frame stood 23 deg to the left): no turn from it into the reload
+        rows = face_ahead(rows, model, 18, RELOAD_FACING)
         mot = RT.build_motion(rows, order, tol, root=None, fixed_pos=fixed)
         game = fcv.parse(wep.entry(entry))
         # the game's own hand-held parts (32, 110: the shell and the left hand's prop) at the game's times
@@ -666,7 +667,7 @@ def shotgun_reloads(motdir, ref, model, tol, wep, hand_off=None):
         mot.layout = list(range(len(mot.joints)))
         data = fcv.serialise(mot)
         print("shotgun reload level %d: %d game frames (the game's %d), %d bytes; shells by %d / %d, pump %d..%d; "
-              "turned %.0f deg" % (lv, len(rows) - 1, n, len(data), s1, e2, p0, p1, turn))
+              "the legs still" % (lv, len(rows) - 1, n, len(data), s1, e2, p0, p1))
         out.append((0x90 + lv, data))
     return out
 

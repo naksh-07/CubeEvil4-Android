@@ -1,0 +1,20 @@
+# Patch 0951 (wish of DevJunior, 23.11.2026: "when I reload Ashley goes back instead of stepping aside and shooting
+# too"). Not a bug of the prototype: a port feature with runtime/ashley_gun.cpp (her pistol, patches 0911/0912).
+# src/game/pl_npc.cpp cSubChar::moveBehind: the place behind the aiming (or reloading) player, in his model space,
+# goes through re4_ashley_behind, which moves it to his side while Ashley carries a pistol and nothing walls it off.
+--- a/src/game/pl_npc.cpp
++++ b/src/game/pl_npc.cpp
+@@ -49,4 +49,5 @@
+ 
++extern "C" void re4_ashley_behind(cSubChar* a, Vec* t); /* port (patch 0951): runtime/ashley_gun.cpp */
+ const Vec cSubChar::atckPos = { -100.0f, 0.0f, -500.0f };
+ const Vec cSubChar::atckPos2 = { 300.0f, 0.0f, -500.0f };
+ 
+@@ -793,6 +794,7 @@
+         target = *ap;
+         // reference stores: the following pPL loads stay below them
+         (target.z = target.z - pPL->Wep->getAngle() * 0.31830987f * 300.0f);
++        re4_ashley_behind(this, &target); /* port (patch 0951, mods): Ashley armed stands at his side */
+         PSMTXMultVec(pPL->mat, &target, &target);
+         pos.x = pos.x * 0.7f + target.x * 0.3f;
+         pos.z = pos.z * 0.7f + target.z * 0.3f;

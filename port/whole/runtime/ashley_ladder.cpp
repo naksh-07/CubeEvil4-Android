@@ -1,7 +1,7 @@
 // Ashley climbs down ladders on her own (wish of DevJunior, 19.11.2026: "que Ashley pueda bajar escaleras sola", as
 // in the 2023 remake). Compiled with the game's flags into libre4_main (re4_gamehooks_obj); patch 0936 calls
 // re4_ashley_ladder_down at the start of each of her normal frames (pl_npc.cpp cSubChar::moveCore, after analyze),
-// with the app's "Remake movement" on (re4_move_on).
+// always (until 23.11.2026 only with the app's "Remake movement", re4_move_on).
 //
 // The game itself puts her on a ladder only while she stands in its area (cSubChar::ladder2Check: the scenario's
 // ladder area, type 0x10, around her feet). Where Leon climbs down and her way to him ends at the edge, she waits
@@ -23,14 +23,15 @@
 #include <math.h>
 
 extern "C" void re4_log(const char* fmt, ...);
-extern "C" int re4_move_on(void);  // runtime/locomotion.cpp: the app's "Remake movement"
 
 namespace {
 
-const f32 kReach = 4000.0f;        // her distance to the ladder (horizontal)
-const f32 kLevel = 500.0f;         // the ladder's top at her height
+// (23.11.2026, DevJunior: "Ashley cannot go down ladders, she should go down alone at all of them"; no ladder was
+// found on his device: wider limits, the reasons logged, no longer only with "Remake movement")
+const f32 kReach = 6000.0f;        // her distance to the ladder (horizontal)
+const f32 kLevel = 900.0f;         // the ladder's top at her height
 const f32 kBelow = 1000.0f;        // Leon this far below her
-const f32 kLeonReach = 12000.0f;   // Leon this near the ladder (horizontal)
+const f32 kLeonReach = 25000.0f;   // Leon this near the ladder (horizontal)
 const int kStill = 45;             // frames standing at the top before she goes on her own
 const int kGiveUp = 300;           // frames of walk to the ladder at most
 
@@ -48,19 +49,32 @@ f32 flat2(const Vec& a, const Vec& b)
 }
 
 // The nearest ladder going down from her height that she can walk to and Leon is near; false none
+int gWhyFrame = -100000;  // the frame the last "no ladder" line was logged
+
 bool findLadder(cSubChar* a, Vec* use, f32* ang, int* level)
 {
+    const bool say = (int) pG->Frame_cnt - gWhyFrame > 600;
+    int seen = 0;
     // the area list (sce_at.cpp's pS) is set up at every room start (SceAtInit), before she moves
     f32 best = kReach * kReach;
     bool found = false;
     SCE_AT_DATA* w = sceAtSetOtStart();
     while ((w = sceAtGetOtAddr(w)) != 0) {
-        if (!(w->be_flg & 1) || w->id != SCEAT_ID_LADDER || w->ladder.height >= -1) {
+        if (w->id != SCEAT_ID_LADDER) {
             continue;
         }
         Vec p;
         f32 r;
         sceAtGetLadderPos(&w->ladder, &p, &r);
+        if (say && seen < 8) {
+            seen++;
+            re4_log("ashley ladder: a ladder, on %d, level %d, %.1f m away, %.1f m above her, Leon %.1f m from it",
+                    w->be_flg & 1, (int) w->ladder.height, sqrtf(flat2(p, a->pos)) / 1000.0f,
+                    (p.y - a->pos.y) / 1000.0f, sqrtf(flat2(p, pPL->pos)) / 1000.0f);
+        }
+        if (!(w->be_flg & 1) || w->ladder.height >= -1) {
+            continue;
+        }
         if (fabsf(p.y - a->pos.y) > kLevel) {
             continue;
         }
@@ -80,6 +94,11 @@ bool findLadder(cSubChar* a, Vec* use, f32* ang, int* level)
         *ang = r;
         *level = w->ladder.height;
         found = true;
+    }
+    if (say && !found) {
+        gWhyFrame = (int) pG->Frame_cnt;
+        re4_log("ashley ladder: waiting above Leon (routine 0x%x, %.1f m higher), no ladder down for her (%d seen)",
+                (unsigned) a->r_no_1, (a->pos.y - pPL->pos.y) / 1000.0f, seen);
     }
     return found;
 }
@@ -142,7 +161,7 @@ extern "C" void re4_ashley_ladder_down(cSubChar* a)
         }
         return;
     }
-    if (!re4_move_on() || a->flg.check(cSubChar::F_STAY) || a->flg.check(cSubChar::F_MOVE_TO) ||
+    if (a->flg.check(cSubChar::F_STAY) || a->flg.check(cSubChar::F_MOVE_TO) ||
         a->flg.check(cSubChar::F_SLEEP) || StaFlagChk(pG, STA_EVENT) || leonOnLadder ||
         pPL->pos.y > a->pos.y - kBelow) {
         gStillFrames = 0;

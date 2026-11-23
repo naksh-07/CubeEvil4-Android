@@ -67,11 +67,17 @@
 
 #include <atomic>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 extern "C" void re4_log(const char* fmt, ...);
 extern "C" void* re4_mod_place_alloc(unsigned long size, const char* what);  // runtime/mod_place.cpp
 extern "C" void re4_add_frame_hook(void (*hook)(unsigned));  // runtime/pad.cpp
+extern "C" void re4_dsp_catch_next(void);                       // runtime/dsp.cpp: the next voices are a pistol's shot
+extern "C" int re4_dsp_caught(const short** pcm, int* serial);   // runtime/dsp.cpp
+extern "C" void re4_mod_pcm_play(const short* pcm, unsigned frames, int gain);  // runtime/mod_sound.cpp
+extern "C" int re4_sound_volume(int music);                       // runtime/sound_volume.cpp
+extern "C" const char* re4_data_dir(void);                        // runtime/dvd.cpp
 extern "C" void re4_formats_part_loaded(const char* name, int nest, int index, const void* part, unsigned addr);
 
 namespace {
@@ -93,7 +99,8 @@ const char* const kGunFile = "em/wep02.drs";
 const int kGunBin = 6, kGunTpl = 5;
 
 const u8 kAway = 0x41;         // cItem::type of the pistol Ashley holds: no case shows it (patch 0912)
-const int kAskHold = 30;       // frames the partner command button is held to ask for it back
+const int kAskHold = 90;       // frames the partner command button is held to ask for it back (3 s; 1 s until
+                               // 23.11.2026: DevJunior wants her to keep it, a plain press must not take it)
 const u16 kPistols[] = {0x23, 0x24, 0x21, 0x22, 0x40, 0x25, 0x26, 0x27, 0x28, 0x03, 0x29, 0x2A, 0x2B, 0x37};
 
 const f32 kRange = 12000.0f;   // 12 m
@@ -101,7 +108,9 @@ const f32 kCone = 1.4f;        // radians either side of where she faces, while 
 const f32 kTurn = 0.12f;       // radians a frame she turns standing
 const int kMag = 10;
 const int kRegen = 90;         // frames for one round (3 s)
-const int kFireGap = 14;       // frames between shots
+const int kFireGap = 24;       // frames between shots at least (Luis's pace: one shot per fire motion; DevJunior,
+                               // 23.11.2026: "she fires very fast, base it on Luis's"; 14 until then)
+const int kFireJitter = 6;     // frames added at random, as a person's pace
 const int kAimIn = 6;          // frames to raise the arm
 const f32 kPi = 3.14159265f;
 const f32 kLockCone = 0.6f;    // radians either side of where she faces: her own aim locks on (stage 3)
@@ -170,6 +179,14 @@ cItem* givenItem()
     return 0;
 }
 
+// a few frames at random (her own numbers: the game's Rnd stays as it is for the enemies)
+int jitter()
+{
+    static u32 x = 0x2545F491u;
+    x = x * 1664525u + 1013904223u;
+    return (int) ((x >> 16) % (kFireJitter + 1));
+}
+
 // frames between her shots: the pistol's own rate at its speed level (PlShotFrameTbl: the hand cannon slower than the
 // handgun), at least kFireGap
 int fireGap()
@@ -180,12 +197,12 @@ int fireGap()
     }
     const u8 no = WeaponId2WeaponNo(it->id);
     if (no == 0xFF || no >= 45) {
-        return kFireGap;
+        return kFireGap + jitter();
     }
     int lv = it->getSpeedLevel();
     lv = lv < 0 ? 0 : lv > 4 ? 4 : lv;
     const int f = (int) PlShotFrameTbl[no][lv];
-    return f > kFireGap ? f : kFireGap;
+    return (f > kFireGap ? f : kFireGap) + jitter();
 }
 
 // she gives p back: into Leon's case at its old place (the case finds another when that one is taken)
@@ -624,6 +641,65 @@ void aimArm(cEm* a, const Vec& target)
     }
 }
 
+// Her shot's sound (device report of DevJunior, 23.11.2026: "sometimes it sounds like the shotgun or the other
+// weapons"): the weapon block (2) holds the sounds of the weapon Leon holds. Leon holding a pistol: its shot from
+// that block, and runtime/dsp.cpp catches it (the loudest voice starting then) to play later, saved to the data
+// folder (ashley_pistol_shot.pcm: 32 kHz mono 16 bit, from the player's own disc) for the next games; Leon holding
+// another weapon: the caught shot through the mod sound mixer, at the effects volume; none caught yet: silence.
+short* gShotPcm = 0;
+int gShotN = 0;
+int gShotSerial = -1;
+bool gShotFileTried = false;
+
+void shotPath(char* out, size_t n)
+{
+    snprintf(out, n, "%s/ashley_pistol_shot.pcm", re4_data_dir());
+}
+
+void shotSound(const Vec& muzzle)
+{
+    cItem* lw = ItemMgr.weapon();
+    if (lw && isPistol(lw->id)) {
+        re4_dsp_catch_next();
+        SndCall(2, 0, (Vec*) &muzzle, 0, 0, 0);
+        return;
+    }
+    const short* pcm = 0;
+    int serial = 0;
+    const int n = re4_dsp_caught(&pcm, &serial);
+    if (n > 0) {
+        if (serial != gShotSerial) {
+            gShotSerial = serial;
+            char path[1100];
+            shotPath(path, sizeof path);
+            if (FILE* f = fopen(path, "wb")) {
+                fwrite(pcm, sizeof(short), (size_t) n, f);
+                fclose(f);
+                re4_log("ashley: the pistol's shot saved (%d ms)", n / 32);
+            }
+        }
+        re4_mod_pcm_play(pcm, (unsigned) n, re4_sound_volume(0) * 200 / 100);
+        return;
+    }
+    if (!gShotFileTried) {
+        gShotFileTried = true;
+        char path[1100];
+        shotPath(path, sizeof path);
+        if (FILE* f = fopen(path, "rb")) {
+            static short buf[32000];
+            gShotN = (int) fread(buf, sizeof(short), 32000, f);
+            fclose(f);
+            gShotPcm = buf;
+            re4_log("ashley: the pistol's shot read (%d ms)", gShotN / 32);
+        } else {
+            re4_log("ashley: no pistol shot yet (Leon holding a pistol while she fires catches it)");
+        }
+    }
+    if (gShotPcm && gShotN > 0) {
+        re4_mod_pcm_play(gShotPcm, (unsigned) gShotN, re4_sound_volume(0) * 200 / 100);
+    }
+}
+
 void fire(cEm* a, const Vec& tp, cEm* em)
 {
     const Vec d = sub3(tp, gGrip);
@@ -664,7 +740,7 @@ void fire(cEm* a, const Vec& tp, cEm* em)
             gNextHit = (gNextHit + 1) % 16;
         }
     }
-    SndCall(2, 0, &muzzle, 0, 0, 0);
+    shotSound(muzzle);
     gAmmo--;
     gShots++;
     if (gShots <= 20 || gShots % 50 == 0) {
@@ -1034,6 +1110,35 @@ void re4_ashley_gun_player(cPlayer* a)
             gGap = fireGap();
         } else {
             SndCall(0, 7, 0, 0, 0, 0);
+        }
+    }
+}
+
+// Patch 0951 (pl_npc.cpp cSubChar::moveBehind; wish of DevJunior, 23.11.2026: "when I reload Ashley goes back
+// instead of stepping aside and shooting too"): while Leon aims or reloads, the game puts Ashley behind him (`t`, his
+// model space, atckPos); armed, she stands at his left side instead (his right while that is walled off; behind him
+// when both are), level with him, where she sees past him.
+void re4_ashley_behind(cSubChar* a, Vec* t)
+{
+    static int said;
+    if (!a || !t || !pPL || !armed()) {
+        return;
+    }
+    const f32 kSideX = 750.0f;   // mm to his side (his right is -x)
+    for (int s = 0; s < 2; s++) {
+        Vec side = {s == 0 ? kSideX : -kSideX, t->y, -150.0f};
+        Vec w;
+        PSMTXMultVec(pPL->mat, &side, &w);
+        Vec from = pPL->pos;
+        from.y += 900.0f;
+        w.y = from.y;
+        if (sees(from, w)) {
+            *t = side;
+            if (!(said & (1 << s))) {
+                said |= 1 << s;
+                re4_log("ashley: at Leon's %s while he aims or reloads", s == 0 ? "left" : "right");
+            }
+            return;
         }
     }
 }

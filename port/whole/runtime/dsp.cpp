@@ -360,10 +360,119 @@ void updates(AXPB& pb, int ms)
     }
 }
 
+// ------------------------------------------- a voice caught for Ashley's pistol
+// runtime/ashley_gun.cpp (re4_dsp_catch_next): Ashley fires with the weapon block's shot while Leon holds a pistol,
+// so the next voices to start are that pistol's shot. Each one starting within kCatchLists lists is recorded (its
+// samples at 32 kHz after its envelope, before the bus volumes) for up to kCatchMax samples; when none is still
+// being recorded the loudest of them becomes the shot (re4_dsp_caught), so that she sounds like a pistol whatever
+// Leon holds later (device report of DevJunior, 23.11.2026: "sometimes it sounds like the shotgun").
+const int kCatchLists = 12;      // 60 ms
+const int kCatchMax = 32000;     // 1 s
+const int kCatchSlots = 4;
+struct Caught {
+    uintptr_t pb;
+    int n;
+    bool live;
+    s16 pcm[kCatchMax];
+};
+Caught gCatch[kCatchSlots];
+int gCatchArm;                   // lists left to catch a voice starting
+bool gCatching;
+s16 gShot[kCatchMax];
+int gShotN;                      // > 0: a shot caught (re4_dsp_caught)
+int gShotSerial;
+uintptr_t gWasOn[AX_MAX_VOICES];  // the PBs running at the end of the last list
+int gWasOnN;
+uintptr_t gOnNow[AX_MAX_VOICES];
+int gOnNowN;
+
+bool wasRunning(uintptr_t pb)
+{
+    for (int i = 0; i < gWasOnN; i++) {
+        if (gWasOn[i] == pb) {
+            return true;
+        }
+    }
+    return false;
+}
+
+Caught* catchSlot(uintptr_t pb, bool fresh)
+{
+    for (Caught& c : gCatch) {
+        if (c.live && c.pb == pb) {
+            return &c;
+        }
+    }
+    if (!fresh || gCatchArm <= 0) {
+        return 0;
+    }
+    for (Caught& c : gCatch) {
+        if (!c.live && c.n == 0) {
+            c.pb = pb;
+            c.live = true;
+            gCatching = true;
+            return &c;
+        }
+    }
+    return 0;
+}
+
+// after a list: the voices that stopped end their recording; none recording any more, the loudest is the shot
+void catchStep()
+{
+    memcpy(gWasOn, gOnNow, sizeof(uintptr_t) * (size_t) gOnNowN);
+    gWasOnN = gOnNowN;
+    gOnNowN = 0;
+    if (gCatchArm > 0) {
+        gCatchArm--;
+    }
+    if (!gCatching) {
+        return;
+    }
+    for (Caught& c : gCatch) {
+        if (c.live && (!wasRunning(c.pb) || c.n >= kCatchMax)) {
+            c.live = false;
+        }
+        if (c.live) {
+            return;
+        }
+    }
+    if (gCatchArm > 0) {
+        return;
+    }
+    gCatching = false;
+    int best = -1;
+    double bestE = 0.0;
+    for (int k = 0; k < kCatchSlots; k++) {
+        double e = 0.0;
+        for (int i = 0; i < gCatch[k].n && i < 3200; i++) {
+            e += (double) gCatch[k].pcm[i] * gCatch[k].pcm[i];
+        }
+        if (gCatch[k].n >= 1600 && e > bestE) {
+            bestE = e;
+            best = k;
+        }
+    }
+    if (best >= 0) {
+        memcpy(gShot, gCatch[best].pcm, sizeof(s16) * (size_t) gCatch[best].n);
+        gShotN = gCatch[best].n;
+        gShotSerial++;
+        re4_log("dsp: the pistol's shot caught (%d ms, voice %d of the ones that started)", gShotN / 32, best);
+    } else {
+        re4_log("dsp: no pistol shot caught");
+    }
+    for (Caught& c : gCatch) {
+        c.n = 0;
+        c.live = false;
+    }
+}
+
 u32 gVoiceMs;
 
 void voice(AXPB& pb)
 {
+    const uintptr_t me = (uintptr_t) &pb;
+    const bool before = wasRunning(me);
     for (int ms = 0; ms < 5; ms++) {
         updates(pb, ms);
         TraceVoice* tv = gTrace ? traceVoice((u32) (uintptr_t) &pb) : 0;
@@ -405,6 +514,13 @@ void voice(AXPB& pb)
             ve = (u16) (ve + pb.ve.currentDelta);
         }
         pb.ve.currentVolume = ve;
+        if (gCatchArm > 0 || gCatching) {
+            if (Caught* c = catchSlot(me, !before)) {
+                const int k = c->n + kMs <= kCatchMax ? kMs : kCatchMax - c->n;
+                memcpy(c->pcm + c->n, s, sizeof(s16) * (size_t) k);
+                c->n += k;
+            }
+        }
         if (pb.lpf.on) {
             s32 y = (s16) pb.lpf.yn1;
             for (int i = 0; i < kMs; i++) {
@@ -426,6 +542,9 @@ void voice(AXPB& pb)
         if (c & 0x0200) mixInto(gBus[BL] + at, s, m.vAuxBL, m.vDeltaAuxBL, c & 0x0800, d.aAuxBL);
         if (c & 0x0400) mixInto(gBus[BR] + at, s, m.vAuxBR, m.vDeltaAuxBR, c & 0x0800, d.aAuxBR);
         if (c & 0x1000) mixInto(gBus[BS] + at, s, m.vAuxBS, m.vDeltaAuxBS, c & 0x2000, d.aAuxBS);
+    }
+    if (pb.state == 1 && gOnNowN < AX_MAX_VOICES) {
+        gOnNow[gOnNowN++] = me;
     }
 }
 
@@ -635,6 +754,7 @@ void run(const u16* p)
             break;
         case 0x03:
             process(pbs);
+            catchStep();
             break;
         case 0x04:
             aux(AL, hilo(p[0], p[1]), hilo(p[2], p[3]));
@@ -677,6 +797,27 @@ void run(const u16* p)
 }  // namespace
 
 extern "C" {
+
+// runtime/ashley_gun.cpp: Ashley's shot is about to start a pistol's sound: catch it
+void re4_dsp_catch_next(void)
+{
+    if (!gCatching) {
+        gCatchArm = kCatchLists;
+    }
+}
+
+// the pistol's shot caught (32 kHz mono), its sample count (0 none) and a number that changes with each new one
+int re4_dsp_caught(const short** pcm, int* serial)
+{
+    if (pcm) {
+        *pcm = gShot;
+    }
+    if (serial) {
+        *serial = gShotSerial;
+    }
+    return gShotN;
+}
+
 
 // The four channels of the AI block at `blockAddr` (front left, front right, rear left, rear
 // right; 160 frames) when the DSP mixed it in Dolby Pro Logic II: 1, and taken; else 0

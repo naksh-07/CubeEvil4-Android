@@ -6,6 +6,8 @@
 # (re4_ashley_gun_give: the item's inventory type set to one no case shows, saved with the game; DevJunior,
 # 11.11.2026: it takes no room while she has it), its piece removed at once as pzlPlayer::rehash removes a used-up
 # item's. She gives it back when Leon holds the partner command button or the switch goes off (runtime).
+# (23.11.2026, device report: a dark box when giving her the pistol) the choice runs as the case's own "use" (command 4,
+# its window and texts as for a herb), the pistol's branch first in its confirm; until then a command 0 of its own.
 --- a/src/Sscrn/ss_pzzl.cpp
 +++ b/src/Sscrn/ss_pzzl.cpp
 @@ -96,6 +96,8 @@
@@ -17,12 +19,14 @@
  void pzzlCursorDisp(SUB_SCREEN* wk, int sw);
  void drawCursorInit(SUB_SCREEN* wk, PzzlCursor* c);
  void cmpVer(PzzlCursor* c, Vec* v);
-@@ -2493,6 +2495,12 @@
+@@ -2493,6 +2495,14 @@
                      }
                      mode = 3;
                      openMsgWindow(wk, 0x27);
 +                } else if (re4_ashley_gun_menu(pzzl_sel->item)) {
-+                    /* port (patch 0912): Leon or Ashley takes the pistol (the "use" sub menu's choice) */
++                    /* port (patch 0912): Leon or Ashley takes the pistol (the "use" sub menu's choice, run as
++                       "use" itself: command 4, its window and texts) */
++                    command_id = 4;
 +                    mode = 1;
 +                    subSel = 0;
 +                    SndCall(0, 4, 0, 0, 0, 0);
@@ -30,40 +34,34 @@
                  } else {
                      used = ItemMgr.arm(pzzl_sel->item);
                      if (used) {
-@@ -2599,6 +2607,7 @@
- 
-         // two-case switches: both compares before the arms (`cmpwi 4; beq; cmpwi 6; beq; b`)
-         switch (command_id) {
-+        case 0: /* port (patch 0912) */
-         case 4:
-             base = 0x70;
-             break;
-@@ -2634,6 +2643,28 @@
-             int msg = 0;
+@@ -2635,6 +2645,30 @@
  
              switch (command_id) {
-+            case 0: /* port (patch 0912): Leon equips the pistol or Ashley takes it out of the case */
-+                if (subSel == 0) {
-+                    used = ItemMgr.arm(pzzl_sel->item);
-+                } else if ((used = re4_ashley_gun_give(pzzl_sel->item)) != 0) {
-+                    pzlPlayer* pl = wk->puzzlePlayer;
-+                    pzlPiece* gp = pl->piecePtr(pzzl_sel->item);
+             case 4:
++                if (re4_ashley_gun_menu(pzzl_sel->item)) {
++                    /* port (patch 0912): Leon equips the pistol or Ashley takes it out of the case */
++                    if (subSel == 0) {
++                        used = ItemMgr.arm(pzzl_sel->item);
++                    } else if ((used = re4_ashley_gun_give(pzzl_sel->item)) != 0) {
++                        pzlPlayer* pl = wk->puzzlePlayer;
++                        pzlPiece* gp = pl->piecePtr(pzzl_sel->item);
 +
-+                    /* its piece leaves the case at once (rehash drops only used-up items) */
-+                    if (gp && gp->isOnBoard()) {
-+                        if (pl->boardPtr()->search(gp)) {
-+                            pl->boardPtr()->rmPiece(gp);
-+                        } else if (pl->spacePtr()->search(gp)) {
-+                            pl->spacePtr()->rmPiece(gp);
++                        /* its piece leaves the case at once (rehash drops only used-up items) */
++                        if (gp && gp->isOnBoard()) {
++                            if (pl->boardPtr()->search(gp)) {
++                                pl->boardPtr()->rmPiece(gp);
++                            } else if (pl->spacePtr()->search(gp)) {
++                                pl->spacePtr()->rmPiece(gp);
++                            }
++                        }
++                        if (gp) {
++                            gp->model->push();
++                            gp->clear();
 +                        }
 +                    }
-+                    if (gp) {
-+                        gp->model->push();
-+                        gp->clear();
-+                    }
++                    SndCall(0, used ? 8 : 7, 0, 0, 0, 0);
++                    break;
 +                }
-+                SndCall(0, used ? 8 : 7, 0, 0, 0, 0);
-+                break;
-             case 4:
                  if (subSel == 0) {
                      ItemMgr.setToWhom(0);
+                 } else {

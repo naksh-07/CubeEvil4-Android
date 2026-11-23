@@ -30,6 +30,13 @@ std::atomic<unsigned> gFrames(0);
 std::atomic<int> gPos(-1);                // the next frame to mix, -1 idle
 std::atomic<int> gGain(0);                // 0 .. 256
 
+// a second sound: Ashley's pistol shot (runtime/ashley_gun.cpp re4_mod_pcm_play), 32 kHz mono, the caller's memory
+// (it stays allocated)
+std::atomic<const int16_t*> gPcm(0);
+std::atomic<unsigned> gPcmFrames(0);
+std::atomic<int> gPcmPos(-1);
+std::atomic<int> gPcmGain(0);
+
 unsigned le16(const unsigned char* p)
 {
     return p[0] | (p[1] << 8);
@@ -168,9 +175,38 @@ int re4_mod_sound_play(int volume)
     return 1;
 }
 
+// runtime/ashley_gun.cpp: `pcm` (32 kHz mono, `frames` long, kept by the caller) plays once at `gain` (0..256);
+// a new one starts it over
+void re4_mod_pcm_play(const short* pcm, unsigned frames, int gain)
+{
+    if (!pcm || !frames || gain <= 0) {
+        return;
+    }
+    gPcmPos.store(-1);
+    gPcm.store((const int16_t*) pcm);
+    gPcmFrames.store(frames);
+    gPcmGain.store(gain > 256 ? 256 : gain);
+    gPcmPos.store(0);
+}
+
 // ai.cpp play: adds the playing sound to `frames` stereo frames (L, R) for the app's ring.
 void re4_mod_sound_mix(short* lr, unsigned frames)
 {
+    {
+        int start = gPcmPos.load(std::memory_order_relaxed);
+        if (start >= 0) {
+            const int16_t* s = gPcm.load();
+            const unsigned total = gPcmFrames.load();
+            const int gain = gPcmGain.load();
+            int pos = start;
+            for (unsigned i = 0; i < frames && (unsigned) pos < total; i++, pos++) {
+                const int v = (s[pos] * gain) >> 8;
+                lr[i * 2] = clamp16(lr[i * 2] + v);
+                lr[i * 2 + 1] = clamp16(lr[i * 2 + 1] + v);
+            }
+            gPcmPos.compare_exchange_strong(start, (unsigned) pos < total ? pos : -1);
+        }
+    }
     int start = gPos.load(std::memory_order_relaxed);
     int pos = start;
     if (pos < 0) {
