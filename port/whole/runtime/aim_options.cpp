@@ -48,6 +48,8 @@ std::atomic<int> gLock(-1);         // the app's "Auto aim", -1 before it sent a
 std::atomic<int> gVib(-1);          // the app's "Vibration" not Off, -1 before it sent anything (bits 4/5)
 std::atomic<bool> gRun(false);      // the app's "Always run"
 std::atomic<bool> gFar(false);      // the app's "Far camera" (patch 0171)
+std::atomic<bool> gModern(false);   // the app's "Modern controls" (patch 0990)
+std::atomic<bool> gAimWalk(false);  // the app's "Walk while aiming" (patch 0990)
 std::atomic<int> gFov(0);           // the app's "Field of view" in degrees, -15 .. 15 (patch 0205)
 
 // The field of view from the aim bits: bits 24..29 hold degrees + 32 (0: an app without it, as the game).
@@ -210,6 +212,8 @@ void re4_aim_set(int bits)
     const int lock = (bits >> 1) & 1;
     const bool run = (bits & 4) != 0;
     const bool far = (bits & 8) != 0;
+    gModern.store((bits & (1 << 6)) != 0);   // bit 6 "Modern controls" (patch 0990)
+    gAimWalk.store((bits & (1 << 7)) != 0);  // bit 7 "Walk while aiming" (patch 0990)
     const bool inverted = gInvert.exchange(invert) != invert;
     const bool faster = gSpeed.exchange(speed) != speed;
     const bool locked = gLock.exchange(lock) != lock;
@@ -229,6 +233,70 @@ void re4_aim_set(int bits)
         re4_add_frame_hook(hook);
     }
     gPending.store(true);
+}
+
+// Patch 0990 (player.cpp): the app's "Modern controls".
+int re4_modern_controls(void)
+{
+    return gModern.load(std::memory_order_relaxed) ? 1 : 0;
+}
+
+// Patch 0990 (player.cpp): the app's "Walk while aiming".
+int re4_modern_aimwalk(void)
+{
+    return gAimWalk.load(std::memory_order_relaxed) ? 1 : 0;
+}
+
+static FILE* gBones = nullptr;
+
+void re4_modern_bone_begin(int n)
+{
+    static const char* paths[] = {
+        "/storage/emulated/0/Android/data/com.ast.cubeevil4/files/leon_bones.txt",
+        "/sdcard/Android/data/com.ast.cubeevil4/files/leon_bones.txt",
+        "/data/user/0/com.ast.cubeevil4/files/leon_bones.txt",
+        "/data/data/com.ast.cubeevil4/files/leon_bones.txt",
+    };
+    gBones = nullptr;
+    for (const char* path : paths) {
+        gBones = fopen(path, "w");
+        if (gBones) {
+            re4_log("bones: writing %s", path);
+            break;
+        }
+    }
+    if (!gBones) {
+        re4_log("bones: no file could be opened");
+        return;
+    }
+    fprintf(gBones, "Leon: %d parts\n# index parent(255=model) restX restY restZ worldX worldY worldZ (mm; world relative to Leon)\n", n);
+}
+
+void re4_modern_bone(int index, int parent, float cx, float cy, float cz, float wx, float wy, float wz)
+{
+    if (gBones) {
+        fprintf(gBones, "%d %d %.0f %.0f %.0f %.0f %.0f %.0f\n", index, parent, cx, cy, cz, wx, wy, wz);
+    }
+}
+
+void re4_modern_bone_end(void)
+{
+    if (gBones) {
+        fclose(gBones);
+        gBones = nullptr;
+    }
+}
+
+void re4_modern_trace(const float* v, int n)
+{
+    (void) v;
+    (void) n;
+}
+
+void re4_modern_trace2(const float* v, int n)
+{
+    (void) v;
+    (void) n;
 }
 
 // Patch 0171 (cam_qfps.cpp): the shoulder camera further back while walking and standing.

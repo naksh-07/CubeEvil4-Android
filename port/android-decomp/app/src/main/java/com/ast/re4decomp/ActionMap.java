@@ -150,6 +150,40 @@ public final class ActionMap {
     return m;
   }
 
+  /**
+   * The Xbox 360 / Modern Shooter profile:
+   * LT aims, RT fires (with LT held) or slashes (with LB held);
+   * LB readies knife; RB commands Ashley;
+   * A is action, B is run, X is reload (with LT held);
+   * Y is inventory, Back/Select is Map, Start is Options, R3 is App Menu.
+   */
+  public static ActionMap xbox360() {
+    ActionMap m = new ActionMap(KIND_CONTROLLER);
+    int a = CoreInput.KEYCODE_BUTTON_A, b = CoreInput.KEYCODE_BUTTON_B, x = CoreInput.KEYCODE_BUTTON_X,
+        y = CoreInput.KEYCODE_BUTTON_Y, l1 = CoreInput.KEYCODE_BUTTON_L1, r1 = CoreInput.KEYCODE_BUTTON_R1,
+        l2 = CoreInput.KEYCODE_BUTTON_L2, r2 = CoreInput.KEYCODE_BUTTON_R2,
+        start = CoreInput.KEYCODE_BUTTON_START, select = CoreInput.KEYCODE_BUTTON_SELECT,
+        r3 = CoreInput.KEYCODE_BUTTON_THUMBR;
+    m.keys[ACTION] = new int[] {a};
+    m.keys[RUN] = new int[] {b};
+    m.keys[AIM] = new int[] {l2};
+    m.keys[FIRE] = new int[] {l2, r2};
+    m.keys[RELOAD] = new int[] {l2, x};
+    m.keys[KNIFE] = new int[] {l1};
+    m.keys[SLASH] = new int[] {l1, r2};
+    m.keys[ASHLEY] = new int[] {r1};
+    m.keys[INVENTORY] = new int[] {y};
+    m.keys[MAP] = new int[] {select};
+    m.keys[OPTIONS] = new int[] {start};
+    m.keys[APP_MENU] = new int[] {r3};
+    return m;
+  }
+
+  /** PlayStation layout (DualShock 4 / DualSense) - same keycodes as Android gamepad standard. */
+  public static ActionMap playstation() {
+    return xbox360();
+  }
+
   /** The keys of `action`: one, two (held, pressed) or none. */
   public int[] keys(int action) { return keys[action].clone(); }
 

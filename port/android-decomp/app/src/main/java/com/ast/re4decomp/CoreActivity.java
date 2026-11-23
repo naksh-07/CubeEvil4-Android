@@ -135,7 +135,8 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
   static final String STICK_DEAD_ZONE = "stickDeadZone", STICK_RANGE = "stickRange", VIBRATION = "vibration";
   // the menu's "Auto aim" (the game's own lock-on) and "Always run" (the run key walks instead; wish of the
   // project owner, 30.10.2026; CoreBridge.setAim, runtime/aim_options.cpp; both off)
-  static final String AUTO_AIM = "autoAim", ALWAYS_RUN = "alwaysRun", FAR_CAMERA = "farCamera";
+  static final String AUTO_AIM = "autoAim", ALWAYS_RUN = "alwaysRun", FAR_CAMERA = "farCamera",
+      MODERN_CONTROLS = "modernControls", AIM_WALK = "aimWalk";
   /** "Gentler QTEs" (0.99.15): Professional's quick-time events as Normal's; on by default. */
   static final String GENTLE_QTE = "gentleQte";
   /** "Turn Leon with mouse / look area" (1.0): the movement sideways turns Leon himself (CoreInput.setBodyTurn); off. */
@@ -581,6 +582,10 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
       CoreBridge.setLaserColour(getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getInt(LASER_COLOUR, 0));
       CoreBridge.setMerge(g.getBoolean("mergeDraws", false));
       CoreBridge.setFarCamera(getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getBoolean(FAR_CAMERA, false));
+      CoreBridge.setModernControls(getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getBoolean(MODERN_CONTROLS, false));
+      CoreBridge.setAimWalk(getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getBoolean(AIM_WALK, false));
+      CoreInput.modernLook = getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getBoolean(MODERN_CONTROLS, false);
+      CoreInput.aimWalk = getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getBoolean(AIM_WALK, false);
       CoreBridge.setFov(fovOffset(getSharedPreferences(INPUT_PREFS, MODE_PRIVATE)));
       CoreBridge.setVertexRing(g.getBoolean("vertexRing", false));
       // "Dynamic" up to the benchmark's levels on this device, when it ran

@@ -1147,6 +1147,8 @@ int cpuSkipSent = -1;  // what the core was told last (-1: nothing yet)
 // project owner, 30.10.2026): bit 0 inverted, bits 8.. the speed in percent (the core's runtime/aim_options.cpp).
 std::atomic<int> optAim{100 << 8};
 std::atomic<int> optFarCamera{0};  // the menu's "Far camera" (CoreBridge.setFarCamera), bit 3 of the aim bits
+std::atomic<int> optModern{0};     // the menu's "Modern controls" (patch 0990), bit 6 of aim bits
+std::atomic<int> optAimWalk{0};    // the menu's "Walk while aiming" (patch 0990), bit 7 of aim bits
 // the menu's "Vibration" not Off (CoreBridge.setGameVibration, 1.1.0): bits 4/5 of the aim bits, the game's own
 // vibration switch follows it (runtime/aim_options.cpp); -1 before the app sent it (bit 5 clear)
 std::atomic<int> optGameVibration{-1};
@@ -2846,6 +2848,8 @@ bool drawGx() {
     }
     const int vibration = optGameVibration.load();
     const int aim = optAim.load() | (optFarCamera.load() ? 8 : 0)  // bit 3 "Far camera" (patch 0171)
+                    | (optModern.load() ? 64 : 0)                  // bit 6 "Modern controls" (patch 0990)
+                    | (optAimWalk.load() ? 128 : 0)                // bit 7 "Walk while aiming" (patch 0990)
                     | (vibration < 0 ? 0 : vibration ? 0x30 : 0x20)  // bits 4/5 the game's vibration (1.1.0)
                     | (optHealthBars.load() ? 1 << 20 : 0)            // bit 20 the enemy health bars (1.1.0)
                     | (optStackItems.load() & 3) << 21                 // bits 21..22 the cheat "Stack items" (1.1.0)
@@ -4014,6 +4018,16 @@ extern "C" JNIEXPORT jint JNICALL Java_com_ast_re4decomp_CoreBridge_vibrationFro
 extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setFarCamera(JNIEnv *, jclass, jboolean on) {
   const int want = on == JNI_TRUE ? 1 : 0;
   if (optFarCamera.exchange(want) != want) LOG("far camera: %s", want ? "on" : "off");
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setModernControls(JNIEnv *, jclass, jboolean on) {
+  const int want = on == JNI_TRUE ? 1 : 0;
+  if (optModern.exchange(want) != want) LOG("modern controls: %s", want ? "on" : "off");
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setAimWalk(JNIEnv *, jclass, jboolean on) {
+  const int want = on == JNI_TRUE ? 1 : 0;
+  if (optAimWalk.exchange(want) != want) LOG("walk while aiming: %s", want ? "on" : "off");
 }
 
 // The menu's AUDIO page (drawGx tells the core): music and sound effects volume in percent.

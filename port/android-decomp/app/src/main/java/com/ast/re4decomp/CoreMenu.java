@@ -1379,6 +1379,17 @@ final class CoreMenu extends Dialog {
     MenuLayout.Buttons third = buttonsRow(controlType);
     toggle(third, R.string.ingame_auto_aim, input.getBoolean(CoreActivity.AUTO_AIM, false), on -> host.autoAimChanged(on));
     toggle(third, R.string.ingame_always_run, input.getBoolean(CoreActivity.ALWAYS_RUN, false), on -> host.alwaysRunChanged(on));
+    MenuLayout.Buttons modernRow = buttonsRow(controlType);
+    toggle(modernRow, R.string.ingame_modern_controls, input.getBoolean(CoreActivity.MODERN_CONTROLS, false), on -> {
+      input.edit().putBoolean(CoreActivity.MODERN_CONTROLS, on).apply();
+      CoreBridge.setModernControls(on);
+      CoreInput.modernLook = on;
+    });
+    toggle(modernRow, R.string.ingame_aim_walk, input.getBoolean(CoreActivity.AIM_WALK, false), on -> {
+      input.edit().putBoolean(CoreActivity.AIM_WALK, on).apply();
+      CoreBridge.setAimWalk(on);
+      CoreInput.aimWalk = on;
+    });
     // aiming the knife and the guns by touch or a controller (wish of the project owner, 30.10.2026): the game's
     // own "reverse" option and the stick's speed while aiming, right under the latches
     into = buttonsRow(controlType);
@@ -1396,7 +1407,7 @@ final class CoreMenu extends Dialog {
     toggle(lastRow, R.string.ingame_gentle_qte,
         input.getBoolean(CoreActivity.GENTLE_QTE, CoreActivity.GENTLE_QTE_DEFAULT), on -> host.gentleQteChanged(on));
     help(R.string.ingame_alternate_help); help(R.string.ingame_latch_help); help(R.string.ingame_auto_aim_help);
-    help(R.string.ingame_always_run_help); help(R.string.ingame_gentle_qte_help); help(R.string.ingame_aim_help);
+    help(R.string.ingame_always_run_help); help(R.string.ingame_modern_controls_help); help(R.string.ingame_aim_walk_help); help(R.string.ingame_gentle_qte_help); help(R.string.ingame_aim_help);
     help(R.string.ingame_body_turn_help);
     help(R.string.ingame_knife_swipe_help);
     // touch aiming (wish of the project owner, 28.10.2026): what aims while L or R is held; since 05.11.2026 a section
@@ -1615,10 +1626,26 @@ final class CoreMenu extends Dialog {
     if (pendingStatus != null) mapStatus.setText(pendingStatus);
     pendingStatus = null;
     body.addView(mapStatus);
-    cellAction(buttonsRow(body), s(R.string.ingame_controller_default), v -> {
-      captureAction = -1; main.removeCallbacks(captureTimeout);
-      host.mappingChanged(ActionMap.defaults(mapKind)); showPage(CONTROLLER, false);
-    });
+    if (!keyboard) {
+      MenuLayout.Buttons presets = buttonsRow(body);
+      cellAction(presets, s(R.string.ingame_controller_default), v -> {
+        captureAction = -1; main.removeCallbacks(captureTimeout);
+        host.mappingChanged(ActionMap.defaults(mapKind)); showPage(CONTROLLER, false);
+      });
+      cellAction(presets, "Preset: Xbox 360", v -> {
+        captureAction = -1; main.removeCallbacks(captureTimeout);
+        host.mappingChanged(ActionMap.xbox360()); showPage(CONTROLLER, false);
+      });
+      cellAction(presets, "Preset: PlayStation", v -> {
+        captureAction = -1; main.removeCallbacks(captureTimeout);
+        host.mappingChanged(ActionMap.playstation()); showPage(CONTROLLER, false);
+      });
+    } else {
+      cellAction(buttonsRow(body), s(R.string.ingame_controller_default), v -> {
+        captureAction = -1; main.removeCallbacks(captureTimeout);
+        host.mappingChanged(ActionMap.defaults(mapKind)); showPage(CONTROLLER, false);
+      });
+    }
     help(R.string.ingame_controller_help);
   }
 

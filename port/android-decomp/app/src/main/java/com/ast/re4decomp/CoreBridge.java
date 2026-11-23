@@ -261,6 +261,10 @@ public final class CoreBridge {
   public static native void setMerge(boolean on);
   /** "Far camera": the shoulder camera further back while walking and standing (patch 0171). */
   public static native void setFarCamera(boolean on);
+  /** "Modern controls": camera-relative movement and right-stick camera orbit (patch 0990). */
+  public static native void setModernControls(boolean on);
+  /** "Walk while aiming": left stick walks Leon while aiming, right stick aims reticle (patch 0990). */
+  public static native void setAimWalk(boolean on);
   /** "Field of view" (PLAYER VIEW): the shoulder camera's vertical field of view changed by `degrees`
    *  (-15 .. +15; 0 as the game; patch 0205), sent with the aim settings. */
   public static native void setFov(int degrees);
