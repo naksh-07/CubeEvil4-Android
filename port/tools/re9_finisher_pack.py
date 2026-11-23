@@ -871,6 +871,8 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
     body = U.build_body(entries, tags)
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
+    if len(body) > 0x200000:  # runtime/locomotion.cpp kMaxBytes (0x80000 before 23.11.2026)
+        raise SystemExit("move.dat: %d bytes, the game takes 2 MB" % len(body))
     out.write_bytes(body)
     print("%s: %d bytes, %d movements" % (out, len(body), len(table)))
 

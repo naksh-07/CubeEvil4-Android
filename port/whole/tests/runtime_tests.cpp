@@ -2745,9 +2745,9 @@ static void testFinish()
         re4_mod_move_path_set(real);
         const int n = re4_move_count();
         const int clips = re4_move_clips();
-        re4_log("  finishers: %s holds %d movements (expected 4) and %d transitions (expected 12 or none)", real, n,
-                clips);
-        bad |= n != 4 || (clips != 12 && clips != 0) ? 0x40000 : 0;
+        re4_log("  finishers: %s holds %d movements (expected 4) and %d transitions (expected 12, 16 with the side "
+                "steps, or none)", real, n, clips);
+        bad |= n != 4 || (clips != 12 && clips != 16 && clips != 0) ? 0x40000 : 0;
         re4_mod_move_path_set("");
         bad |= re4_move_count() != 0 ? 0x40000 : 0;
     }

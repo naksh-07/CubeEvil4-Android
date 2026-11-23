@@ -61,7 +61,7 @@ const char* const kNames[kMoves] = {"stand", "walk", "run", "back step"};
 // taken out (cPlNeck::init leaves invalid ones alone) and the blend's rate held at zero.
 const int kNeck[kMoves] = {0x3F, 0x39, 0x41, 0};
 const f32 kTimeMin = 0.75f, kTimeMax = 1.35f;
-const unsigned kMaxBytes = 0x80000;  // (with the transitions: 0.16 MB)
+const unsigned kMaxBytes = 0x200000;  // (pack v23 with the shotgun: 0.5 MB, one over the 0x80000 before 23.11.2026)
 const int kSeqMax = 255;
 
 const int kStepsMax = 24;
@@ -367,7 +367,8 @@ void load()
         }
     }
     if (!ok) {
-        re4_log("move: %s is no archive of Leon's movements (%ld bytes): the game's", path, size);
+        re4_log("move: %s is no archive of Leon's movements (%ld bytes%s): the game's", path, size,
+                size > (long) kMaxBytes ? ", larger than the place for it" : !whole ? ", not read" : "");
         return;
     }
     // every footstep, after the rows: "STK1", per row u8 n and n u16 (packs before 18.11.2026: none, foot[] only)
