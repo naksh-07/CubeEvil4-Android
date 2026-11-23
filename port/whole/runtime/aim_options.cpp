@@ -21,6 +21,16 @@
 //    "Aim speed" while the knife is ready (its routine, or the knife as the weapon in hand), from a third aim
 //    word (bits 31 and 30 set, bits 0..11 percent, 0 as the "Aim speed"). The gyro and the swipes do not aim
 //    the knife (runtime/gyro.cpp), so the sticks' turn is all it changes.
+//  - "Reload without aiming" (1.1.0, keyboard; the idea from a user's "ModernTPS" mod, our own code): the app asks for
+//    one reload when the keyboard's reload key is pressed without the aim (re4_core_quick_reload); patch 0241 lets
+//    cPlayer::keyReload answer yes once, within 15 game frames. The game itself then reloads through its own way
+//    (actionSelect while standing or walking, setRno 6/4; without the aim key PlReloadDirect 1, the direct reload of
+//    its control type 1), only when the weapon can reload (reloadable), never in a scene or another routine.
+//  - "Vibration" (1.1.0, a user's report 19.11.2026: no rumble on a DualSense nor the phone): the game's own
+//    switch (its Options, Controller: "vibration", CFG_VIBRATION in pSys->Config_flg) follows the app's menu:
+//    on unless the app's "Vibration" is Off. The game's switch was off in most testers' system files (the
+//    prototype's new system file has it off, and its Options apply a change only with A), so the game never
+//    started the motor and the app had nothing to pass on. Set as "Invert vertical" is.
 #include "types.h"
 #include "global.h"
 #include "main.h"
@@ -31,15 +41,20 @@ extern cPlayer* pPL;
 
 #include <atomic>
 #include <cstdlib>
+#include <string.h>
+#include <time.h>
 
 extern "C" void re4_log(const char* fmt, ...);
 extern "C" void re4_add_frame_hook(void (*hook)(unsigned));  // runtime/pad.cpp
 extern "C" unsigned re4_pad_frame(void);                      // runtime/pad.cpp
+extern "C" void re4_health_bars_set(int on);                 // runtime/health_bars.cpp (1.1.0)
+extern "C" void re4_stack_items_set(int step);               // runtime/cheats.cpp (1.1.0, patch 0254)
 
 namespace {
 
 std::atomic<int> gInvert(-1);       // the app's "Invert vertical", -1 before it sent anything
 std::atomic<int> gLock(-1);         // the app's "Auto aim", -1 before it sent anything
+std::atomic<int> gVib(-1);          // the app's "Vibration" not Off, -1 before it sent anything (third word bits 17/18)
 std::atomic<bool> gRun(false);      // the app's "Always run"
 std::atomic<bool> gFar(false);      // the app's "Far camera" (patch 0171)
 std::atomic<int> gFov(0);           // the app's "Field of view" in degrees, -15 .. 15 (patch 0205)
@@ -66,6 +81,16 @@ std::atomic<int> gKnifeSpeed(0);    // the app's "Knife aim speed" in percent, 0
 std::atomic<bool> gPending(false);  // the game's option to be set at the next game frame
 std::atomic<bool> gHooked(false);
 std::atomic<int> gFromGame(-1);     // the game's own options changed "reverse" (patch 0188): 0 / 1 for the app
+std::atomic<long> gReloadAt{-1};    // when the app asked for a reload (re4_core_quick_reload), ms; -1 none waiting
+unsigned gReloadLines;
+
+long nowMs()
+{
+    timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long) t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+std::atomic<int> gVibFromGame(-1);  // the game's own options changed "vibration" (1.1.0): 0 / 1 for the app
 
 void applyLock(const char* why)
 {
@@ -84,9 +109,27 @@ void applyLock(const char* why)
     re4_log("aim: auto aim (the game's lock-on) %s (%s)", lock ? "on" : "off", why);
 }
 
+void applyVibration(const char* why)
+{
+    const int vib = gVib.load();
+    if (vib < 0 || !pSys) {
+        return;
+    }
+    if ((CfgFlagChk(pSys, CFG_VIBRATION) != 0) == (vib != 0)) {
+        return;
+    }
+    if (vib) {
+        CfgFlagOn(pSys, CFG_VIBRATION);
+    } else {
+        CfgFlagOff(pSys, CFG_VIBRATION);
+    }
+    re4_log("pad: the game's vibration %s (%s)", vib ? "on" : "off", why);
+}
+
 void apply(const char* why)
 {
     applyLock(why);
+    applyVibration(why);
     const int invert = gInvert.load();
     if (invert < 0 || !pSys) {
         return;
@@ -111,7 +154,8 @@ void hook(unsigned)
 }
 
 // For tests on the PC: RE4_TEST_AIM=bits at the start, as the app's re4_core_set_aim (bit 1 auto aim, bit 2
-// always run, bits 8.. the speed; 0 there: 100 %), applied at the first game frame
+// always run, bit 5 vibration sent with bit 4 on, bits 8.. the speed; 0 there: 100 %), applied at the first game
+// frame
 struct StartSetting {
     StartSetting()
     {
@@ -133,6 +177,35 @@ struct StartSetting {
         }
     }
 } gStartSetting;
+
+// For tests on the PC: RE4_TEST_QUICK_RELOAD="F[,F...]": at PADRead frame F the app's reload without aiming
+unsigned gQuickTest[8];
+int gQuickTests;
+
+void quickHook(unsigned frame)
+{
+    for (int i = 0; i < gQuickTests; i++) {
+        if (gQuickTest[i] == frame) {
+            re4_log("aim: RE4_TEST_QUICK_RELOAD at frame %u", frame);
+            gReloadAt.store(nowMs());
+        }
+    }
+}
+
+struct QuickTest {
+    QuickTest()
+    {
+        const char* v = getenv("RE4_TEST_QUICK_RELOAD");
+        for (const char* p = v; p && *p && gQuickTests < 8;) {
+            gQuickTest[gQuickTests++] = (unsigned) strtoul(p, 0, 10);
+            p = strchr(p, ',');
+            p = p ? p + 1 : 0;
+        }
+        if (gQuickTests) {
+            re4_add_frame_hook(quickHook);
+        }
+    }
+} gQuickTestSetting;
 
 }  // namespace
 
@@ -178,6 +251,19 @@ void re4_aim_set(int bits)
         if (jogBefore >= 0 && jogBefore != jog) {
             re4_move_jog_press();
         }
+        // (the mods' fork: upstream's 1.1.0 bits of the first word live here, the first word is full with the mods')
+        // bits 17/18 the game's vibration (bit 18 clear: the game's own switch), bit 19 "Enemy health bars", bits 20..21
+        // the cheat "Stack items"
+        const int vib = (bits & (1 << 18)) ? (bits >> 17) & 1 : -1;
+        if (gVib.exchange(vib) != vib) {
+            re4_log("pad: the app's vibration %s", vib < 0 ? "not sent (the game's own switch)" : vib ? "on" : "off");
+            if (!gHooked.exchange(true)) {
+                re4_add_frame_hook(hook);
+            }
+            gPending.store(true);  // the hook sets the game's switch
+        }
+        re4_health_bars_set((bits >> 19) & 1);
+        re4_stack_items_set((bits >> 20) & 3);
         int knife = bits & 0xFFF;
         knife = knife == 0 ? 0 : knife < 50 ? 50 : knife > 300 ? 300 : knife;
         if (gKnifeSpeed.exchange(knife) != knife) {
@@ -344,6 +430,14 @@ void re4_aim_options_closed(void)
     if (!pSys || gPending.load()) {
         return;
     }
+    // "vibration" too (1.1.0): the app's "Vibration" becomes Off, or Auto when it was Off
+    const int vib = CfgFlagChk(pSys, CFG_VIBRATION) != 0;
+    const int sent = gVib.load();
+    if (sent >= 0 && sent != vib) {
+        gVib = vib;
+        gVibFromGame = vib;
+        re4_log("pad: the game's vibration %s (the game's own options; the app keeps it)", vib ? "on" : "off");
+    }
     const int now = CfgFlagChk(pSys, CFG_AIM_REVERSE) != 0;
     if (gInvert.load() == now) {
         return;
@@ -357,6 +451,37 @@ void re4_aim_options_closed(void)
 int re4_aim_from_game(void)
 {
     return gFromGame.exchange(-1);
+}
+
+// The app (core_api.cpp re4_core_vibration_from_game): -1, or the game's own "vibration" since the last call.
+int re4_vibration_from_game(void)
+{
+    return gVibFromGame.exchange(-1);
+}
+
+// The app (core_api.cpp re4_core_quick_reload, any thread): the keyboard's reload key without the aim
+void re4_quick_reload_request(void)
+{
+    gReloadAt.store(nowMs());
+}
+
+// Patch 0241 (cPlayer::keyReload, game thread): 1 once for a request of the last half second (one pressed during a
+// scene or a menu lapses); PlReloadDirect as the game's control type 1 sets it (1 without the aim key: direct)
+int re4_quick_reload_take(int aimHeld)
+{
+    const long at = gReloadAt.load();
+    if (at < 0) {
+        return 0;
+    }
+    gReloadAt.store(-1);
+    if (nowMs() - at > 500) {
+        return 0;
+    }
+    if (gReloadLines < 30) {
+        gReloadLines++;
+        re4_log("aim: reload without aiming asked (the keyboard), %s", aimHeld ? "while aiming" : "direct");
+    }
+    return 1;
 }
 
 // After the system file was read into pSys (game thread): the app's switch, not the saved one.

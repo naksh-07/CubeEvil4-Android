@@ -102,7 +102,8 @@ If you do not own the game, please buy it: the remake (see above) or one of the 
 | **E** | Dimensity 700 / 720 / 810 / 800U | Mali-G57 MC2–MC3 | with heavily reduced resolution (approx. 480–720p) and graphics, 30 fps not guaranteed |
 | **E** | Helio G99 / G96 | Mali-G57 MC2 | as above |
 | **E** | Helio G80 / G85 / G88, Exynos 850, Unisoc T606 / T610 / T618 | Mali-G52 MC1–MC2 | borderline, often stutters |
-| **E** | Snapdragon 4 series, Helio G35 and similar | Adreno 610 and below / Mali-G52 MC1 | not recommended |
+| **E** | Snapdragon 680 / 685 | Adreno 610 | 30 fps at low settings (the GameCube's resolution, Potato mode); with 60 fps on, 60 on quiet paths and 30–60 in the village (user report: Redmi Note 11) |
+| **E** | Snapdragon 4 series (older, e.g. 450 / 460), Helio G35 and similar | Adreno 506 / 610 with a slower processor / PowerVR GE8320 | not recommended |
 
 ### Here are the recommended minimum requirements for CubeEvil4...
 
@@ -373,11 +374,27 @@ purpose. Constants use the PS2 build's enums. `docs/naming.md` has the details.
 See `CONTRIBUTING.md` for the build, the three checks a change has to pass and the rules. The main rule
 is that the output bytes never change.
 
+## Official sources and forks
+
+CubeEvil4 is developed by **Andiweli**. Official releases come only from:
+
+- this repository's [Releases](https://github.com/Andiweli/CubeEvil4-Android/releases)
+- the CubeEvil4 [Discord](https://discord.gg/AB3WVBqD5G)
+
+Forks are welcome, the license allows them. If you publish one:
+
+- keep "CubeEvil4 by Andiweli", the link to this repository and the license;
+- give your version a name of its own ("… based on CubeEvil4" is fine);
+- say what you changed;
+- do not present it as the official CubeEvil4 or as your own development.
+
+The exact terms are in [port/LICENSE](port/LICENSE), "Additional terms".
+
 ## License
 
 | What | Whose | License |
 |---|---|---|
-| The Android port CubeEvil4 in `port/`: the app, the renderer, the runtime, the patches, the Texture Packer, the tools and the documents | Andiweli | GPL-3.0-or-later, with an additional permission for the game code: [port/LICENSE](port/LICENSE) |
+| The Android port CubeEvil4 in `port/`: the app, the renderer, the runtime, the patches, the Texture Packer, the tools and the documents | Andiweli | GPL-3.0-or-later, with an additional permission for the game code and, from 20 November 2026, additional terms (attribution, modified versions, the name): [port/LICENSE](port/LICENSE) |
 | The decompilation's own tools, configuration and documentation (`configure.py`, `tools/`, `config/`, `docs/`) | the decompilation's authors | CC0 1.0: [LICENSE](LICENSE) |
 | The game code (`src/`, `include/`) | Capcom | none of these: Capcom's property |
 | The GameCube SDK and the CRI middleware (`src/lib/`) | Nintendo, CRI Middleware | none of these: their property |

@@ -59,6 +59,17 @@ endif()
 # effects, a few runtime functions; armhf (VFPv3) and x86 have none, so the 32/64-bit compare
 # on the PC could not see it (19.10.2026). whole_build.sh counts them in the aarch64 build.
 add_compile_options(-ffp-contract=off)
+# Profile-guided optimisation (1.1.0, measured first: port/docs/pgo.md). RE4_PGO=generate: an instrumented build
+# (clang -fprofile-instr-generate; LLVM_PROFILE_FILE names the raw profiles, one per module); RE4_PGO=<file>: the
+# merged .profdata used (-fprofile-instr-use; functions the profile does not know or that changed are built as without).
+set(RE4_PGO "" CACHE STRING "profile-guided optimisation: empty none, generate, or the .profdata to use")
+if(RE4_PGO STREQUAL "generate")
+    add_compile_options(-fprofile-instr-generate)
+    add_link_options(-fprofile-instr-generate)
+elseif(RE4_PGO)
+    add_compile_options(-fprofile-instr-use=${RE4_PGO} -Wno-profile-instr-out-of-date -Wno-profile-instr-unprofiled
+                        -Wno-profile-instr-missing)
+endif()
 # Check build with sanitizers (whole_build.sh RE4_SANITIZE=address,undefined: build folder
 # whole-<target>-O2-san; the room tour of the PC check, whole_r100_check.sh --sanitize).
 # AddressSanitizer stops at the first access outside a global, a local or a block of the C
@@ -293,7 +304,10 @@ string(APPEND RE4_LINK_OBJECTS "runtime=$<TARGET_OBJECTS:re4_formats_obj>\n")
 # and Leon's outfit / the weapon on his back (runtime/wardrobe.cpp, patch 0902), Leon's melee moves (runtime/melee.cpp, patch 0904),
 # the finishers (runtime/finisher.cpp, patch 0921),
 # Ashley's pistol (runtime/ashley_gun.cpp, patch 0911), her own way down ladders (runtime/ashley_ladder.cpp, patch 0936), the mouse wheel's zoom (runtime/wheel_zoom.cpp) and the
-# cheat "Random enemies" (runtime/enemy_random.cpp, patch 0231) and the real-time shadows (runtime/rt_shadow.cpp, patch 0240).
+# cheat "Random enemies" (runtime/enemy_random.cpp, patch 0231), the real-time shadows (runtime/rt_shadow.cpp, patch 0240),
+# Ashley's catch-up by holding her key (runtime/ashley_catchup.cpp, 1.1.0) and the enemy health bars
+# (runtime/health_bars.cpp, patch 0238, 1.1.0) and the mouse in the title and options menus (runtime/mouse_menu.cpp,
+# patch 0239, 1.1.0).
 add_library(re4_gamehooks_obj OBJECT runtime/state_trace.cpp runtime/core_bridge.cpp runtime/movie_status.cpp
     runtime/dof.cpp runtime/gyro.cpp runtime/menu_touch.cpp runtime/picture.cpp runtime/knife_swipe.cpp
     runtime/qte_touch.cpp runtime/instant_game.cpp runtime/game_language.cpp runtime/cheats.cpp
@@ -301,7 +315,10 @@ add_library(re4_gamehooks_obj OBJECT runtime/state_trace.cpp runtime/core_bridge
     runtime/sound_volume.cpp runtime/minimap.cpp runtime/laser_colour.cpp runtime/benchmark.cpp
     runtime/glow_check.cpp runtime/view_distance.cpp runtime/cpu_skip.cpp runtime/free_move.cpp
     runtime/quick_slots.cpp runtime/parry.cpp runtime/wardrobe.cpp runtime/melee.cpp runtime/finisher.cpp runtime/locomotion.cpp runtime/react.cpp runtime/ashley_gun.cpp runtime/ashley_ladder.cpp runtime/skin_hands.cpp runtime/quick_pickup.cpp runtime/codec_call.cpp runtime/music.cpp runtime/studio_game.cpp
-    runtime/lock_on.cpp runtime/blink.cpp runtime/wheel_zoom.cpp runtime/enemy_random.cpp runtime/rt_shadow.cpp)
+    runtime/lock_on.cpp runtime/blink.cpp runtime/wheel_zoom.cpp runtime/enemy_random.cpp runtime/rt_shadow.cpp
+    runtime/ashley_catchup.cpp runtime/health_bars.cpp runtime/mouse_menu.cpp
+    runtime/title_skip.cpp
+    runtime/photo_mode.cpp)
 target_link_libraries(re4_gamehooks_obj PRIVATE re4_game_flags)
 target_include_directories(re4_gamehooks_obj PRIVATE runtime)
 string(APPEND RE4_LINK_OBJECTS "main=$<TARGET_OBJECTS:re4_gamehooks_obj>\n")

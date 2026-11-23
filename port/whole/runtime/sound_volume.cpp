@@ -28,6 +28,7 @@ std::atomic<int> gEffects(100);     // percent
 std::atomic<int> gModMusic(100);    // percent: the music mod's tracks (Mods, 19.11.2026; runtime/music.cpp)
 std::atomic<bool> gPending(false);  // recompute the playing sounds at the next game frame
 std::atomic<bool> gHooked(false);
+std::atomic<bool> gMuted(false);  // photo mode (runtime/photo_mode.cpp, 1.1.0): everything silent while it is on
 
 void hook(unsigned)
 {
@@ -88,10 +89,24 @@ void re4_mod_music_volume_set(int percent)
 // 2: the music mod's own volume (runtime/music.cpp)
 int re4_sound_volume(int music)
 {
+    if (gMuted.load(std::memory_order_relaxed)) {
+        return 0;
+    }
     if (music == 2) {
         return gModMusic.load(std::memory_order_relaxed);
     }
     return (music ? gMusic : gEffects).load(std::memory_order_relaxed);
+}
+
+// Photo mode (1.1.0): the music and the sounds that go on (the effects are paused, SndSePauseAll) silent while it is
+// on; the playing sounds are recomputed at the next game frame. The game thread.
+void re4_sound_volume_mute(int on)
+{
+    gMuted.store(on != 0);
+    if (!gHooked.exchange(true)) {
+        re4_add_frame_hook(hook);
+    }
+    gPending.store(true);
 }
 
 }  // extern "C"
