@@ -336,7 +336,6 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
   // (Mods, 19.11.2026) the 60 Hz mode asked for, the picture's surface and the requests again: HyperOS (the project
   // owner's POCO F7) kept 120 Hz after the first one and took 60 Hz only after the window had its focus back
   private int sixtyModeId;
-  private Surface pictureSurface;
   private int sixtyRetries;
   private static final int SIXTY_RETRIES = 4;
   private static final long SIXTY_RETRY_MS = 4000;
