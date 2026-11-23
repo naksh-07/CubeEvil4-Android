@@ -19959,3 +19959,9 @@ Der Platz sollte früh reserviert werden (beim Laden von `libre4_platform`).
 - Gerätebilder 117232..117234: Waffe mittiger, der Arm am Abzug offener (mehr Winkel im Ellbogen), damit die Hand am Vorderschaft nicht so gestreckt ist.
 - `CARRY_HANDS`/`CARRY_POLES`: rechte Hand höher (Brustmitte), Ellbogen zur Seite (~280 mm seitlich, ~77° gebeugt); linke Hand höher und näher, linker Arm ~120° statt fast gestreckt.
 - Geprüft: Lagen und Winkel numerisch, `RE4_TEST_MOVE_DAT` im i686-Host-Test. Nicht geprüft: auf dem Gerät.
+
+### Mods: Schrotflinte, linke Hand (move.dat v28, 23.11.2026)
+
+- Gerätebilder 117244..117246: die Hand am Vorderschaft wirkt zerknittert (Handgelenk 42–57° abgeknickt), der Arm soll etwas zurück.
+- `left_on_gun`: die linke Hand gleitet entlang der Waffe dorthin, wo ein gerader Unterarm (aus dem Griff des Spiels) den Oberarm trifft; dieser Ellbogen läge vor dem Bauch, darum wird er zur Hälfte (`LEFT_ELBOW_OUT` 0,5) zur Seite gedreht. Handgelenk jetzt 13–29° (Joggen ~40°, dort reicht der Arm nicht weiter), Hände 280–390 mm auseinander.
+- Geprüft: Winkel und Abstände numerisch, `RE4_TEST_MOVE_DAT` im i686-Host-Test. Nicht geprüft: auf dem Gerät.

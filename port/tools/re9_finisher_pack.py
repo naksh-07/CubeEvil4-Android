@@ -963,6 +963,59 @@ def carry_ik(rows, model):
     return out
 
 
+LEFT_ELBOW_OUT = 0.5
+
+
+def left_on_gun(rows, model, grip16):
+    """(v28, device pictures 117244..117246: "the hand on the fore-end crumpled, move that arm back a little") the left
+    hand slid along the gun (the line from the right hand to CARRY_HANDS[16]) to where its forearm, straight from the
+    hand held as the game holds the fore-end (grip16: grip_frame of part 16), meets the upper arm: the wrist unbent;
+    the elbow there. Runs after carry_ik (the right hand in place)."""
+    d16, u16 = grip16
+    fc = np.column_stack([d16, u16, np.cross(d16, u16)])
+    par = [p.parent for p in model.parts]
+    out, slid = [], []
+    for row in rows:
+        local = dict(row[0])
+        rot, pos = fk(model, (local,) + tuple(row[1:]))
+        r10 = pos[10]
+        line = rot[2] @ (CARRY_HANDS[16] - CARRY_HANDS[10])
+        line /= np.linalg.norm(line)
+        up = np.array([0.0, 1.0, 0.0]) - line[1] * line
+        up /= np.linalg.norm(up)
+        hand = np.column_stack([line, up, np.cross(line, up)]) @ fc.T
+        fore = hand @ np.array([1.0, 0.0, 0.0])
+        s0 = pos[13]
+        a, b = np.linalg.norm(pos[14] - s0), np.linalg.norm(pos[16] - pos[14])
+        best = None
+        for t in np.arange(280.0, 520.0, 2.0):
+            elbow = r10 + line * t - fore * b
+            miss = abs(np.linalg.norm(elbow - s0) - a)
+            if best is None or miss < best[0]:
+                best = (miss, t, elbow)
+        _miss, t, elbow = best
+        slid.append(t)
+        want = r10 + line * t
+        # the elbow that keeps the wrist straight sits in front of the belly: turned about the shoulder-hand line
+        # LEFT_ELBOW_OUT of the way to where the pole puts it (out at the side), the wrist bending the rest
+        axis = want - s0
+        axis /= np.linalg.norm(axis)
+        pole = rot[2] @ CARRY_POLES[16]
+        e0 = elbow - s0 - np.dot(elbow - s0, axis) * axis
+        ep = pole - np.dot(pole, axis) * axis
+        turn = math.atan2(np.dot(np.cross(e0, ep), axis), np.dot(e0, ep))
+        elbow = s0 + rot_axis(axis, turn * LEFT_ELBOW_OUT) @ (elbow - s0)
+        w = rot[par[13]]
+        local[13] = w.T @ rotation_between(pos[14] - s0, elbow - s0) @ w @ local.get(13, np.eye(3))
+        local[12] = w.T @ rotation_between(pos[14] - s0, elbow - s0) @ w @ local.get(12, np.eye(3))
+        rot, pos = fk(model, (local,) + tuple(row[1:]))
+        w = rot[par[14]]
+        local[14] = w.T @ rotation_between(pos[16] - pos[14], want - pos[14]) @ w @ local.get(14, np.eye(3))
+        out.append((local,) + tuple(row[1:]))
+    print("shotgun carry: the left hand %.0f..%.0f mm along the gun from the right" % (min(slid), max(slid)))
+    return out
+
+
 def unwind(rows, model, share=0.6):
     """The hands' turn about the forearm (device picture 117224: the left hand on the fore-end looked upside down, its
     wrist twisted 140 deg) moved into the forearm: `share` of it into the forearm's twist bone (9, 15), the rest into
@@ -1030,8 +1083,9 @@ def moves(root, model, tol, out_path, weapons=None, wep07=None, general2=None, g
                 warc7 = U.Archive(Path(wep07).read_bytes(), ">")
                 g7 = warc7.entry(SHOTGUN_AIMS[0][1])  # the level aim
                 gf = range(0, fcv.parse(g7).max_frame + 1, 6)
-                cf.rows = unwind(grip_fix(grip_fix(carry_ik(cf.rows, model), model, grip_frame(model, g7, gf)),
-                                          model, grip_frame(model, g7, gf, 16), 16), model)
+                g16 = grip_frame(model, g7, gf, 16)
+                cf.rows = unwind(grip_fix(grip_fix(left_on_gun(carry_ik(cf.rows, model), model, g16), model,
+                                                   grip_frame(model, g7, gf)), model, g16, 16), model)
             carry.append((0x98 + MOVES.index((slot, name, lengths, flags)), fcv.serialise(cf.motion(cf.scale)),
                           len(cf.frames) - 1))
         dist = np.linalg.norm(np.array(fit.root[-1][0]) - np.array(fit.root[0][0])) * fit.scale
