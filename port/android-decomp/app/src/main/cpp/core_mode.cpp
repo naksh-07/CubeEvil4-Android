@@ -3077,12 +3077,24 @@ bool drawGx() {
       } else {
         renderHint.Close();
         if (!first) re4cpu::ReleaseCores();
-        LOG("cores: the render thread left to Android (Force Performance: Default)");
+        // (1.1.1, a user's vivo with a Dimensity 9200, 60 FPS, "Standard": "jitter and stuttering", the render thread
+        // on the middle cores at 900-1500 MHz of their 3000, 11 ms of processor time a picture, 20-60 % of the pictures
+        // two or three vsyncs long, no heat) the cores stay Android's, but Android hears the picture's deadline and how
+        // long each took (the performance hint, as with "Performance cores"): it may then raise the clock it chose
+        const int tid = re4cpu::ThreadId();
+        const char *why = "";
+        renderHintTarget = renderTargetFor(smoothOn);
+        renderHint.Open(&tid, 1, renderHintTarget, &why);
+        LOG("cores: the render thread left to Android (Force Performance: Default); performance hint: %s (%.1f ms a "
+            "picture)", why, renderHintTarget / 1e6);
       }
     }
     // about once a second: back on the fast cores if Android moved the thread off them, and (1.1.0) on other cores
     // when the maker holds its cores back far below others (re4_cpu_info.h RenderPick)
-    static unsigned coreChecks, coreMoves;
+    static unsigned coreChecks, coreMoves, coreKept;
+    // (1.1.1) every picture: back on its cores at once when the system gave it others (KeepOnWantedCores)
+    if (fast && re4cpu::KeepOnWantedCores())
+      coreKept++;
     if (fast && ++coreChecks % 30 == 0) {
       const unsigned picks = re4cpu::TheRenderPick().moves;
       const bool moved = re4cpu::KeepOnFastCores();
@@ -3107,8 +3119,9 @@ bool drawGx() {
         char clocks[512], cores[96];
         re4cpu::DescribeAllClocks(re4cpu::GetLayout(), clocks, sizeof(clocks));
         re4cpu::AffinityText(cores, sizeof(cores));
-        LOG("cores: %s; the render thread on %s, now on core %d (moved for the clocks %u times)", clocks, cores,
-            sched_getcpu(), re4cpu::TheRenderPick().moves);
+        LOG("cores: %s; the render thread on %s, now on core %d (moved for the clocks %u times; put back on its cores "
+            "%u times in the last minute)", clocks, cores, sched_getcpu(), re4cpu::TheRenderPick().moves, coreKept);
+        coreKept = 0;
       }
     }
     gxRunMs += ms;

@@ -899,6 +899,67 @@ Entwurf `builds/workthread-1.1.0/design/menu-arrows-sliders-mockup.png`.
   `=2` (ohne Kopien, wie vorher). **4d45022d zurückgenommen** (Menüs ohne Anisotropie/erzeugte Mipmaps traf nicht die
   Ursache und bringt in den Menüs nichts); `RE4_GX_ANISO` im Nachzeichner bleibt. Packer unverändert, kein Neu-Packen nötig.
 
+## 1.1.1 (ab 22.11.2026, auf 1.1.0 = f0cd8d0e)
+
+Version 1.1.1 (versionCode 125) auf Wunsch des Projektinhabers (23.11.2026: „mach bitte gleich 1.1.1 draus“): Punkte
+35–38, Releasetext `port/android-decomp/docs/releases/v1.1.1.md`. Release und Tag macht der Projektinhaber auf GitHub.
+
+### 38. Ruckeln vivo V2426, zweiter Log: Kerne alle paar Sekunden zurückgesetzt (Nutzerbericht 23.11.2026)
+
+- **Bericht:** `reports/workthread-1.1.1/user-stutter-20261122/x-1899b51c` (1.1.0, 60 FPS, Leistungskerne an,
+  Texturfilter aus, Gleichmäßige Bildfolge aus, HD-Paket, 6 Minuten). Nutzer: „smoother … helped a lot but not
+  completely“.
+- **Log:** Bildfolge viel besser als im ersten Log (je 10 s im Mittel 2,5 % der Bilder mehr als 2 ms daneben statt
+  15–25 %; die meisten Fenster 0–2 %, beim Spielen schlimmstens 8 % mit 44 Bildern zu 2 Vsyncs; 17 % kurz nach dem
+  Start, 22 % im Pausenmenü). Render-Lauf 12,6 ms je Bild
+  (max 33), 922 von 992 Programmen aus dem Cache, keine Wärme, HD-Texturen ohne Aussetzer, Mipmaps 1000 Texturen in
+  531 ms (bei Raumwechseln). **Aber:** der Render-Thread kam auf Kern 7, stand bei 5 von 6 Minutenzeilen wieder auf
+  allen Kernen (meist Kern 4); „put back“ in den ersten 6 s schon 4-mal (Render) und 4-mal (Spiel), danach nicht mehr
+  geloggt (Grenze 4). Android/vivo setzt die Kerne der Threads alle 0,5–3 s zurück, wir prüften nur einmal je Sekunde.
+- **Änderung:** `re4cpu::KeepOnWantedCores` (nur `sched_getaffinity`-Vergleich, bei Abweichung zurück): Render-Thread
+  jedes Bild (`core_mode.cpp`), Spiel-Thread jeden Chunk (`gx_decode.cpp`); die Wahl nach Takt (RenderCoresNow) und
+  die Vertex-Threads bleiben beim Sekunden-Takt. Die Minutenzeile zählt jetzt „put back on its cores N times in the
+  last minute“, der Spiel-Thread loggt jedes 100. Zurücksetzen. e1ea7ec2 (Hint bei „Standard“) bleibt für Nutzer
+  ohne Leistungskerne. **Nicht auf dem Gerät geprüft** (am PC nur gebaut und die Kern-Tests).
+
+### 37. MSAA mit OpenGL ES: Alpha-getestete Teile fehlen (nubia NX709S, Adreno 730; Nutzerbericht 22.11.2026)
+
+- **Bericht:** `reports/workthread-1.1.1/user-msaa-broken` (1.1.0, GLES, 60 FPS, Dynamisch): mit MSAA 2×/4× fehlen
+  Gras, Haare (dunkel), Rockmuster, Fackelfeuer und das HUD; aus: normal. Im Log keine Shader-Fehler.
+- **Ursache (sehr wahrscheinlich):** der weiche Alpha-Test von 1.1.0 (0f0a13fb) setzt mit MSAA `gl_SampleMask` in jedem
+  Programm mit Alpha-Test; auf Adrenos gekacheltem MSAA (`EXT_multisampled_render_to_texture`) verwirft der Treiber
+  damit offenbar die ganzen Fragmente. Am PC (Mesa) nicht nachstellbar: dort alles da.
+- **Änderung:** `GxSetSoftAlpha` (gx_gl_shader): der OpenGL-ES-Renderer schaltet den weichen Test aus (harter Test wie
+  1.0.0), Vulkan an. Test `TestSoftAlpha` (GL mit 4 Proben harte Kante, Vulkan weiche), Bild
+  `builds/workthread-1.1.1-msaa-gles-pc.png` (GLES 1 / GLES 4 / Vulkan 4, Wald). **Nicht auf dem Gerät geprüft.**
+
+### 36. Ruckeln bei 60 FPS auf vivo V2426 (Dimensity 9200, Mali-G715, GLES; Nutzerbericht 22.11.2026)
+
+- **Bericht:** `reports/workthread-1.1.1/user-stutter-20261122` (1.1.0, 60 FPS, Stufe 4, Gleichmäßige Bildfolge an,
+  Leistungskerne „Standard“, HD-Paket). Frühere Berichte desselben Geräts (0.98.3/0.98.5, Lichtfehler) ohne Ruckeln.
+- **Log:** kein Drosseln (Wärme „none“); Render-Thread 10–11 ms Prozessorzeit je Bild, 86–94 % auf den mittleren
+  Kernen bei 900–1500 MHz (von 3000), nie verlegt (Leistungskerne aus); „screen pacing“: 15–25 % der Bilder mehr als
+  2 ms daneben, je 10 s 75–340 Bilder 2 Vsyncs und 8–18 Bilder 3 Vsyncs lang (bei 60 FPS sollte jedes 1 sein).
+- **Einordnung:** Die 1.1.0-Änderungen am Render-Thread (Kernwechsel, Hint 16,7 ms) gelten nur mit „Leistungskerne“;
+  „Gleichmäßige Bildfolge“ gab es schon (0.99.12/0.99.13), 1.1.0 brachte nur den Schalter; der 60-Hz-Wunsch an den
+  Bildschirm besteht seit 0.9x (1.1.0 wiederholt ihn). Neu für ihn in 1.1.0: die erzeugten Mipmaps (mit Anisotropie 16
+  bei Stufe 4 mehr Arbeit für den Grafikchip) – im Log nicht messbar (GPU nicht gemessen).
+- **Änderung:** Leistungs-Hinweis (ADPF) für den Render-Thread auch bei „Standard“ (Kerne bleiben Androids Wahl;
+  `core_mode.cpp`). Für eine Messung braucht es einen längeren Log des Nutzers (Schritte im Bericht).
+  **Nicht auf einem Gerät geprüft.**
+
+### 35. Touch-Steuerung „Unterdrücken“ auf dem Chromebook (Projektinhaber, 22.11.2026: „Auf einem Chromebook mit Touchscreen wird die Touchsteuerung nicht mit 'Unterdrücken' ausgeblendet“)
+
+- **Ursache:** „Unterdrücken“ blendet nur aus, solange ein **Gamepad** verbunden ist (`TouchShowRule`; ohne Gamepad
+  bleiben die Knöpfe als Absicherung sichtbar). Ein Chromebook hat Tastatur und Touchpad, meist kein Gamepad.
+- **Änderung:** Mit „Unterdrücken“ zählen auch eine Tastatur (mit Buchstaben), eine Maus oder ein Touchpad und ein
+  PC/Chromebook (`android.hardware.type.pc`, `org.chromium.arc`) als Controller (`TouchShowRule.counts`,
+  `TouchControls.keyboardMouseDevices`, `TouchControls.pcDevice`). Ein Tippen zeigt die Knöpfe weiter, bis die erste
+  Taste benutzt wurde (Tastatur-Tasten zählen schon als Benutzung). „Auto“ und „Erzwingen“ unverändert (Handys mit
+  Bluetooth-Tastatur wie bisher). Hilfetext in 11 Sprachen.
+- **Geprüft am PC:** `tests/TouchShowRuleTests.java` (64 Prüfungen, neu: was zählt, Chromebook-Ablauf),
+  `TouchChromebookTest` (Erkennung über Android-Features), App-Tests 235. **Nicht auf einem Chromebook geprüft.**
+
 ### 34. Update über 1.0.0, Frame-Skip „Auto“ in Stufen, Hochskalierer mit OpenGL ES (Nutzerberichte, 22.11.2026)
 
 - **Bericht nach Update (OPPO A53, Snapdragon 460):** „Force close“ bei Bericht speichern/senden nach Update von 1.0.0
