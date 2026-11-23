@@ -2485,11 +2485,7 @@ final class CoreMenu extends Dialog {
         on -> movement(null, null, null, on));
     help(R.string.ingame_free_move_help); help(R.string.ingame_aim_move_help);
     help(R.string.ingame_quick_slots_help); help(R.string.ingame_parry_help);
-    // "Skip intro logos" (patch 0905): straight to the title's main menu at the next start
-    toggle(buttonsRow(body), R.string.ingame_skip_intro, input.getBoolean(CoreActivity.SKIP_INTRO, true),
-        on -> { input.edit().putBoolean(CoreActivity.SKIP_INTRO, on).apply();
-                CoreBridge.setBackPlacement(CoreActivity.backPlacement(input)); });
-    help(R.string.ingame_skip_intro_help);
+    // (the mods' "Skip intro logos" of patch 0905 gave way to upstream's "Skip intro" of 1.1.0, RE4_SKIP_INTRO)
     // "Ashley's pistol" (patch 0911): she shoots the enemies near her while she follows or waits
     toggle(buttonsRow(body), R.string.ingame_ashley_gun, input.getBoolean(CoreActivity.ASHLEY_GUN, false),
         on -> { input.edit().putBoolean(CoreActivity.ASHLEY_GUN, on).apply();

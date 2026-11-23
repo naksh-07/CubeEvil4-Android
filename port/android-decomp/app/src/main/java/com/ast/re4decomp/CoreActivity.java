@@ -162,9 +162,6 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
   static final String REMAKE_MOVE = "remakeMove";
   /** The menu's "Remake reactions" (a mod pack's remake flinches for the Ganados, patch 0925), on by default. */
   static final String REMAKE_REACT = "remakeReact";
-  // "Skip intro logos" (wish of DevJunior, 10.11.2026; patch 0905): the title starts at its main menu (bit 28 of the
-  // placement word, on by default)
-  static final String SKIP_INTRO = "skipIntro";
   // "Ashley's pistol" (wish of DevJunior, 11.11.2026; patch 0911, runtime/ashley_gun.cpp): she carries a pistol as the
   // partner and backs Leon up (bit 29 of the placement word, off by default)
   static final String ASHLEY_GUN = "ashleyGun";
@@ -177,7 +174,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
         | (p.getBoolean(BACK_OVER, false) ? 1 << 22 : 0) | (p.getBoolean(BACK_EVENTS, false) ? 1 << 23 : 0)
         | (p.getBoolean(MELEE_NECK, false) ? 1 << 24 : 0) | (p.getBoolean(MELEE_MODS, true) ? 0 : 1 << 25)
         | (p.getBoolean(MELEE_AXE, false) ? 1 << 26 : 0) | (p.getBoolean(MELEE_RANDOM, true) ? 0 : 1 << 27)
-        | (p.getBoolean(SKIP_INTRO, true) ? 1 << 28 : 0) | (p.getBoolean(ASHLEY_GUN, false) ? 1 << 29 : 0);
+        | (p.getBoolean(ASHLEY_GUN, false) ? 1 << 29 : 0);  // (bit 28: upstream's "Skip intro" since 1.1.0)
   }
   /** "Gentler QTEs" (0.99.15): Professional's quick-time events as Normal's; on by default. */
   static final String GENTLE_QTE = "gentleQte";
