@@ -154,7 +154,7 @@ MOTION_INFO gWalk;
 void* gWalkMot = 0;
 int gWalkFlags = 4;  // MotionSetCore's flags it was set with (0x40: mirrored, a side step)
 cPlayer* gWalkPl = 0;
-bool gWalkUpper;  // the parts it was found for: the upper body (overlay's `upper`), else the legs
+int gWalkUpper;  // the parts it was found for: 1 the upper body (overlay's `upper`), 2 the arms, 0 the legs
 f32 gLegW = 0.0f;
 
 f32 wrap(f32 a)
@@ -553,12 +553,18 @@ bool weaponRoutine(cPlayer* pl)
 
 // The legs: the parts below the hips that hang off the walk motion's IK chain roots (kind 0x30, IKInit's;
 // ik.cpp), or, without them, the hips' children below the hips. gLeg[i] by the parts chain's order.
-void findLegs(cPlayer* pl, int n, bool upper)
+void findLegs(cPlayer* pl, int n, int upper)
 {
     cParts* roots[8];
     int nRoots = 0;
     cParts* hips = pl->pList;
-    if (upper) {
+    if (upper == 2) {
+        // the arms (Mods, 23.11.2026: the shotgun carried as in the remake; DevJunior: "it looks very stiff running"
+        // with the whole upper body of the carry): Leon's shoulders (parts 5 and 11) and all under them, in their own
+        // turns under the chest the routines pose (the torso moves with whatever plays)
+        roots[nRoots++] = pl->getPartsPtr(5);
+        roots[nRoots++] = pl->getPartsPtr(11);
+    } else if (upper) {
         // the upper body: Leon's waist (part 1) and all under it (spine, arms, head; runtime/locomotion.cpp's big
         // weapons), turned against the model under the routines' hips
         roots[nRoots++] = pl->getPartsPtr(1);
@@ -594,7 +600,7 @@ void findLegs(cPlayer* pl, int n, bool upper)
         gLeg[i] = false;
         gLegRoot[i] = false;
         for (int r = 0; r < nRoots; r++) {
-            if (p == roots[r]) {
+            if (p == roots[r] && upper != 2) {  // the arms: the shoulders' local turns, as every part under them
                 gLegRoot[i] = true;
             }
         }
@@ -619,7 +625,7 @@ void findLegs(cPlayer* pl, int n, bool upper)
 // `at` >= 0: the motion at that sequence frame (the caller keeps it in step), else it advances by `speed`.
 // Shared by the legs while aiming (legs) and the remake's legs under a big weapon (runtime/locomotion.cpp).
 bool overlay(cPlayer* pl, void* mot, void* seq, int start, f32 speed, f32 at, f32 legW, f32 swayW, f32 shiftW,
-             bool upper = false, int flags = 4)
+             int upper = 0, int flags = 4)
 {
     int n = 0;
     for (cParts* p = pl->pList; p; p = p->pList) {
@@ -841,7 +847,7 @@ void re4_player_after_routine(cPlayer* pl)
 int re4_legs_overlay(void* pl, void* mot, void* seq, int start, float speed, float at, float legW, float sway,
                      float shift, int upper)
 {
-    return pl && mot && overlay((cPlayer*) pl, mot, seq, start, speed, at, legW, sway, shift, upper != 0) ? 1 : 0;
+    return pl && mot && overlay((cPlayer*) pl, mot, seq, start, speed, at, legW, sway, shift, upper) ? 1 : 0;
 }
 
 // Patches 0909 / 0933 (the reload steps of the long guns and the handguns, the game thread): 1 when a reload without

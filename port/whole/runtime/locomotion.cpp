@@ -1029,7 +1029,9 @@ int heavyUpper(cPlayer* pl)
             saidCarry = true;
             re4_log("move: the shotgun carried as in the remake (its %s)", kNames[gHeavyK]);
         }
-        return re4_legs_overlay(pl, cm.mot, (void*) cm.seq, 0, 1.0f, cat, gHeavyW, 0.0f, 0.0f, 1);
+        // the arms only (2): the torso, neck and head move with the remake's movement that plays (the sprint, the starts,
+        // stops and turns too), the arms hold the gun as the remake's layer does
+        return re4_legs_overlay(pl, cm.mot, (void*) cm.seq, 0, 1.0f, cat, gHeavyW, 0.0f, 0.0f, 2);
     }
     static bool said;
     if (!said) {
