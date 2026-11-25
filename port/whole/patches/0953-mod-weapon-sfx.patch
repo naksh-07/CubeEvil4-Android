@@ -1,0 +1,35 @@
+# Port patch (mods): play RE4 Remake (2023) weapon gunshot WAVs from mods/audio/weapons/wepXX.wav
+# on cObjWep::trigger() and suppress the matching block-2 GameCube gunshot SE when replaced.
+--- a/src/game/objWep.cpp
++++ b/src/game/objWep.cpp
+@@ -188,7 +188,10 @@
+ }
+ 
+ // One shot: takes a round from the magazine (ItemMgr.trigger).
++extern "C" void re4_weapon_sfx_fire(int weaponNo, int effectsVolumePercent);
++extern "C" int re4_sound_volume(int music);
+ void cObjWep::trigger()
+ {
++    re4_weapon_sfx_fire(pG->weapon_no, re4_sound_volume(0));
+     ItemMgr.trigger();
+ }
+--- a/src/game/snd.cpp
++++ b/src/game/snd.cpp
+@@ -714,6 +714,7 @@
+ // Plays SE `no` of block `blk` with pan and volume from the camera and the room's distance curves,
+ // and sends the request to the driver (Snd_iss_req_para). Positional sounds get a SndSurWork so
+ // sndSurroundCalc keeps updating them. Returns the sound id, or 0 when not played.
++extern "C" int re4_weapon_sfx_suppress(int blk2No);
+ u32 SndCall(u16 blk, u16 no, Vec* pos, int id, int vol, cUnit* obj)
+ {
+     SND_CTRL* c = &Snd_ctrl_work;
+@@ -754,6 +755,9 @@
+         ret = footSeCheck(&no, pos);
+         break;
+     case 2:
++        if (re4_weapon_sfx_suppress(no)) {
++            return 0;
++        }
+         ret = wepSeCheck(&no, pos);
+         break;
+     case 3:

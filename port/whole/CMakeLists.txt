@@ -228,6 +228,7 @@ add_library(re4_platform_obj OBJECT
     runtime/mod_place.cpp
     runtime/mod_music.cpp
     runtime/remake_audio.cpp
+    runtime/weapon_sfx.cpp
     runtime/studio_host.cpp
     runtime/mod_music_mp3.c
     runtime/mod_music_ogg.c

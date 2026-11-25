@@ -1,4 +1,5 @@
 #include "remake_audio.h"
+#include "weapon_sfx.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -119,6 +120,12 @@ void re4_remake_audio_configure(int enabled, const char* xwbPath)
 {
     std::lock_guard<std::mutex> lock(gConfigMutex);
     const std::string path = xwbPath ? xwbPath : "";
+    if (!path.empty()) {
+        const size_t slash = path.find_last_of('/');
+        if (slash != std::string::npos) {
+            re4_weapon_sfx_set_dir((path.substr(0, slash) + "/weapons").c_str());
+        }
+    }
 
     if (path != gXwbPath) {
         gXwbPath = path;

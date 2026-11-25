@@ -222,6 +222,8 @@ void re4_mod_sound_mix(short* lr, unsigned frames)
     }
     // a new press meanwhile (gPos set to 0 again) wins over this one's progress
     gPos.compare_exchange_strong(start, (unsigned) pos < total ? pos : -1);
+    extern void re4_weapon_sfx_mix(int16_t* lr, unsigned frames);
+    re4_weapon_sfx_mix(lr, frames);
 }
 
 }  // extern "C"
