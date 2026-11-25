@@ -38,7 +38,7 @@ final class TouchStyle {
   static final String[] IDS = {"re", "gc", "ps2", "xbox", "re4r"};
   static final String[] NAMES = {"RE", "GC", "PS2", "XBOX", "RE4R"};
   /** A new player's skin. */
-  static final int DEFAULT_LOOK = RE;
+  static final int DEFAULT_LOOK = RE4R;
 
   /** The skin number of a skin ID, the default for an unknown one. */
   static int look(String id) {

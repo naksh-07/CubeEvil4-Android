@@ -6,6 +6,7 @@ import android.util.Log;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.FrameLayout;
 import com.ast.retrotouch.RetroTouchAdapter;
 import com.ast.retrotouch.RetroTouchButtonShape;
 import com.ast.retrotouch.RetroTouchButtonStyle;
@@ -53,12 +54,15 @@ final class TouchControls implements CoreTouch.Host {
   /** RetroTouch's keys of the style (before skins) and of the skin chosen, in TouchLayoutFile.PREFS. */
   static final String STYLE_KEY = "button_style_" + LAYOUT_ID, SKIN_KEY = "button_skin_" + LAYOUT_ID;
 
+  private final FrameLayout container;
   private final RetroTouchView view;
+  private final Re4rVirtualPadView re4rView;
   private final CoreTouch touch;
   private final Host host;
   private final int[] where = new int[2];
   private final TouchShowRule rule = new TouchShowRule();
   private boolean shown, editing, quiet, first = true;
+  private int currentLook = TouchStyle.DEFAULT_LOOK;
   // L's and R's width over height in the ICONS style on this screen (TouchStyle.shoulderAspect); `reshape`: to
   // build the layout again with it once the editor closes
   private float shoulder = TouchStyle.SHOULDER_ASPECT;
@@ -79,7 +83,15 @@ final class TouchControls implements CoreTouch.Host {
     pc = pcDevice(context);
     rule.setMode(mode);
     touch = new CoreTouch(input, this);
+    container = new FrameLayout(context);
+    container.setFocusable(false);
     view = new RetroTouchView(context);
+    re4rView = new Re4rVirtualPadView(context);
+    re4rView.init(touch, host);
+    container.addView(view, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT));
+    container.addView(re4rView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT));
     // the game's surface keeps the focus (the controller's keys)
     view.setFocusable(false);
     // shown by the controllers present, not hidden for a while by their keys
@@ -163,7 +175,21 @@ final class TouchControls implements CoreTouch.Host {
         host.send();
       }
     });
+    currentLook = TouchStyle.look(prefs().getString(SKIN_KEY, TouchStyle.IDS[TouchStyle.DEFAULT_LOOK]));
+    applyLook();
     update();
+  }
+
+  private void applyLook() {
+    boolean isRe4r = (currentLook == TouchStyle.RE4R);
+    if (isRe4r) {
+      view.setVisibility(View.GONE);
+      re4rView.setVisibility(shown ? View.VISIBLE : View.GONE);
+    } else {
+      re4rView.setVisibility(View.GONE);
+      view.setVisibility(shown ? View.VISIBLE : View.GONE);
+      quietly(() -> view.setSkin(TouchStyle.IDS[currentLook]));
+    }
   }
 
   /** RetroTouch's callbacks, those of its sticks other than the move stick (the C, aim and knife sticks) and the
@@ -187,13 +213,15 @@ final class TouchControls implements CoreTouch.Host {
     return true;
   }
 
-  /** The skin shown (TouchStyle.RE .. XBOX; the app menu's "Button style"). */
-  int look() { return TouchStyle.look(view.getSkin()); }
+  /** The skin shown (TouchStyle.RE .. RE4R; the app menu's "Button style"). */
+  int look() { return currentLook; }
 
   /** The app menu's "Button style": a skin at once (RetroTouch saves the choice). */
   void setLook(int which) {
-    view.setSkin(TouchStyle.IDS[TouchStyle.valid(which)]);
-    Log.i(CoreActivity.TAG, "touch controls: skin " + view.getSkin() + " (app menu)");
+    currentLook = TouchStyle.valid(which);
+    prefs().edit().putString(SKIN_KEY, TouchStyle.IDS[currentLook]).apply();
+    applyLook();
+    Log.i(CoreActivity.TAG, "touch controls: skin " + TouchStyle.NAMES[currentLook] + " (app menu)");
   }
 
   /** The default layout again with L's and R's aspect for this screen (the saved layout read again with it). */
@@ -211,6 +239,7 @@ final class TouchControls implements CoreTouch.Host {
    * turned by 180 degrees): the layouts again for the camera's side (TouchFrame), after the editor when it is open.
    */
   void setSafeInsets(int[] insets) {
+    re4rView.setSafeInsets(insets[0], insets[1], insets[2], insets[3]);
     if (java.util.Arrays.equals(insets, safe)) return;
     System.arraycopy(insets, 0, safe, 0, 4);
     // RetroTouch 1.0.0-beta.11: its editor's bar, the "DRAG / Selected" line and the gear's default place keep clear of
@@ -306,8 +335,10 @@ final class TouchControls implements CoreTouch.Host {
     // the skin again too (a settings import brings the player's skin, or the style of a backup of before skins)
     final android.content.SharedPreferences p = prefs();
     migrateOldGc(p);
-    view.setSkin(p.getString(SKIN_KEY, TouchStyle.IDS[TouchStyle.DEFAULT_LOOK]));
+    currentLook = TouchStyle.look(p.getString(SKIN_KEY, TouchStyle.IDS[TouchStyle.DEFAULT_LOOK]));
+    applyLook();
     touch.reset();
+    re4rView.resetInputState();
     Log.i(CoreActivity.TAG, "touch controls: the saved layout read again (" + (shown ? "shown" : "hidden") + ")");
   }
 
@@ -337,7 +368,7 @@ final class TouchControls implements CoreTouch.Host {
     return out.toString();
   }
 
-  View view() { return view; }
+  View view() { return container; }
 
   boolean shown() { return shown; }
 
@@ -350,6 +381,11 @@ final class TouchControls implements CoreTouch.Host {
     for (int id : InputDevice.getDeviceIds()) {
       InputDevice d = InputDevice.getDevice(id);
       if (d == null) continue;
+      String name = d.getName();
+      if (name != null) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        if (lower.contains("uinput-") || lower.contains("fingerprint") || lower.contains("sensor")) continue;
+      }
       int sources = d.getSources();
       if ((sources & InputDevice.SOURCE_GAMEPAD) != InputDevice.SOURCE_GAMEPAD
           && (sources & InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK) continue;
@@ -391,8 +427,12 @@ final class TouchControls implements CoreTouch.Host {
     devices = now;
     if (change) {
       shown = want;
-      quietly(() -> view.setMode(want ? RetroTouchMode.GAMEPLAY : RetroTouchMode.OFF));
+      applyLook();
+      if (currentLook != TouchStyle.RE4R) {
+        quietly(() -> view.setMode(want ? RetroTouchMode.GAMEPLAY : RetroTouchMode.OFF));
+      }
       touch.reset();
+      re4rView.resetInputState();
     }
     String why = TouchShowRule.name(rule.mode()) + ", " + (!controller ? "no controller"
         : (pads.isEmpty() ? "a keyboard, a mouse or a PC (Suppress)" : "a controller is connected")
@@ -409,6 +449,7 @@ final class TouchControls implements CoreTouch.Host {
   /** Nothing held (the app's menu, focus lost, pause): RetroTouch forgets its fingers too. */
   void reset() {
     touch.reset();
+    re4rView.resetInputState();
     quietly(view::resetInputState);
   }
 
@@ -423,7 +464,10 @@ final class TouchControls implements CoreTouch.Host {
 
   @Override public void select(boolean down) { host.select(down, !quiet); }
 
-  @Override public void latched(String action, boolean on) { view.setActionLatched(action, on); }
+  @Override public void latched(String action, boolean on) {
+    view.setActionLatched(action, on);
+    re4rView.setLatched(action, on);
+  }
 
   @Override public void r3(boolean down) { host.r3(down); }
 
@@ -468,6 +512,9 @@ final class TouchControls implements CoreTouch.Host {
    */
   boolean onControl(float x, float y) {
     if (!shown) return false;
+    if (currentLook == TouchStyle.RE4R) {
+      return re4rView.onControl(x, y);
+    }
     if (editing || view.getWidth() <= 0) return true;
     view.getLocationInWindow(where);
     x -= where[0];

@@ -1822,6 +1822,18 @@ final class CoreMenu extends Dialog {
       graphics.edit().putBoolean("effectsOn", on).apply(); CoreBridge.sendSoundVolume(graphics);
     });
     help(R.string.ingame_volume_help);
+
+    // Soundtrack selection (Original 2005 / RE4 Remake 2023)
+    heading(R.string.ingame_soundtrack_heading);
+    final boolean hasRemake = IngameSettings.isRemakeSoundtrackAvailable(getContext());
+    into = buttonsRow(labelledOptions(0));
+    final String remakeLabel = hasRemake ? s(R.string.ingame_soundtrack_remake) : (s(R.string.ingame_soundtrack_remake) + " (Missing xwb)");
+    rowChoices(new String[] {s(R.string.ingame_soundtrack_original), remakeLabel},
+        new int[] {0, 1}, hasRemake ? IngameSettings.getSoundtrackMode(getContext()) : 0, 2, value -> {
+          if (value == 1 && !hasRemake) return;
+          IngameSettings.setSoundtrackMode(getContext(), value);
+        });
+    help(R.string.ingame_soundtrack_help);
   }
   /** A percentage as the volumes' sliders: `min` .. `max` in steps of 5 from `now`, each move to `moved`. */
   private void percentSlider(MenuLayout.Buttons row, int label, int min, int max, int now, Changed<Integer> moved) {

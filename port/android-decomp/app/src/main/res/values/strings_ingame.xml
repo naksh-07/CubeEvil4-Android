@@ -315,6 +315,10 @@
     <string name="ingame_music_volume">Music</string>
     <string name="ingame_effects_volume">Sound effects</string>
     <string name="ingame_volume_help">Music is the background music; sound effects are everything else (shots, voices, steps). Movies keep their sound. The two buttons switch the music or the sound effects off entirely.</string>
+    <string name="ingame_soundtrack_heading">Soundtrack</string>
+    <string name="ingame_soundtrack_original">Original (2005)</string>
+    <string name="ingame_soundtrack_remake">Remake (2023)</string>
+    <string name="ingame_soundtrack_help">Switch between the classic GameCube music and RE4 Remake (2023) orchestral soundtrack (requires bio4bgm.xwb in mods/audio/).</string>
     <string name="ingame_smooth_help">Extra in-between pictures. The game logic stays at 30 frames/s.</string>
     <string name="ingame_smooth60_uneven">This screen runs at %1$d Hz: 60 FPS cannot be shown evenly on it and may stutter. 30 FPS (60 FPS off) runs smoother here.</string>
     <string name="ingame_instant_save">Save</string>

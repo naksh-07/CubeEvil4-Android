@@ -13,6 +13,7 @@
 // For tests on the PC: RE4_SOUND_VOLUME=music,effects (percent) at the start.
 #include "types.h"
 #include "snd_drv.h"
+#include "remake_audio.h"
 
 #include <atomic>
 #include <cstdio>
@@ -28,9 +29,33 @@ std::atomic<int> gEffects(100);     // percent
 std::atomic<bool> gPending(false);  // recompute the playing sounds at the next game frame
 std::atomic<bool> gHooked(false);
 std::atomic<bool> gMuted(false);  // photo mode (runtime/photo_mode.cpp, 1.1.0): everything silent while it is on
+int gLastRemakePlaying = 0;
 
 void hook(unsigned)
 {
+    int activeTrack = -1;
+    int activeVol = 127;
+    if (Snd_str_blk[0].rit_adrs != nullptr && Snd_str_blk[0].rit_num > 0) {
+        const SND_RIT* base = Snd_str_blk[0].rit_adrs;
+        const SND_RIT* end = base + Snd_str_blk[0].rit_num;
+        for (int i = 0; i < SND_STR_MAX; ++i) {
+            const SND_STR& s = Snd_str_work[i];
+            if ((s.be_flag & 0x10) && !(s.be_flag & 0x4000) &&
+                s.rit_adrs >= base && s.rit_adrs < end) {
+                activeTrack = static_cast<int>(s.rit_adrs - base);
+                activeVol = s.vol;
+                break;
+            }
+        }
+    }
+    const int musicPct = gMuted.load(std::memory_order_relaxed) ? 0 : gMusic.load(std::memory_order_relaxed);
+    re4_remake_audio_set_active(activeTrack, activeVol, musicPct, 0);
+    const int remakePlaying = re4_remake_audio_is_playing();
+    if (remakePlaying != gLastRemakePlaying) {
+        gLastRemakePlaying = remakePlaying;
+        gPending.store(true);
+    }
+
     if (gPending.exchange(false)) {
         Snd_reset_vol_all();
     }
@@ -79,6 +104,9 @@ void re4_sound_volume_set(int music, int effects)
 int re4_sound_volume(int music)
 {
     if (gMuted.load(std::memory_order_relaxed)) {
+        return 0;
+    }
+    if (music && re4_remake_audio_is_playing()) {
         return 0;
     }
     return (music ? gMusic : gEffects).load(std::memory_order_relaxed);

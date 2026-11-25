@@ -23,6 +23,7 @@ the target up in the loaded modules on first use.
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,26 +38,29 @@ CALL_RELOCS = {"R_386_PLT32", "R_386_PC32", "R_X86_64_PLT32", "R_X86_64_PC32", "
 def nm_symbols(objects: list) -> tuple:
     """(defined globals -> type letter, undefined names) over a set of objects."""
     defined, undefined = {}, set()
+    nm_bin = shutil.which("llvm-nm") or shutil.which("nm") or "nm"
     for chunk in range(0, len(objects), 200):
-        out = subprocess.run(["nm", "-A", *objects[chunk:chunk + 200]],
+        out = subprocess.run([nm_bin, "-A", *objects[chunk:chunk + 200]],
                              capture_output=True, text=True, check=True).stdout
         for line in out.splitlines():
-            # "<object>:<address> <type> <name>"; undefined entries have no address
+            # "<object>:<address> <type> <name>" (GNU nm) or "<object>: <address> <type> <name>" (llvm-nm)
             parts = line.split()
-            if len(parts) != 3:
+            if len(parts) < 3:
                 continue
-            if parts[1] == "U":
-                undefined.add(parts[2])
-            elif parts[1] in "TDBRVWGSCu":
-                defined.setdefault(parts[2], parts[1])
+            sym_type, sym_name = parts[-2], parts[-1]
+            if sym_type == "U":
+                undefined.add(sym_name)
+            elif sym_type in "TDBRVWGSCu":
+                defined.setdefault(sym_name, sym_type)
     return defined, undefined - set(defined)
 
 
 def call_targets(objects: list) -> set:
     """Symbols that are the target of at least one call relocation."""
     called = set()
+    readelf_bin = shutil.which("llvm-readelf") or shutil.which("readelf") or "readelf"
     for chunk in range(0, len(objects), 200):
-        out = subprocess.run(["readelf", "-rW", *objects[chunk:chunk + 200]],
+        out = subprocess.run([readelf_bin, "-rW", *objects[chunk:chunk + 200]],
                              capture_output=True, text=True).stdout
         for line in out.splitlines():
             parts = line.split()
@@ -93,7 +97,8 @@ def original_symbol_types() -> dict:
 
 
 def demangle(names: list) -> list:
-    out = subprocess.run(["c++filt"], input="\n".join(names), capture_output=True, text=True).stdout
+    cxxfilt_bin = shutil.which("llvm-cxxfilt") or shutil.which("c++filt") or "c++filt"
+    out = subprocess.run([cxxfilt_bin], input="\n".join(names), capture_output=True, text=True).stdout
     return out.splitlines()
 
 

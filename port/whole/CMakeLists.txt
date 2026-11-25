@@ -230,6 +230,7 @@ add_library(re4_platform_obj OBJECT
     runtime/os_link.cpp
     runtime/os_thread.cpp
     runtime/pad.cpp
+    runtime/remake_audio.cpp
     runtime/vi.cpp
     runtime/watch.cpp
     "${RE4_ROOT}/port/src/stack_context.cpp")

@@ -32,6 +32,7 @@ public final class NativeBridge {
   public static native void configureTestProfile(int profile, long session);
   public static native void configureWeapons(String handgunDrs, String shotgunDrs);
   public static native void configureMusic(String musicDirectory);
+  public static native void configureSoundtrack(boolean remakeEnabled, String xwbPath);
   public static native void configureSubscreen(String discFilesDirectory, int language);
   public static native void setSubscreenOpen(boolean open);
   public static native void subscreenItem(int id, boolean examine);

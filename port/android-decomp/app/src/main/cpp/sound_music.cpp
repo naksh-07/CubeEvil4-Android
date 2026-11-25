@@ -1,6 +1,7 @@
 #include "sound_music.h"
 #include "asset_reader.h"
 #include "sound_synth_tables.h"
+#include "xwb_reader.h"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -238,6 +239,12 @@ std::string SoundSequence::describe() const {
 
 std::shared_ptr<const SoundStream> SoundStream::Load(const std::string &header,
     const std::string &container,unsigned block,unsigned number) {
+  if (block == 0 && XwbStreamReader::IsEnabled()) {
+    auto remakeStream = XwbStreamReader::LoadTrack(number);
+    if (remakeStream) {
+      return remakeStream;
+    }
+  }
   if (block>1) throw std::runtime_error("Original music: Stream block");
   const auto data=read(header,tableBudget);const AssetReader r{data};const auto base=std::size_t(r.u32(block*4));r.range(base,12);
   if (number>=r.u32(base)) throw std::runtime_error("Original music: Stream number");

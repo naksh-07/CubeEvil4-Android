@@ -324,6 +324,10 @@ static int readRing(short* out, int frames, int channels)
     }
     dry = got < frames;
     gRead.store(r, std::memory_order_release);
+    if (got > 0) {
+        extern void re4_remake_audio_mix(int16_t* out, int frames, int channels);
+        re4_remake_audio_mix(out, got, channels);
+    }
     return got;
 }
 

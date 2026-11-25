@@ -56,6 +56,7 @@
 #include "sound_mixer.h"
 #include "sound_acoustics.h"
 #include "sound_ambient.h"
+#include "xwb_reader.h"
 #include "muzzle_effects.h"
 #include "world_effects_gl.h"
 #include "room_effect_cloth_gl.h"
@@ -4712,6 +4713,19 @@ Java_com_ast_re4decomp_NativeBridge_configureMusic(JNIEnv *env, jclass, jstring 
   } catch (const std::exception &e) {
     musicAssetRoot.clear(); musicCache.clear(); streamCache.clear();
     __android_log_print(ANDROID_LOG_ERROR,"RE4Audio","%s",e.what());
+  }
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ast_re4decomp_NativeBridge_configureSoundtrack(JNIEnv *env, jclass, jboolean remakeEnabled, jstring xwbPath) {
+  try {
+    const std::string path = xwbPath ? jstringValue(env, xwbPath) : "";
+    if (!path.empty() && path != re4::XwbStreamReader::Path()) {
+      re4::XwbStreamReader::Configure(path);
+    }
+    re4::XwbStreamReader::SetEnabled(remakeEnabled == JNI_TRUE);
+    streamCache.clear();
+  } catch (const std::exception &e) {
+    __android_log_print(ANDROID_LOG_ERROR, "RE4Audio", "configureSoundtrack failed: %s", e.what());
   }
 }
 extern "C" JNIEXPORT void JNICALL

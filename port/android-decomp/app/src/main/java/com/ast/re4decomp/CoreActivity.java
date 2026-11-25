@@ -593,6 +593,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
       CoreBridge.setFastCores(g.getInt("fastCores", 0) == 1);
       CoreBridge.setPotato(CoreBridge.potatoSent(g));
       CoreBridge.sendSoundVolume(g);
+      IngameSettings.applySoundtrack(this);
       CoreBridge.setAim(aimInvert, aimSpeed, autoAim, alwaysRun);
       CoreBridge.setGentleQte(getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getBoolean(GENTLE_QTE, GENTLE_QTE_DEFAULT));
       // the cheat switches kept from the last run (a test script's RE4_CHEATS wins)
@@ -776,8 +777,8 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
 
   /** The menu's setting "Touch Controls"; the old switch "Use Touch Controls" on counts as Force. */
   static int touchMode(SharedPreferences prefs) {
-    if (prefs.contains(TOUCH_MODE)) return prefs.getInt(TOUCH_MODE, TouchShowRule.AUTO);
-    return prefs.getBoolean(TOUCH_ALWAYS, false) ? TouchShowRule.FORCE : TouchShowRule.AUTO;
+    if (prefs.contains(TOUCH_MODE)) return prefs.getInt(TOUCH_MODE, TouchShowRule.FORCE);
+    return prefs.getBoolean(TOUCH_ALWAYS, true) ? TouchShowRule.FORCE : TouchShowRule.AUTO;
   }
 
   /**

@@ -105,6 +105,7 @@ struct CoreApi {
   void (*setFastCores)(int){};  // optional (cores since 24.10.2026): Force Performance
   void (*setPotato)(int){};     // optional (cores since 30.10.2026): Potato mode (bit 0 weather, bit 1 special effects off)
   void (*setSoundVolume)(int){};  // optional (cores since 30.10.2026): music | effects << 8, percent
+  void (*setSoundtrack)(int, const char *){};  // optional: remake soundtrack override (.xwb)
   void (*setAim)(int){};        // optional (cores since 30.10.2026): bit 0 invert vertical, bit 1 auto aim, bit 2 always run, bits 8.. aim speed in percent
   int (*aimFromGame)(void){};   // optional (cores since 03.11.2026, patch 0188): the game's own "reverse" changed
   int (*vibrationFromGame)(void){};  // optional (cores since 1.1.0): the game's own "vibration" changed
@@ -469,6 +470,7 @@ void loadCore(JNIEnv *env) {
   api.aimFromGame = reinterpret_cast<int (*)(void)>(dlsym(api.main, "re4_core_aim_from_game"));
   api.vibrationFromGame = reinterpret_cast<int (*)(void)>(dlsym(api.main, "re4_core_vibration_from_game"));
   api.setSoundVolume = reinterpret_cast<void (*)(int)>(dlsym(api.main, "re4_core_set_sound_volume"));
+  api.setSoundtrack = reinterpret_cast<void (*)(int, const char *)>(dlsym(api.main, "re4_core_set_soundtrack"));
   api.restartGame = reinterpret_cast<void (*)(int)>(dlsym(api.main, "re4_core_restart_game"));
   api.discProblem = reinterpret_cast<const char *(*)(void)>(dlsym(api.main, "re4_core_disc_problem"));
   api.setCheats = reinterpret_cast<void (*)(int)>(dlsym(api.main, "re4_core_set_cheats"));
@@ -1213,6 +1215,11 @@ int aimSent = -1;  // what the core was told last (-1: nothing yet)
 // percent (the core's runtime/sound_volume.cpp).
 std::atomic<int> optSound{100 | 100 << 8};
 int soundSent = -1;  // what the core was told last (-1: nothing yet)
+std::mutex optSoundtrackLock;
+bool optSoundtrackEnabled = false;
+std::string optSoundtrackPath;
+int soundtrackSent = -1;
+std::string soundtrackPathSent;
 int renderFast = -1;  // the setting the render thread runs with (-1: none yet)
 
 // Shader programs made ahead on a thread of its own (decision of the project owner, 23.10.2026):
@@ -2863,6 +2870,15 @@ bool drawGx() {
       api.setSoundVolume(sound);
       soundSent = sound;
     }
+    if (api.setSoundtrack) {
+      std::lock_guard<std::mutex> lock(optSoundtrackLock);
+      const int wantEn = optSoundtrackEnabled ? 1 : 0;
+      if (wantEn != soundtrackSent || optSoundtrackPath != soundtrackPathSent) {
+        api.setSoundtrack(wantEn, optSoundtrackPath.c_str());
+        soundtrackSent = wantEn;
+        soundtrackPathSent = optSoundtrackPath;
+      }
+    }
     if (fast != renderFast) {
       const bool first = renderFast < 0;
       renderFast = fast;
@@ -4035,6 +4051,18 @@ extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setSoundVolu
   const int m = std::clamp(static_cast<int>(music), 0, 100), e = std::clamp(static_cast<int>(effects), 0, 100);
   const int want = m | e << 8;
   if (optSound.exchange(want) != want) LOG("sound: music %d %%, sound effects %d %%", m, e);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_setSoundtrack(JNIEnv *env, jclass, jboolean remakeEnabled, jstring xwbPath) {
+  const char *raw = xwbPath ? env->GetStringUTFChars(xwbPath, nullptr) : nullptr;
+  const std::string path = raw ? raw : "";
+  if (raw) env->ReleaseStringUTFChars(xwbPath, raw);
+  {
+    std::lock_guard<std::mutex> lock(optSoundtrackLock);
+    optSoundtrackEnabled = (remakeEnabled == JNI_TRUE);
+    optSoundtrackPath = path;
+  }
+  LOG("soundtrack: remake=%d path=%s", remakeEnabled == JNI_TRUE ? 1 : 0, path.c_str());
 }
 
 // The menu's "Game language" with the European discs (decisions of the project owner, 26./27.10.2026;
