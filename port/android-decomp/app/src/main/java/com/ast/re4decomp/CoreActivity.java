@@ -298,6 +298,9 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
   private boolean prepPausedCore;
   private long prepStartedAt;
   private GyroAim gyroAim;
+  private UsbXInputDriver usbXInput;
+  private boolean kernel045eSeen;
+  private boolean kernel045eSentInput;
   private boolean touchEditing;
   private String startProblem = "";
   private String settings = "";
@@ -475,6 +478,19 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
           + ") dropped; the button mapping starts from the default");
       inputPrefs.edit().remove(OLD_KEY_MAP).apply();
     }
+    if (inputPrefs.getInt("controllerMapVer", 0) < 2 && !inputPrefs.getBoolean("controllerMapManuallyChosen", false)) {
+      ActionMap xbox = ActionMap.xbox(ActionMap.KIND_CONTROLLER);
+      if (xbox != null) {
+        String encoded = xbox.encode();
+        if (encoded != null) {
+          inputPrefs.edit()
+              .putString(BINDINGS_CONTROLLER, encoded)
+              .putBoolean("controllerMapChosen", true)
+              .putInt("controllerMapVer", 2)
+              .apply();
+        }
+      }
+    }
     input.setControllerMap(ActionMap.decode(ActionMap.KIND_CONTROLLER, inputPrefs.getString(BINDINGS_CONTROLLER, null)));
     input.setKeyboardMap(ActionMap.decode(ActionMap.KIND_KEYBOARD, inputPrefs.getString(BINDINGS_KEYBOARD, null)));
     if (inputPrefs.contains("bindings") || inputPrefs.contains("extraKeys")) {
@@ -539,6 +555,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     touchControls.setLatch(inputPrefs.getBoolean(TOUCH_LATCH, false));
     touchControls.setLatchB(inputPrefs.getBoolean(TOUCH_LATCH_B, false));
     gyroAim = new GyroAim(this, main);
+    usbXInput = new UsbXInputDriver(this, main, usbPadListener);
     gyroAim.setSensitivity(inputPrefs.getFloat(GYRO_SENSITIVITY, 1f));
     mouseSensitivity = clampMouse(inputPrefs.getFloat(MOUSE_SENSITIVITY, 1f));
     aimInvert = inputPrefs.getBoolean(AIM_INVERT_V, false);
@@ -650,6 +667,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
       CoreBridge.setFastCores(g.getInt("fastCores", 0) == 1);
       CoreBridge.setPotato(CoreBridge.potatoSent(g));
       CoreBridge.sendSoundVolume(g);
+      IngameSettings.applySoundtrack(this);
       CoreBridge.setAim(aimInvert, aimSpeed, autoAim, alwaysRun);
       CoreBridge.setGentleQte(getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getBoolean(GENTLE_QTE, GENTLE_QTE_DEFAULT));
       // the cheat switches kept from the last run (a test script's RE4_CHEATS wins)
@@ -854,6 +872,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     checkShadows();
     int room = CoreBridge.wantedRoom();
     if (room >= 0 && room != preparedRoom && !roomBusy) prepareRoom(room);
+    if (usbXInput != null) usbXInput.probeIfKernelSilent(kernel045eSeen, kernel045eSentInput);
     main.postDelayed(this::tick, 500);
   }
 
@@ -1631,6 +1650,11 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
       String text = map.encode();
       String key = map.kind == ActionMap.KIND_KEYBOARD ? BINDINGS_KEYBOARD : BINDINGS_CONTROLLER;
       SharedPreferences.Editor e = getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).edit();
+      if (map.kind == ActionMap.KIND_CONTROLLER) {
+        e.putBoolean("controllerMapChosen", true)
+            .putBoolean("controllerMapManuallyChosen", true)
+            .putInt("controllerMapVer", 2);
+      }
       if (text == null) e.remove(key); else e.putString(key, text);
       e.apply();
       if (map.kind == ActionMap.KIND_KEYBOARD) input.setKeyboardMap(map); else input.setControllerMap(map);
@@ -1645,6 +1669,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     @Override public int faceLabel(int keyCode) { return input.faceLabel(keyCode); }
 
     @Override public boolean controllerConnected() {
+      if (usbXInput != null && usbXInput.isActive()) return true;
       for (int id : InputDevice.getDeviceIds()) if (gameDevice(InputDevice.getDevice(id))) return true;
       return false;
     }
@@ -2688,35 +2713,107 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     return out.toString();
   }
 
+  private static final android.util.SparseArray<Boolean> shanwanCache = new android.util.SparseArray<>();
+
+  static int normalizeControllerKeyStatic(InputDevice d, int keyCode) {
+    if (d == null || d.getVendorId() != 0x2563 || d.getProductId() != 0x0575) return keyCode;
+    boolean needsRemap;
+    synchronized (shanwanCache) {
+      Boolean cached = shanwanCache.get(d.getId());
+      if (cached == null) {
+        boolean[] has = d.hasKeys(KeyEvent.KEYCODE_BUTTON_C, KeyEvent.KEYCODE_BUTTON_Z,
+            KeyEvent.KEYCODE_BUTTON_THUMBL, KeyEvent.KEYCODE_BUTTON_THUMBR);
+        cached = has != null && has.length == 4 && has[0] && has[1] && !has[2] && !has[3];
+        shanwanCache.put(d.getId(), cached);
+      }
+      needsRemap = cached;
+    }
+    return CoreInput.normalizeControllerKey(d.getVendorId(), d.getProductId(), needsRemap, keyCode);
+  }
+
+  private final UsbXInputDriver.Listener usbPadListener = new UsbXInputDriver.Listener() {
+    @Override public void onUsbButton(int keyCode, boolean down) {
+      if (benchFlow != null && benchFlow.running()) {
+        if (down && BenchmarkFlow.cancels(keyCode, input.gcButton(keyCode))) {
+          Log.i(TAG, "benchmark: cancelled by " + KeyEvent.keyCodeToString(keyCode) + " (USB)");
+          benchFlow.cancel();
+        }
+        return;
+      }
+      if (prepScreen != null) return;
+      if (menu != null && menu.isShowing()) {
+        menu.dispatchKeyEvent(new KeyEvent(down ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP, keyCode));
+        return;
+      }
+      handleControllerKey(UsbXInputDriver.USB_DEVICE_ID, null, keyCode, 0, down, down,
+          down ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP, SystemClock.uptimeMillis(), true);
+    }
+
+    @Override public void onUsbMotion(float lx, float ly, float rx, float ry, float lt, float rt, float hatX, float hatY) {
+      if (prepScreen != null || (menu != null && menu.isShowing())) return;
+      input.motion(UsbXInputDriver.USB_DEVICE_ID, lx, ly, rx, ry, lt, rt, hatX, hatY);
+      if (TouchShowRule.moved(lx, ly, rx, ry, lt, rt, hatX, hatY)) touchControls.controllerUsed();
+      send();
+    }
+
+    @Override public void onUsbStatus(String message, boolean isUserHint) {
+      Log.i(TAG, "USB XInput: " + message);
+      touchControls.update();
+      if (isUserHint) Toast.makeText(CoreActivity.this, message, Toast.LENGTH_LONG).show();
+    }
+
+    @Override public void onUsbDisconnected() {
+      input.remove(UsbXInputDriver.USB_DEVICE_ID);
+      send();
+      touchControls.update();
+    }
+  };
+
   @Override
   public boolean dispatchKeyEvent(KeyEvent e) {
-    int code = e.getKeyCode();
+    int rawCode = e.getKeyCode();
     boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
     boolean first = down && e.getRepeatCount() == 0;
+    boolean keyboard = !controller(e) && !KeyEvent.isGamepadButton(rawCode) && keyboardDevice(e.getDevice());
+    if (!keyboard && isKernel045e(e.getDevice())) kernel045eSentInput = true;
+    int code = keyboard ? rawCode : normalizeControllerKeyStatic(e.getDevice(), rawCode);
+    if (first && code != rawCode && controllerLog.firstKey(e.getDeviceId(), rawCode | 0x40000000)) {
+      Log.i(TAG, "remapped " + KeyEvent.keyCodeToString(rawCode) + " (" + rawCode + ", scan " + e.getScanCode()
+          + ") -> " + KeyEvent.keyCodeToString(code) + " (device " + e.getDeviceId() + ")");
+    }
     // the benchmark: the keys belong to it; the game's B (through the controller's or the keyboard's mapping), Back or
     // Esc cancel it (BenchmarkFlow.cancels; the touch controls' B: benchTouch)
     if (benchFlow != null && benchFlow.running()) {
       if (first) {
-        final boolean keys = !controller(e) && !KeyEvent.isGamepadButton(code) && keyboardDevice(e.getDevice());
-        if (BenchmarkFlow.cancels(code, keys ? input.keyboardButton(code) : input.gcButton(code))) {
-          Log.i(TAG, "benchmark: cancelled by " + KeyEvent.keyCodeToString(code) + (keys ? " (keyboard)" : ""));
+        if (BenchmarkFlow.cancels(code, keyboard ? input.keyboardButton(code) : input.gcButton(code))) {
+          Log.i(TAG, "benchmark: cancelled by " + KeyEvent.keyCodeToString(code) + (keyboard ? " (keyboard)" : ""));
           benchFlow.cancel();
         }
       }
       return true;
     }
-    boolean keyboard = !controller(e) && !KeyEvent.isGamepadButton(code) && keyboardDevice(e.getDevice());
     // "Prepare shaders at start": every button and key (Back too) is dropped while its screen is up, nothing skips it
     if (prepScreen != null) return true;
-    // "Photo mode" switched on: L3 and the keyboard's P are its own (whatever the button mapping gives them)
-    if (menu == null && photoWanted() && ((!keyboard && code == KeyEvent.KEYCODE_BUTTON_THUMBL)
-        || (keyboard && code == KeyEvent.KEYCODE_P))) {
-      if (first) photoKey(keyboard ? "P" : "L3");
+    if (!keyboard) {
+      if (handleControllerKey(e.getDeviceId(), e.getDevice(), code, e.getScanCode(), down, first, e.getAction(),
+          e.getEventTime(), controller(e) || KeyEvent.isGamepadButton(code))) {
+        return true;
+      }
+      // a key nothing here handles (a rare controller's extra buttons): named once per device and code
+      if (down && controller(e) && controllerLog.firstKey(e.getDeviceId(), code)) {
+        InputDevice d = e.getDevice();
+        Log.i(TAG, "key " + KeyEvent.keyCodeToString(code) + " (" + code + ", scan " + e.getScanCode() + ", device "
+            + e.getDeviceId() + (d == null ? "" : " \"" + d.getName() + "\"") + ") -> not mapped, passed on to Android");
+      }
+      return super.dispatchKeyEvent(e);
+    }
+    // keyboard path below
+    if (menu == null && photoWanted() && code == KeyEvent.KEYCODE_P) {
+      if (first) photoKey("P");
       return true;
     }
-    // photo mode on: every key stays with it (Esc, B and Back leave it; SELECT and F1 open the app menu over it)
     if (photo != null && photo.active()) {
-      if (input.appFunctionOf(code, keyboard) == CoreInput.APP_MENU) {
+      if (input.appFunctionOf(code, true) == CoreInput.APP_MENU) {
         if (first) select(true);
         else if (e.getAction() == KeyEvent.ACTION_UP) select(false);
         return true;
@@ -2726,15 +2823,10 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
         return true;
       }
       if (e.getAction() != KeyEvent.ACTION_DOWN && e.getAction() != KeyEvent.ACTION_UP) return true;
-      if (keyboard) {
-        photo.keyboardKey(code, down, first);
-      } else if (e.getRepeatCount() == 0 && (controller(e) || KeyEvent.isGamepadButton(code))) {
-        input.key(e.getDeviceId(), code, down);
-        photo.padKey();
-      }
+      photo.keyboardKey(code, down, first);
       return true;
     }
-    int function = input.appFunctionOf(code, keyboard);
+    int function = input.appFunctionOf(code, true);
     if (function != CoreInput.APP_NONE && first) {
       String what = function == CoreInput.APP_MENU ? "menu" : function == CoreInput.APP_RELOAD ? "quick reload"
           : function == CoreInput.APP_JOG ? "jog"
@@ -2743,26 +2835,20 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     }
     switch (function) {
       case CoreInput.APP_MENU:
-        // pressed: the menu when let go; held for a second: the game's debug menu
         if (first) {
-          if (controller(e) || keyboard) touchControls.controllerUsed();
+          touchControls.controllerUsed();
           select(true);
         } else if (e.getAction() == KeyEvent.ACTION_UP) {
           select(false);
         }
         return true;
       case CoreInput.APP_RELOAD:
-        // the quick reload (wish of DevJunior, 08.11.2026): reload without aiming, as the touch RLOAD button
         if (first) CoreBridge.requestReload();
         return true;
       case CoreInput.APP_JOG:
-        // the jog (wish of DevJunior, 18.11.2026): each press toggles walking and jogging (the remake's movements)
         if (first) CoreBridge.toggleJog();
         return true;
       case CoreInput.APP_GX_DUMP:
-        // R3 (right stick pressed): the graphics data of the next pictures for the
-        // diagnosis in the cloud (files/gx-dumps, test-core-app.ps1 / pull-gx-dumps.ps1 fetch them);
-        // with "Free movement" the camera back behind Leon instead (patch 0900, see r3Pressed)
         if (first) r3Pressed();
         return true;
       default:
@@ -2770,38 +2856,93 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     }
     // a keyboard (the button mapping, 29.10.2026): its mapping's keys and the fixed ones go to the game;
     // Esc always (Android would make it "back" and ask to quit), the rest to Android
-    if (keyboard) {
-      if (e.getAction() != KeyEvent.ACTION_DOWN && e.getAction() != KeyEvent.ACTION_UP) return true;
-      if (e.getRepeatCount() > 0) return true;
-      if (down) heldKeyboardKeys.add(code); else heldKeyboardKeys.remove(code);
-      if (down) quickReloadKey(code);  // "Reload without aiming" (1.1.0)
-      boolean taken = input.keyboardKey(e.getDeviceId(), code, down);
-      if (taken || code == KeyEvent.KEYCODE_ESCAPE) {
-        if (down) {
-          touchControls.controllerUsed();
-          noteDevice(e.getDevice());
-          if (controllerLog.firstKey(e.getDeviceId(), code)) {
-            Log.i(TAG, "keyboard " + KeyEvent.keyCodeToString(code) + " (" + code + ", device " + e.getDeviceId()
-                + ") -> GC " + CoreInput.names(input.keyboardButton(code)) + (input.menu() ? " (a game menu)" : ""));
-          }
+    if (e.getAction() != KeyEvent.ACTION_DOWN && e.getAction() != KeyEvent.ACTION_UP) return true;
+    if (e.getRepeatCount() > 0) return true;
+    if (down) heldKeyboardKeys.add(code); else heldKeyboardKeys.remove(code);
+    if (down) quickReloadKey(code);  // "Reload without aiming" (1.1.0)
+    boolean taken = input.keyboardKey(e.getDeviceId(), code, down);
+    if (taken || code == KeyEvent.KEYCODE_ESCAPE) {
+      if (down) {
+        touchControls.controllerUsed();
+        noteDevice(e.getDevice());
+        if (controllerLog.firstKey(e.getDeviceId(), code)) {
+          Log.i(TAG, "keyboard " + KeyEvent.keyCodeToString(code) + " (" + code + ", device " + e.getDeviceId()
+              + ") -> GC " + CoreInput.names(input.keyboardButton(code)) + (input.menu() ? " (a game menu)" : ""));
         }
-        send();
+      }
+      send();
+      return true;
+    }
+    return super.dispatchKeyEvent(e);
+  }
+
+  private boolean handleControllerKey(int deviceId, InputDevice dev, int code, int scanCode,
+      boolean down, boolean first, int action, long eventTime, boolean isGamepad) {
+    // "Photo mode" switched on: L3 is its own (whatever the button mapping gives it)
+    if (menu == null && photoWanted() && code == KeyEvent.KEYCODE_BUTTON_THUMBL) {
+      if (first) photoKey("L3");
+      return true;
+    }
+    // photo mode on: every key stays with it (Esc, B and Back leave it; SELECT opens the app menu over it)
+    if (photo != null && photo.active()) {
+      if (input.appFunctionOf(code, false) == CoreInput.APP_MENU) {
+        if (first) select(true);
+        else if (action == KeyEvent.ACTION_UP) select(false);
         return true;
       }
-      return super.dispatchKeyEvent(e);
+      if (code == KeyEvent.KEYCODE_BACK) {
+        if (first) photo.leave("Back");
+        return true;
+      }
+      if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) return true;
+      if (first || !down) {
+        input.key(deviceId, code, down);
+        photo.padKey();
+      }
+      return true;
     }
-    if (controller(e) || KeyEvent.isGamepadButton(code)) {
-      if (e.getAction() != KeyEvent.ACTION_DOWN && e.getAction() != KeyEvent.ACTION_UP) return true;
-      if (e.getRepeatCount() > 0) return true;  // held: nothing changes
-      if (input.key(e.getDeviceId(), code, down)) {
-        if (down) padUsed(e.getDevice());
-        inputDelay.button(e.getEventTime(), SystemClock.uptimeMillis());
-        noteInputDelay(e.getDevice());
+    int function = input.appFunctionOf(code, false);
+    if (function != CoreInput.APP_NONE && first) {
+      String what = function == CoreInput.APP_MENU ? "menu" : function == CoreInput.APP_RELOAD ? "quick reload"
+          : function == CoreInput.APP_JOG ? "jog"
+          : tools ? "graphics capture" : "nothing (tools off)";
+      Log.i(TAG, "key " + KeyEvent.keyCodeToString(code) + " (" + code + ") -> app " + what);
+    }
+    switch (function) {
+      case CoreInput.APP_MENU:
+        if (first) {
+          if (isGamepad) touchControls.controllerUsed();
+          select(true);
+        } else if (action == KeyEvent.ACTION_UP) {
+          select(false);
+        }
+        return true;
+      case CoreInput.APP_RELOAD:
+        if (first) CoreBridge.requestReload();
+        return true;
+      case CoreInput.APP_JOG:
+        if (first) CoreBridge.toggleJog();
+        return true;
+      case CoreInput.APP_GX_DUMP:
+        if (first) r3Pressed();
+        return true;
+      default:
+        break;
+    }
+    if (isGamepad) {
+      if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) return true;
+      if (down && !first) return true;  // held: nothing changes
+      if (input.key(deviceId, code, down)) {
+        if (dev != null) {
+          if (down) padUsed(dev);
+          inputDelay.button(eventTime, SystemClock.uptimeMillis());
+          noteInputDelay(dev);
+        }
         if (down) {
           touchControls.controllerUsed();
-          noteDevice(e.getDevice());
-          Log.i(TAG, "key " + KeyEvent.keyCodeToString(code) + " (" + code + ", scan " + e.getScanCode()
-              + ", device " + e.getDeviceId() + ") -> GC " + CoreInput.names(input.gcButton(code)));
+          if (dev != null) noteDevice(dev);
+          Log.i(TAG, "key " + KeyEvent.keyCodeToString(code) + " (" + code + ", scan " + scanCode
+              + ", device " + deviceId + ") -> GC " + CoreInput.names(input.gcButton(code)));
         }
         send();
         return true;
@@ -2817,20 +2958,14 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     // which would make B "back" and ask to quit the game (device test 27.10.2026)
     boolean dpad = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
         || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT;
-    if (controller(e) && (KeyEvent.isGamepadButton(code) || dpad)) {
-      if (down && controllerLog.firstKey(e.getDeviceId(), code)) {
-        Log.i(TAG, "key " + KeyEvent.keyCodeToString(code) + " (" + code + ", device " + e.getDeviceId()
+    if (isGamepad && (KeyEvent.isGamepadButton(code) || dpad)) {
+      if (down && controllerLog.firstKey(deviceId, code)) {
+        Log.i(TAG, "key " + KeyEvent.keyCodeToString(code) + " (" + code + ", device " + deviceId
             + ") -> no function, not passed on");
       }
       return true;
     }
-    // a key nothing here handles (a rare controller's extra buttons): named once per device and code
-    if (down && controller(e) && controllerLog.firstKey(e.getDeviceId(), code)) {
-      InputDevice d = e.getDevice();
-      Log.i(TAG, "key " + KeyEvent.keyCodeToString(code) + " (" + code + ", scan " + e.getScanCode() + ", device "
-          + e.getDeviceId() + (d == null ? "" : " \"" + d.getName() + "\"") + ") -> not mapped, passed on to Android");
-    }
-    return super.dispatchKeyEvent(e);
+    return false;
   }
 
   /** An axis the game does not read moved past half its range: named once per device. */
@@ -2910,6 +3045,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     }
     if (e.getAction() == MotionEvent.ACTION_MOVE && controller(e)) {
       InputDevice d = e.getDevice();
+      if (isKernel045e(d)) kernel045eSentInput = true;
       noteDevice(d);
       padUsed(d);
       // the right stick and the triggers: Z/RZ and LTRIGGER/RTRIGGER on the controllers Android knows, RX/RY and
@@ -3033,14 +3169,37 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     }
   }
 
-  @Override public void onInputDeviceAdded(int id) { noteConnected(id); touchControls.update(); updateMouseCapture(); }
+  private static boolean isKernel045e(InputDevice d) {
+    return d != null && !d.isVirtual() && d.getVendorId() == 0x045e && d.getProductId() == 0x028e;
+  }
+
+  private void refreshKernel045eState() {
+    boolean found = false;
+    for (int id : InputDevice.getDeviceIds()) {
+      if (isKernel045e(InputDevice.getDevice(id))) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      kernel045eSeen = false;
+      kernel045eSentInput = false;
+    } else if (!kernel045eSeen) {
+      kernel045eSeen = true;
+      kernel045eSentInput = false;
+    }
+  }
+
+  @Override public void onInputDeviceAdded(int id) { noteConnected(id); refreshKernel045eState(); touchControls.update(); updateMouseCapture(); }
   @Override public void onInputDeviceChanged(int id) {
     if (id == lastPad) chooseRumble("controller changed");
     input.remove(id);
     seenDevices.remove(id);
     padLayouts.remove(id);
+    synchronized (shanwanCache) { shanwanCache.remove(id); }
     controllerLog.forget(id);
     noteConnected(id);
+    refreshKernel045eState();
     send();
     touchControls.update();
   }
@@ -3051,8 +3210,10 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
       chooseRumble("controller removed");
     }
     padLayouts.remove(id);
+    synchronized (shanwanCache) { shanwanCache.remove(id); }
     controllerLog.forget(id);
     input.remove(id);
+    refreshKernel045eState();
     send();
     touchControls.update();
   }
@@ -3549,6 +3710,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     try {
       if (vibrator != null) vibrator.cancel();
       if (padMotors != null) padMotors.cancel();
+      if (usbXInput != null) usbXInput.setRumble(0);
     } catch (RuntimeException e) {
       Log.w(TAG, "rumble: cancel: " + e);
     }
@@ -3593,6 +3755,9 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
         rumbleLevel = level;
         rumbleUntil = now + rumblePulseMs(level);
         vibrating = true;
+      } else if (!vibrating && usbXInput != null && usbXInput.isActive()) {
+        // USB XInput motors stay latched on until explicitly zeroed (unlike Android createOneShot timers).
+        usbXInput.setRumble(0);
       }
       main.postDelayed(this, 16);
     }
@@ -3600,6 +3765,11 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
 
   @SuppressWarnings("deprecation")
   private void vibrate(int level) {
+    if (usbXInput != null && usbXInput.isActive()
+        && (rumbleMode == RumbleTarget.AUTO || rumbleMode == RumbleTarget.PAD)) {
+      usbXInput.setRumble(level);
+      return;
+    }
     if (rumbleTarget == RumbleTarget.PAD && padMotors != null && Build.VERSION.SDK_INT >= RumbleTarget.PAD_SDK) {
       // the controller's motors, all of them at once; without amplitude control at their default strength: the
       // pulses' length carries the level, as on a phone without it
@@ -4090,6 +4260,8 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     if (im != null) im.registerInputDeviceListener(this, main);
     // what was connected before (a Bluetooth keyboard paired before the start): one line each, once
     for (int id : InputDevice.getDeviceIds()) noteConnected(id);
+    refreshKernel045eState();
+    if (usbXInput != null) usbXInput.resume();
     if (menu == null && !touchEditing) {
       main.removeCallbacks(rumbleTick);
       main.post(rumbleTick);
@@ -4117,6 +4289,7 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     audio.stop();
     main.removeCallbacks(rumbleTick);
     stopVibrator();
+    if (usbXInput != null) usbXInput.pause();
     InputManager im = (InputManager) getSystemService(Context.INPUT_SERVICE);
     if (im != null) im.unregisterInputDeviceListener(this);
     releaseAll();

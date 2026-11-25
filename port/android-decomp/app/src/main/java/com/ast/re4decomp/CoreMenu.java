@@ -1674,6 +1674,14 @@ final class CoreMenu extends Dialog {
       });
       help(R.string.ingame_controller_remake_help);
     }
+    final ActionMap xbox = ActionMap.xbox(mapKind);
+    if (xbox != null) {
+      cellAction(buttonsRow(body), s(R.string.ingame_controller_xbox) + (m.equals(xbox) ? " \u2713" : ""), v -> {
+        captureAction = -1; main.removeCallbacks(captureTimeout);
+        host.mappingChanged(xbox); showPage(CONTROLLER, false);
+      });
+      help(R.string.ingame_controller_xbox_help);
+    }
     help(R.string.ingame_controller_help);
   }
 
@@ -1761,13 +1769,14 @@ final class CoreMenu extends Dialog {
 
   /** While waiting: a key of the device shown (not the fixed ones, not Android's back) is taken. */
   private boolean captureKey(KeyEvent event) {
-    int key = event.getKeyCode();
+    int rawKey = event.getKeyCode();
+    boolean keyboard = !KeyEvent.isGamepadButton(rawKey) && CoreActivity.keyboardDevice(event.getDevice());
+    int key = keyboard ? rawKey : CoreActivity.normalizeControllerKeyStatic(event.getDevice(), rawKey);
     if (key == KeyEvent.KEYCODE_BACK) {
       if (event.getAction() == KeyEvent.ACTION_DOWN) cancelCapture();
       return true;
     }
     if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) return true;
-    boolean keyboard = !KeyEvent.isGamepadButton(key) && CoreActivity.keyboardDevice(event.getDevice());
     boolean wantKeyboard = mapKind == ActionMap.KIND_KEYBOARD;
     if (keyboard != wantKeyboard) {
       showMapStatus(s(wantKeyboard ? R.string.ingame_map_use_keyboard : R.string.ingame_map_use_controller));
@@ -1852,6 +1861,18 @@ final class CoreMenu extends Dialog {
       graphics.edit().putBoolean("effectsOn", on).apply(); CoreBridge.sendSoundVolume(graphics);
     });
     help(R.string.ingame_volume_help);
+
+    heading(R.string.ingame_soundtrack_heading);
+    final boolean hasRemake = IngameSettings.isRemakeSoundtrackAvailable(getContext());
+    into = buttonsRow(labelledOptions(0));
+    final String remakeLabel = hasRemake ? s(R.string.ingame_soundtrack_remake)
+        : (s(R.string.ingame_soundtrack_remake) + " (Missing xwb)");
+    rowChoices(new String[] {s(R.string.ingame_soundtrack_original), remakeLabel},
+        new int[] {0, 1}, hasRemake ? IngameSettings.getSoundtrackMode(getContext()) : 0, 2, value -> {
+          if (value == 1 && !hasRemake) return;
+          IngameSettings.setSoundtrackMode(getContext(), value);
+        });
+    help(R.string.ingame_soundtrack_help);
   }
   /** A percentage as the volumes' sliders: `min` .. `max` in steps of 5 from `now`, each move to `moved`. */
   private void percentSlider(MenuLayout.Buttons row, int label, int min, int max, int now, Changed<Integer> moved) {
@@ -2141,7 +2162,8 @@ final class CoreMenu extends Dialog {
     shown[0] = dialog;
     GradientDrawable frame = shape(WARN_RED, UPDATE_RED_EDGE, 10); frame.setStroke(dp(2), UPDATE_RED_EDGE);
     dialog.getWindow().setBackgroundDrawable(frame);
-    dialog.setOnKeyListener((d, key, event) -> {
+    dialog.setOnKeyListener((d, rawKey, event) -> {
+      int key = CoreActivity.normalizeControllerKeyStatic(event.getDevice(), rawKey);
       if (key == KeyEvent.KEYCODE_BUTTON_A) {
         return dialog.getWindow().superDispatchKeyEvent(new KeyEvent(event.getDownTime(), event.getEventTime(),
             event.getAction(), KeyEvent.KEYCODE_DPAD_CENTER, event.getRepeatCount()));
@@ -2605,7 +2627,8 @@ final class CoreMenu extends Dialog {
     shown[0] = dialog;
     GradientDrawable frame = shape(WARN_RED, UPDATE_RED_EDGE, 10); frame.setStroke(dp(2), UPDATE_RED_EDGE);
     dialog.getWindow().setBackgroundDrawable(frame);
-    dialog.setOnKeyListener((d, key, event) -> {
+    dialog.setOnKeyListener((d, rawKey, event) -> {
+      int key = CoreActivity.normalizeControllerKeyStatic(event.getDevice(), rawKey);
       if (key == KeyEvent.KEYCODE_BUTTON_A) {
         return dialog.getWindow().superDispatchKeyEvent(new KeyEvent(event.getDownTime(), event.getEventTime(),
             event.getAction(), KeyEvent.KEYCODE_DPAD_CENTER, event.getRepeatCount()));
@@ -2821,6 +2844,7 @@ final class CoreMenu extends Dialog {
   void refreshMods() {
     if (modsLine == null || modsRemove == null || modsBox == null) return;
     String[] packs = host.modPacks();
+    if (packs == null) packs = new String[0];
     modsBox.removeAllViews();
     for (String row : packs) {
       String[] p = row.split("\t", 3);
@@ -3036,7 +3060,7 @@ final class CoreMenu extends Dialog {
   }
   @Override public boolean dispatchKeyEvent(KeyEvent event) {
     if (captureAction >= 0 && page == CONTROLLER) return captureKey(event);
-    int key = event.getKeyCode();
+    int key = CoreActivity.normalizeControllerKeyStatic(event.getDevice(), event.getKeyCode());
     if (key == KeyEvent.KEYCODE_ESCAPE) {
       if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) goBack(); return true;
     }

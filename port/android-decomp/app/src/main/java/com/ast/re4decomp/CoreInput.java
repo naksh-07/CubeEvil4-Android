@@ -57,10 +57,37 @@ public final class CoreInput {
   // android.view.KeyEvent key codes
   static final int KEYCODE_DPAD_UP = 19, KEYCODE_DPAD_DOWN = 20, KEYCODE_DPAD_LEFT = 21,
       KEYCODE_DPAD_RIGHT = 22, KEYCODE_BUTTON_A = 96, KEYCODE_BUTTON_B = 97,
-      KEYCODE_BUTTON_X = 99, KEYCODE_BUTTON_Y = 100, KEYCODE_BUTTON_L1 = 102,
+      KEYCODE_BUTTON_C = 98, KEYCODE_BUTTON_X = 99, KEYCODE_BUTTON_Y = 100,
+      KEYCODE_BUTTON_Z = 101, KEYCODE_BUTTON_L1 = 102,
       KEYCODE_BUTTON_R1 = 103, KEYCODE_BUTTON_L2 = 104, KEYCODE_BUTTON_R2 = 105,
       KEYCODE_BUTTON_THUMBL = 106, KEYCODE_BUTTON_THUMBR = 107, KEYCODE_BUTTON_START = 108,
       KEYCODE_BUTTON_SELECT = 109;
+
+  /**
+   * Normalises raw Android key codes on third-party Xbox/PS3 clone pads that lack a vendor .kl file
+   * (e.g. ShanWan PC/PS3/Android 2563:0575 under Generic.kl, which maps HID buttons 1..12 sequentially
+   * to A, B, C, X, Y, Z, L1, R1, L2, R2, SELECT, START instead of standard gamepad labels + L3/R3).
+   */
+  public static int normalizeControllerKey(int vendorId, int productId, boolean hasCzNoThumbs, int keyCode) {
+    if (vendorId == 0x2563 && productId == 0x0575 && hasCzNoThumbs) {
+      switch (keyCode) {
+        case KEYCODE_BUTTON_A: return KEYCODE_BUTTON_Y;
+        case KEYCODE_BUTTON_B: return KEYCODE_BUTTON_B;
+        case KEYCODE_BUTTON_C: return KEYCODE_BUTTON_A;
+        case KEYCODE_BUTTON_X: return KEYCODE_BUTTON_X;
+        case KEYCODE_BUTTON_Y: return KEYCODE_BUTTON_L1;
+        case KEYCODE_BUTTON_Z: return KEYCODE_BUTTON_R1;
+        case KEYCODE_BUTTON_L1: return KEYCODE_BUTTON_L2;
+        case KEYCODE_BUTTON_R1: return KEYCODE_BUTTON_R2;
+        case KEYCODE_BUTTON_L2: return KEYCODE_BUTTON_SELECT;
+        case KEYCODE_BUTTON_R2: return KEYCODE_BUTTON_START;
+        case KEYCODE_BUTTON_SELECT: return KEYCODE_BUTTON_THUMBL;
+        case KEYCODE_BUTTON_START: return KEYCODE_BUTTON_THUMBR;
+        default: break;
+      }
+    }
+    return keyCode;
+  }
 
   /**
    * Deflection of a genuine controller at its gate in raw units: main stick
@@ -372,10 +399,30 @@ public final class CoreInput {
       return keyCode == KEYCODE_BUTTON_L2 || keyCode == KEYCODE_BUTTON_R2 ? APP_NONE : APP_JOG;
     }
     if (m.singleOn(keyCode) == ActionMap.QUICK_RELOAD) {
-      // a trigger: pad() (its axis and its key are one press)
-      return keyCode == KEYCODE_BUTTON_L2 || keyCode == KEYCODE_BUTTON_R2 ? APP_NONE : APP_RELOAD;
+      // a trigger: pad() (its axis and its key are one press); if AIM is held on a controller, let L2+X reload natively
+      if (keyCode == KEYCODE_BUTTON_L2 || keyCode == KEYCODE_BUTTON_R2) return APP_NONE;
+      if (!keyboard && !menu && isAimHeld()) return APP_NONE;
+      return APP_RELOAD;
     }
     return !keyboard && keyCode == KEYCODE_BUTTON_THUMBR && !m.uses(keyCode) ? APP_GX_DUMP : APP_NONE;
+  }
+
+  boolean isAimHeld() {
+    ActionMap m = mapping(false);
+    if (m == null) return false;
+    int[] aimKeys = m.keys(ActionMap.AIM);
+    if (aimKeys.length != 1) return false;
+    int k = aimKeys[0];
+    for (Map.Entry<Integer, Device> e : devices.entrySet()) {
+      Device d = e.getValue();
+      if (e.getKey() == TOUCH || d.keyboard) continue;
+      if (mappedHeld(d).held(k)
+          || (k == KEYCODE_BUTTON_L2 && d.lt >= LATCH_PRESS)
+          || (k == KEYCODE_BUTTON_R2 && d.rt >= LATCH_PRESS)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** The D-pad's GameCube button of a D-pad key (or a keyboard's arrow), 0 for others. */
@@ -663,9 +710,11 @@ public final class CoreInput {
         // the fire key without aim's key: a quick reload (wish of DevJunior, 08.11.2026: the trigger that fires
         // does nothing without aiming); not in the game's menus
         int[] fireKeys = m.keys(ActionMap.FIRE);
+        int[] slashKeys = m.keys(ActionMap.SLASH);
         // (only a key that is no single action of its own: with the default mapping fire's key is A, the action)
         boolean fireKey = fireKeys.length == 2 && m.singleOn(fireKeys[1]) < 0 && keyHeld.held(fireKeys[1]);
-        if (fireKey && !d.fireKeyDown && !keyHeld.held(fireKeys[0]) && !menu) reloadAsked = true;
+        boolean slashing = slashKeys.length == 2 && slashKeys[1] == fireKeys[1] && keyHeld.held(slashKeys[0]);
+        if (fireKey && !d.fireKeyDown && !keyHeld.held(fireKeys[0]) && !slashing && !menu) reloadAsked = true;
         d.fireKeyDown = fireKey;
         // the quick reload on a trigger: the Retroid's triggers are axes, no key reaches appFunctionOf
         int[] quick = m.keys(ActionMap.QUICK_RELOAD);

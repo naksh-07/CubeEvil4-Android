@@ -191,6 +191,34 @@ public final class ActionMap {
   }
 
   /**
+   * Xbox 360 Shooter preset: LT aims, LT+RT fires, LB readies knife & parries, LB+RT slashes,
+   * A acts, B runs / quick-turns (so tapping B never pops up the Map mid-fight), RB opens Map,
+   * X reloads / quick-reloads, Y opens Inventory, L3 toggles jog, R3 commands Ashley, START pauses,
+   * SELECT opens App Menu.
+   */
+  public static ActionMap xbox(int kind) {
+    if (kind != KIND_CONTROLLER) return null;
+    ActionMap m = new ActionMap(kind);
+    int a = CoreInput.KEYCODE_BUTTON_A, b = CoreInput.KEYCODE_BUTTON_B, x = CoreInput.KEYCODE_BUTTON_X,
+        l1 = CoreInput.KEYCODE_BUTTON_L1, l2 = CoreInput.KEYCODE_BUTTON_L2, r2 = CoreInput.KEYCODE_BUTTON_R2;
+    m.keys[ACTION] = new int[] {a};
+    m.keys[RUN] = new int[] {b};
+    m.keys[JOG] = new int[] {CoreInput.KEYCODE_BUTTON_THUMBL};
+    m.keys[AIM] = new int[] {l2};
+    m.keys[FIRE] = new int[] {l2, r2};
+    m.keys[RELOAD] = new int[] {l2, x};
+    m.keys[QUICK_RELOAD] = new int[] {x};
+    m.keys[KNIFE] = new int[] {l1};
+    m.keys[SLASH] = new int[] {l1, r2};
+    m.keys[ASHLEY] = new int[] {CoreInput.KEYCODE_BUTTON_THUMBR};
+    m.keys[INVENTORY] = new int[] {CoreInput.KEYCODE_BUTTON_Y};
+    m.keys[MAP] = new int[] {CoreInput.KEYCODE_BUTTON_R1};
+    m.keys[OPTIONS] = new int[] {CoreInput.KEYCODE_BUTTON_START};
+    m.keys[APP_MENU] = new int[] {CoreInput.KEYCODE_BUTTON_SELECT};
+    return m;
+  }
+
+  /**
    * The legend of `keyCode` for the controller's picture (ControllerDiagram), in the page's order: each single action on
    * it by its name, each combination it ends as "name (first key +)"; a combination's first key shows its hold's
    * single action already.

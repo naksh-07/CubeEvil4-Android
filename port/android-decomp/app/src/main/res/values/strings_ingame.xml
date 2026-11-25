@@ -325,6 +325,10 @@
     <string name="ingame_effects_volume">Sound effects</string>
     <string name="ingame_mod_music_volume">Mod music</string>
     <string name="ingame_volume_help">Music is the background music; sound effects are everything else (shots, voices, steps). Movies keep their sound. The two buttons switch the music or the sound effects off entirely.</string>
+    <string name="ingame_soundtrack_heading">Soundtrack</string>
+    <string name="ingame_soundtrack_original">Original (2005)</string>
+    <string name="ingame_soundtrack_remake">Remake (2023)</string>
+    <string name="ingame_soundtrack_help">Switch between the classic GameCube music and RE4 Remake (2023) orchestral soundtrack (requires bio4bgm.xwb in mods/audio/).</string>
     <string name="ingame_smooth_help">Extra in-between pictures. The game logic stays at 30 frames/s.</string>
     <string name="ingame_smooth60_uneven">This screen runs at %1$d Hz: 60 FPS cannot be shown evenly on it and may stutter. 30 FPS (60 FPS off) runs smoother here.</string>
     <string name="ingame_instant_save">Save</string>
@@ -454,6 +458,8 @@
     <string name="ingame_controller_default">Default Layout</string>
     <string name="ingame_controller_remake">RE4 Remake (2023) Layout</string>
     <string name="ingame_controller_remake_help">Control type A-1 of the 2023 remake: A action, R1 run (back + R1 quick turn), L3 jog, L2 aim, R2 fire, X reload, L1 knife and parry, R2 with the knife slash, R3 Ashley, Y inventory, B map, START options, SELECT this menu.</string>
+    <string name="ingame_controller_xbox">Xbox 360 Shooter</string>
+    <string name="ingame_controller_xbox_help">Xbox 360 shooter layout: A action, B run (back + B quick turn), R1 map, L3 jog, L2 aim, R2 fire, X reload, L1 knife &amp; parry, L1 + R2 slash, R3 Ashley, Y inventory, START options, SELECT app menu.</string>
     <string name="ingame_diagram_move">Move</string>
     <string name="ingame_diagram_camera">Camera</string>
     <string name="ingame_diagram_press" formatted="false">Press: %s</string>

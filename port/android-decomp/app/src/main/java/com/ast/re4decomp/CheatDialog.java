@@ -82,7 +82,7 @@ final class CheatDialog extends Dialog {
   }
   void result(String message) {result.setText(message);}
   @Override public boolean dispatchKeyEvent(KeyEvent event) {
-    int key=event.getKeyCode();
+    int key=CoreActivity.normalizeControllerKeyStatic(event.getDevice(),event.getKeyCode());
     if(key==KeyEvent.KEYCODE_BUTTON_SELECT || key==KeyEvent.KEYCODE_BUTTON_START || key==KeyEvent.KEYCODE_BUTTON_B) {
       if(event.getAction()==KeyEvent.ACTION_DOWN && event.getRepeatCount()==0)dismiss();return true;
     }
