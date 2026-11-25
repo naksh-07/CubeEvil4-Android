@@ -1,16 +1,22 @@
 # Patch 0951 (wish of DevJunior, 23.11.2026: "when I reload Ashley goes back instead of stepping aside and shooting
-# too"). Not a bug of the prototype: a port feature with runtime/ashley_gun.cpp (her pistol, patches 0911/0912).
+# too"; 16:54: "she still hides or gets scared every time I reload, instead of being alert"). Not a bug of the
+# prototype: a port feature with runtime/ashley_gun.cpp (her pistol, patches 0911/0912).
 # src/game/pl_npc.cpp cSubChar::moveBehind: the place behind the aiming (or reloading) player, in his model space,
-# goes through re4_ashley_behind, which moves it to his side while Ashley carries a pistol and nothing walls it off.
+# goes through re4_ashley_behind, which moves it to his side while Ashley carries a pistol and nothing walls it off;
+# its motions (covering her ears 0x1D/0x1E/0x1F, flinching 0x20) through re4_ashley_behind_mot, which gives her
+# alert stand (0x12, her stand while following) while she carries one.
 --- a/src/game/pl_npc.cpp
 +++ b/src/game/pl_npc.cpp
-@@ -49,4 +49,5 @@
+@@ -48,6 +48,8 @@
+ // MotionSetCore with the sequence table as the 4th argument (declared int in motion.h).
+ #define MOT_SET(m, w, data, seq, a, b, c) MotionSetCore(m, w, data, seq, a, b, c)
  
 +extern "C" void re4_ashley_behind(cSubChar* a, Vec* t); /* port (patch 0951): runtime/ashley_gun.cpp */
++extern "C" int re4_ashley_behind_mot(int no);           /* port (patch 0951) */
  const Vec cSubChar::atckPos = { -100.0f, 0.0f, -500.0f };
  const Vec cSubChar::atckPos2 = { 300.0f, 0.0f, -500.0f };
  
-@@ -793,6 +794,7 @@
+@@ -797,6 +799,7 @@
          target = *ap;
          // reference stores: the following pPL loads stay below them
          (target.z = target.z - pPL->Wep->getAngle() * 0.31830987f * 300.0f);
@@ -18,3 +24,43 @@
          PSMTXMultVec(pPL->mat, &target, &target);
          pos.x = pos.x * 0.7f + target.x * 0.3f;
          pos.z = pos.z * 0.7f + target.z * 0.3f;
+@@ -807,7 +810,7 @@
+     }
+     switch (r_no_2) {
+     case 0:
+-        MOT_SET(pEm, &pEm->Motion, SUB_MOT(pEm, 0x1D), 0, 3, 5, 0);
++        MOT_SET(pEm, &pEm->Motion, SUB_MOT(pEm, re4_ashley_behind_mot(0x1D)), 0, 3, 5, 0);
+         atari.off();
+         m_Work0 = 0;
+         r_no_2 = 1;
+@@ -816,7 +819,7 @@
+             r_no_2 = 0x14;
+         }
+         if (motionMove()) {
+-            MOT_SET(pEm, &pEm->Motion, SUB_MOT(pEm, 0x1E), 0, 3, 5, 0);
++            MOT_SET(pEm, &pEm->Motion, SUB_MOT(pEm, re4_ashley_behind_mot(0x1E)), 0, 3, 5, 0);
+             r_no_2 = 2;
+         }
+         break;
+@@ -834,18 +837,18 @@
+         break;
+     case 0xA:
+         setHand(1);
+-        MOT_SET(this, &this->Motion, SUB_MOT(pEm, 0x20), 0, 7, 5, 0);
++        MOT_SET(this, &this->Motion, SUB_MOT(pEm, re4_ashley_behind_mot(0x20)), 0, 7, 5, 0);
+         r_no_2 = 0xB;
+     case 0xB:
+         if ((plStat & 0x2080) || motionMove()) {
+             setHand(0);
+-            MOT_SET(pEm, &pEm->Motion, SUB_MOT(pEm, 0x1E), 0, 3, 5, 0);
++            MOT_SET(pEm, &pEm->Motion, SUB_MOT(pEm, re4_ashley_behind_mot(0x1E)), 0, 3, 5, 0);
+             motionMove();
+             r_no_2 = 2;
+         }
+         break;
+     case 0x14:
+-        MOT_SET(pEm, &pEm->Motion, SUB_MOT(pEm, 0x1F), 0, 3, 5, 0);
++        MOT_SET(pEm, &pEm->Motion, SUB_MOT(pEm, re4_ashley_behind_mot(0x1F)), 0, 3, 5, 0);
+         StaFlagOff(pG, STA_CRITICAL);
+         atari.on();
+         inSat();

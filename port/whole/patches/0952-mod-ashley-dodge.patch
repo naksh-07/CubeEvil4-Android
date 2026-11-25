@@ -1,0 +1,20 @@
+# Patch 0952 (wish of DevJunior, 23.11.2026: "that she at least dodges the blows, depending on the situation, so that
+# she is not overpowered"). Not a bug of the prototype: a port feature of the mods with runtime/ashley_gun.cpp.
+# src/game/pl_npc.cpp cSubChar::setDamage (an enemy's blow on the partner): re4_ashley_dodge may let Ashley duck it
+# (her crouch, routine 4, as when Leon aims at her) instead: then no damage, no damage motion.
+--- a/src/game/pl_npc.cpp
++++ b/src/game/pl_npc.cpp
+@@ -3461,8 +3461,13 @@
+ }
+ 
+ // Scenario damage area hit (sce_at sceAtFunc_damage): `power` is the hit direction (123 = none).
++extern "C" int re4_ashley_dodge(cSubChar* a, int kind, int arg); /* port (patch 0952): runtime/ashley_gun.cpp */
++
+ void cSubChar::setDamage(u8 kind, int arg, int a, int b, f32 power)
+ {
++    if (re4_ashley_dodge(this, kind, arg)) {
++        return; /* port (patch 0952, mods): Ashley ducked the blow */
++    }
+     dmg.set(0, 30);
+     beginDamage();
+     LifeDownSet2(this, arg, 0, 1);

@@ -19989,3 +19989,10 @@ Der Platz sollte früh reserviert werden (beim Laden von `libre4_platform`).
 - Leitern: der Bericht zeigt am Brunnen nur den Fußbereich der Leiter (Stufe +5, 5 m unter ihr, 0,5 m daneben), keinen Bereich zum Hinabsteigen. `ashley_ladder.cpp`: eine Leiter nach oben, deren Fuß 1–20 m unter ihr liegt, nimmt sie von oben: Standpunkt über die Leiterlinie gespiegelt, auf ihrer Höhe, Blick zum Abgrund, so viele Sprossen wie hinauf.
 - Geprüft: i686 Build und alle Prüfungen. Nicht geprüft: auf dem Gerät.
 - Ashleys Reichweite: 7 m statt 12 m (`kRange`, Wunsch „que no tuviera tanto rango de disparo, para que sea balanceado“). Geprüft: i686 Build und alle Prüfungen; nicht auf dem Gerät.
+
+### Mods: Ashley wachsam und ausweichend (25.11.2026)
+
+- Wunsch 23.11.2026 16:54: beim Nachladen versteckt/erschreckt sie sich weiter statt wachsam zu sein; sie soll Schlägen ausweichen, je nach Lage, nicht übermächtig.
+- Patch 0951 erweitert: in `cSubChar::moveBehind` gehen ihre Bewegungen (Ohren zuhalten 0x1D/0x1E/0x1F, Zusammenzucken 0x20) durch `re4_ashley_behind_mot`; bewaffnet steht sie stattdessen wachsam (0x12, ihr Stand beim Folgen).
+- Patch 0952 (`cSubChar::setDamage`): `re4_ashley_dodge` lässt sie einen Schlag ducken (Hocken, Routine 4, ohne Schaden): nur in Leons Spiel, Ashley, Schalter an, nur leichte Treffer (Art 0..3), einer von drei, danach 8 s nicht wieder (auch nach einem genommenen Treffer).
+- Geprüft: i686 Build und alle Prüfungen. Nicht geprüft: auf dem Gerät.

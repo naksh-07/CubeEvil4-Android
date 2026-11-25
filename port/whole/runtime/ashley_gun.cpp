@@ -1144,6 +1144,52 @@ void re4_ashley_behind(cSubChar* a, Vec* t)
     }
 }
 
+// Patch 0952 (DevJunior, 23.11.2026: "that she at least dodges the blows, depending on the situation, so that she
+// is not overpowered"): an enemy's blow on Ashley (cSubChar::setDamage) she may duck, crouching as when Leon aims at
+// her (routine 4: down, held a second, up; her body's collision off meanwhile). Only in Leon's game, Ashley (id 3),
+// with the switch on; only the light kinds of blow (0..3; not 4/5, thrown down or blown away); one in three
+// (kDodgeChance), and not again within 8 s (kDodgeRest) after a duck or a blow taken.
+const int kDodgeChance = 3;    // one in this many blows
+const int kDodgeRest = 240;    // frames after a duck or a blow before the next duck
+
+int re4_ashley_dodge(cSubChar* a, int kind, int arg)
+{
+    static int last = -100000;
+    if (!a || !gOn.load(std::memory_order_relaxed) || !pG || pG->pl_type != 0 || ((cModel*) a)->id != 3 ||
+        kind > 3 || arg <= 0 || StaFlagChk(pG, STA_EVENT) || a->r_no_0 != 0) {
+        return 0;
+    }
+    const int now = (int) pG->Frame_cnt;
+    if (now - last < kDodgeRest) {
+        return 0;
+    }
+    last = now;
+    static u32 x = 0x9E3779B9u;
+    x = x * 1664525u + 1013904223u;
+    if ((x >> 16) % kDodgeChance != 0) {
+        return 0;
+    }
+    a->setRno(0, 4, 0, 0);
+    re4_log("ashley: ducked a blow (kind %d, %d damage)", kind, arg);
+    return 1;
+}
+
+// Patch 0951: her motion `no` behind the aiming player (0x1D..0x1F covering her ears, 0x20 flinching): armed, her
+// alert stand instead (0x12; DevJunior, 23.11.2026: "she still hides or gets scared every time I reload, instead of
+// being alert")
+int re4_ashley_behind_mot(int no)
+{
+    static bool said;
+    if (!armed()) {
+        return no;
+    }
+    if (!said) {
+        said = true;
+        re4_log("ashley: alert beside Leon (her stand in place of covering her ears)");
+    }
+    return 0x12;
+}
+
 // Patch 0912: 1 = "Equip" on p may give it to Ashley (when Leon already holds p): the switch on, Leon's game,
 // Ashley the partner (id 3), p a handgun or a magnum.
 int re4_ashley_gun_menu(cItem* p)
