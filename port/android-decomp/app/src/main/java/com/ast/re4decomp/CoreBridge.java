@@ -128,6 +128,8 @@ public final class CoreBridge {
   public static native void setSoundVolume(int music, int effects);
   /** (Mods, 19.11.2026) The AUDIO page's "Mod music": the music mod's volume in percent. */
   public static native void setModMusicVolume(int percent);
+  /** Remake 2023 soundtrack override (.xwb). */
+  public static native void setSoundtrack(boolean remakeEnabled, String xwbPath);
   /**
    * The menu's "Invert vertical" and "Aim speed" for aiming the knife and the guns by touch or a controller:
    * `invert` the game's own "reverse" option (kept over the system file's), `speed` the stick's turn while

@@ -545,7 +545,13 @@ def prepare(out: Path) -> Path:
     listed = set(plan["main"]) | {s for m in plan["modules"].values() for s in m["sources"]}
     on_disk = {p.relative_to(tree).as_posix() for p in (tree / "src").rglob("*.cpp")
                if p.relative_to(tree / "src").parts[0] != "lib"}
-    if listed - on_disk or on_disk - listed:
+    if sys.platform == "win32":
+        listed_ci = {s.lower() for s in listed}
+        on_disk_ci = {s.lower() for s in on_disk}
+        if listed_ci - on_disk_ci or on_disk_ci - listed_ci:
+            sys.exit(f"module plan and sources disagree: missing {sorted(listed_ci - on_disk_ci)[:5]}, "
+                     f"unassigned {sorted(on_disk_ci - listed_ci)[:5]}")
+    elif listed - on_disk or on_disk - listed:
         sys.exit(f"module plan and sources disagree: missing {sorted(listed - on_disk)[:5]}, "
                  f"unassigned {sorted(on_disk - listed)[:5]}")
     text = json.dumps(plan, indent=1) + "\n"

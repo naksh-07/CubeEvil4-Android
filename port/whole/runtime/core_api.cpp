@@ -864,6 +864,7 @@ int re4_core_vibration_from_game(void)
 
 extern "C" void re4_sound_volume_set(int music, int effects);
 extern "C" void re4_mod_music_volume_set(int percent);
+extern "C" void re4_remake_audio_configure(int enabled, const char* xwbPath);
 
 void re4_core_set_sound_volume(int bits)
 {
@@ -872,6 +873,11 @@ void re4_core_set_sound_volume(int bits)
     if ((bits >> 16) & 0xFF) {
         re4_mod_music_volume_set(((bits >> 16) & 0xFF) - 1);
     }
+}
+
+void re4_core_set_soundtrack(int enabled, const char* xwbPath)
+{
+    re4_remake_audio_configure(enabled, xwbPath);
 }
 
 void re4_core_gx_depth(const unsigned* cells, unsigned serial)

@@ -306,6 +306,7 @@ void re4_core_photo_input(int a, int b, int c);
 /* The app menu's AUDIO page (cores since 30.10.2026, runtime/sound_volume.cpp): bits 0..7 the music, bits
  * 8..15 the sound effects volume in percent (0..100; 100 as the game). Any thread. */
 void re4_core_set_sound_volume(int bits);
+void re4_core_set_soundtrack(int enabled, const char* xwbPath);
 /* The game's language with the European discs (cores since 26.10.2026, port/docs/retail-eu-plan.md
  * R7): 2 English, 3 German, 4 French, 5 Spanish, 6 Italian (pSys->language of the European release).
  * The app menu's choice: the game takes it and restarts (its own soft reset at the next game frame,
