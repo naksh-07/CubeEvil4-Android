@@ -6,6 +6,7 @@ import android.util.Log;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.FrameLayout;
 import com.ast.retrotouch.RetroTouchAdapter;
 import com.ast.retrotouch.RetroTouchButtonShape;
 import com.ast.retrotouch.RetroTouchButtonStyle;
@@ -51,14 +52,18 @@ final class TouchControls implements CoreTouch.Host {
   /** The key of the saved layout (RetroTouch keeps the player's layout under it). */
   static final String LAYOUT_ID = "cubeevil4";
   /** RetroTouch's keys of the style (before skins) and of the skin chosen, in TouchLayoutFile.PREFS. */
-  static final String STYLE_KEY = "button_style_" + LAYOUT_ID, SKIN_KEY = "button_skin_" + LAYOUT_ID;
+  static final String STYLE_KEY = "button_style_" + LAYOUT_ID, SKIN_KEY = "button_skin_" + LAYOUT_ID,
+      NATIVE_KEY = "native_touch_" + LAYOUT_ID;
 
+  private final FrameLayout container;
   private final RetroTouchView view;
+  private final NativeTouchOverlay nativeOverlay;
+  private final CoreInput input;
   private final CoreTouch touch;
   private final Host host;
   private final int[] where = new int[2];
   private final TouchShowRule rule = new TouchShowRule();
-  private boolean shown, editing, quiet, first = true;
+  private boolean shown, editing, quiet, first = true, nativeMode;
   // L's and R's width over height in the ICONS style on this screen (TouchStyle.shoulderAspect); `reshape`: to
   // build the layout again with it once the editor closes
   private float shoulder = TouchStyle.SHOULDER_ASPECT;
@@ -75,11 +80,25 @@ final class TouchControls implements CoreTouch.Host {
 
   /** mode: the menu's setting (TouchShowRule.AUTO, FORCE, SUPPRESS). */
   TouchControls(Context context, CoreInput input, int mode, Host host) {
+    this.input = input;
     this.host = host;
     pc = pcDevice(context);
     rule.setMode(mode);
     touch = new CoreTouch(input, this);
+    container = new FrameLayout(context);
+    container.setFocusable(false);
     view = new RetroTouchView(context);
+    nativeOverlay = new NativeTouchOverlay(context, input, new NativeTouchOverlay.Host() {
+      @Override public void sendInput() { TouchControls.this.host.send(); }
+      @Override public void openMenu(boolean down, boolean finger) { TouchControls.this.host.select(down, finger); }
+      @Override public void onZoom(int direction, boolean down) { TouchControls.this.host.zoom(direction, down); }
+    });
+    nativeOverlay.setFocusable(false);
+    nativeOverlay.setVisibility(View.GONE);
+    container.addView(view, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT));
+    container.addView(nativeOverlay, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT));
     // the game's surface keeps the focus (the controller's keys)
     view.setFocusable(false);
     // shown by the controllers present, not hidden for a while by their keys
@@ -101,11 +120,14 @@ final class TouchControls implements CoreTouch.Host {
     view.setDefaultSkin(TouchStyle.IDS[TouchStyle.DEFAULT_LOOK]);
     // the old GC style becomes the GC skin (before the layout: RetroTouch reads the saved skin with it)
     migrateOldGc(prefs());
+    nativeMode = prefs().getBoolean(NATIVE_KEY, false);
+    input.setNativeTouch(nativeMode);
     view.setGameplayLayout(layout(shoulder));
-    Log.i(CoreActivity.TAG, "touch controls: skin " + view.getSkin());
+    Log.i(CoreActivity.TAG, "touch controls: " + (nativeMode ? "style native" : "skin " + view.getSkin()));
     view.setSkinListener(skin -> Log.i(CoreActivity.TAG, "touch controls: skin " + skin + " (editor)"));
-    // L and R as wide as the screen has room for next to the gear (4:3); the layouts for the view's size (TouchFrame)
-    view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+    // L and R as wide as the screen has room for next to the gear (4:3); listen on container so layout updates
+    // even when RetroTouchView is GONE under TouchStyle.NATIVE.
+    container.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
       float aspect = TouchStyle.shoulderAspect(right - left, bottom - top, v.getResources().getDisplayMetrics().density);
       final boolean sized = right - left != width || bottom - top != height;
       if (aspect == shoulder && !sized) return;
@@ -187,13 +209,26 @@ final class TouchControls implements CoreTouch.Host {
     return true;
   }
 
-  /** The skin shown (TouchStyle.RE .. XBOX; the app menu's "Button style"). */
-  int look() { return TouchStyle.look(view.getSkin()); }
+  /** The skin shown (TouchStyle.RE .. XBOX, or NATIVE for Feral/Capcom native HUD). */
+  int look() { return nativeMode ? TouchStyle.NATIVE : TouchStyle.look(view.getSkin()); }
 
-  /** The app menu's "Button style": a skin at once (RetroTouch saves the choice). */
+  /** The app menu's "Button style": switches between RetroTouch skins and Native overlay at once. */
   void setLook(int which) {
-    view.setSkin(TouchStyle.IDS[TouchStyle.valid(which)]);
-    Log.i(CoreActivity.TAG, "touch controls: skin " + view.getSkin() + " (app menu)");
+    boolean wantNative = TouchStyle.isNative(which);
+    if (wantNative != nativeMode) {
+      nativeMode = wantNative;
+      input.setNativeTouch(nativeMode);
+      prefs().edit().putBoolean(NATIVE_KEY, nativeMode).apply();
+      reset();
+      syncMode();
+      host.send();
+    }
+    if (!wantNative) {
+      view.setSkin(TouchStyle.IDS[TouchStyle.valid(which)]);
+      Log.i(CoreActivity.TAG, "touch controls: skin " + view.getSkin() + " (app menu)");
+    } else {
+      Log.i(CoreActivity.TAG, "touch controls: style native (app menu)");
+    }
   }
 
   /** The default layout again with L's and R's aspect for this screen (the saved layout read again with it). */
@@ -216,6 +251,7 @@ final class TouchControls implements CoreTouch.Host {
     // RetroTouch 1.0.0-beta.11: its editor's bar, the "DRAG / Selected" line and the gear's default place keep clear of
     // the camera; the controls and their saved places are not touched
     view.setSafeInsets(safe[0], safe[1], safe[2], safe[3]);
+    nativeOverlay.setSafeInsets(safe);
     if (width <= 0 || height <= 0) return;  // the first layout does it
     if (editing) reshape = true;
     else reshape();
@@ -337,9 +373,29 @@ final class TouchControls implements CoreTouch.Host {
     return out.toString();
   }
 
-  View view() { return view; }
+  View view() { return container; }
 
   boolean shown() { return shown; }
+
+  void updateContext(long ctx) {
+    if (shown && nativeMode) nativeOverlay.updateContext(ctx);
+  }
+
+  private void syncMode() {
+    if (!shown) {
+      nativeOverlay.setOverlayShown(false);
+      quietly(() -> view.setMode(RetroTouchMode.OFF));
+    } else if (nativeMode) {
+      quietly(() -> view.setMode(RetroTouchMode.OFF));
+      view.setVisibility(View.GONE);
+      nativeOverlay.setOverlayShown(true);
+      nativeOverlay.updateContext(CoreBridge.touchContext());
+    } else {
+      nativeOverlay.setOverlayShown(false);
+      view.setVisibility(View.VISIBLE);
+      quietly(() -> view.setMode(RetroTouchMode.GAMEPLAY));
+    }
+  }
 
   /**
    * The gamepads and joysticks connected (built-in, USB, Bluetooth), by RetroTouchControllers'
@@ -391,7 +447,7 @@ final class TouchControls implements CoreTouch.Host {
     devices = now;
     if (change) {
       shown = want;
-      quietly(() -> view.setMode(want ? RetroTouchMode.GAMEPLAY : RetroTouchMode.OFF));
+      syncMode();
       touch.reset();
     }
     String why = TouchShowRule.name(rule.mode()) + ", " + (!controller ? "no controller"
@@ -410,6 +466,7 @@ final class TouchControls implements CoreTouch.Host {
   void reset() {
     touch.reset();
     quietly(view::resetInputState);
+    nativeOverlay.reset();
   }
 
   private void quietly(Runnable r) {
@@ -433,7 +490,7 @@ final class TouchControls implements CoreTouch.Host {
 
   /** Before the window's touch event goes to the views (CoreActivity.dispatchTouchEvent). */
   void before(MotionEvent e) {
-    if (shown) touch.beginEvent();
+    if (shown && !nativeMode) touch.beginEvent();
   }
 
   /** After it went through them: which finger looks, which stopped. */
@@ -443,6 +500,7 @@ final class TouchControls implements CoreTouch.Host {
       if (e.getActionMasked() == MotionEvent.ACTION_UP && rule.touch()) update();
       return;
     }
+    if (nativeMode) return;
     int i = e.getActionIndex();
     switch (e.getActionMasked()) {
       case MotionEvent.ACTION_DOWN:
@@ -470,6 +528,10 @@ final class TouchControls implements CoreTouch.Host {
    */
   boolean onControl(float x, float y) {
     if (!shown) return false;
+    if (nativeMode) {
+      container.getLocationInWindow(where);
+      return nativeOverlay.onControl(x - where[0], y - where[1]);
+    }
     if (editing || view.getWidth() <= 0) return true;
     view.getLocationInWindow(where);
     x -= where[0];

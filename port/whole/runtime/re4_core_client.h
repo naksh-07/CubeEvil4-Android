@@ -114,5 +114,6 @@ int re4ipc_card_import(const unsigned char* gci, unsigned size, int replace, cha
 unsigned re4ipc_frame_count(void);
 int re4ipc_game_thread(void);
 long re4ipc_free_at(void);
+uint64_t re4ipc_touch_context(void);
 
 #endif

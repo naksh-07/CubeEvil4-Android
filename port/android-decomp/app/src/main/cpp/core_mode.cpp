@@ -145,6 +145,7 @@ struct CoreApi {
   unsigned (*frameCount)(void){};
   int (*gameThread)(void){};
   long (*freeAt)(void){};  // optional: the frame the player became free in the room (state_trace.cpp), -1 not yet
+  uint64_t (*touchContext)(void){};  // optional: packed state for NativeTouchOverlay (runtime/touch_context.cpp)
   void (*logFile)(const char *){};  // optional (cores since 21.10.2026): the core's lines into a file
 } api;
 
@@ -509,6 +510,7 @@ void loadCore(JNIEnv *env) {
   api.frameCount = reinterpret_cast<unsigned (*)(void)>(dlsym(api.main, "re4_core_frame_count"));
   api.gameThread = reinterpret_cast<int (*)(void)>(dlsym(api.main, "re4_core_game_thread"));
   api.freeAt = reinterpret_cast<long (*)(void)>(dlsym(api.main, "re4_trace_free_at"));
+  api.touchContext = reinterpret_cast<uint64_t (*)(void)>(dlsym(api.main, "re4_core_touch_context"));
   api.logFile = reinterpret_cast<void (*)(const char *)>(dlsym(api.main, "re4_log_file"));
   // the app's lines (renderer, core mode) also into the core's log file (cores since 22.10.2026)
   re4gx::SetLogCopy(reinterpret_cast<void (*)(const char *)>(dlsym(api.main, "re4_log_file_line")));
@@ -3672,6 +3674,7 @@ void useCoreProcess(const std::string &why) {
   api.frameCount = re4ipc_frame_count;
   api.gameThread = re4ipc_game_thread;
   api.freeAt = re4ipc_free_at;
+  api.touchContext = re4ipc_touch_context;
   char note[512];
   snprintf(note, sizeof(note), "core: in a process of its own (%s): %s\n", why.c_str(), spawn.program.c_str());
   gAddressMap += note;
@@ -4237,6 +4240,10 @@ extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_mouseMenu(JN
 // "Reload without aiming" (1.1.0): the keyboard's reload key without the aim (runtime/aim_options.cpp, patch 0241).
 extern "C" JNIEXPORT void JNICALL Java_com_ast_re4decomp_CoreBridge_quickReload(JNIEnv *, jclass) {
   if (api.quickReload) api.quickReload();
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_com_ast_re4decomp_CoreBridge_touchContext(JNIEnv *, jclass) {
+  return api.touchContext ? static_cast<jlong>(api.touchContext()) : 0;
 }
 
 // Photo mode (1.1.0, runtime/photo_mode.cpp): op 1 on with the mask, 0 off, 2 the mask; false: a core without it.

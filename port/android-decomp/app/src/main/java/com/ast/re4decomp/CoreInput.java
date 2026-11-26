@@ -271,7 +271,11 @@ public final class CoreInput {
   /** The swipe's turn: radians per share of the screen's shorter side (a swipe across it turns about 90 degrees). */
   static final float SWIPE_RADIANS = 1.6f;
   private int touchAim = AIM_MOVE_STICK;
-  private boolean touchAiming;          // at the last pad(): L or R held with touch aiming
+  private boolean touchAiming;
+  private boolean nativeTouch;
+
+  /** "Native" touch style: right-side drag always drives swipe aiming cleanly regardless of RetroTouch's touchAim pref. */
+  public void setNativeTouch(boolean on) { nativeTouch = on; }          // at the last pad(): L or R held with touch aiming
   private float swipeX, swipeY;         // the look zone's swipe since takeAimSwipe (shares, y down)
 
   public void setTouchAim(int mode) {
@@ -285,7 +289,7 @@ public final class CoreInput {
    * the swipe (AIM_LOOK while L or R is held, as the last pad() found), then it does not look.
    */
   public boolean touchSwipe(float dx, float dy) {
-    if (touchAim != AIM_LOOK || !touchAiming) return false;
+    if ((!nativeTouch && touchAim != AIM_LOOK) || !touchAiming) return false;
     swipeX += dx;
     swipeY += dy;
     return true;
@@ -774,9 +778,10 @@ public final class CoreInput {
     boolean swapSticks = aimMove && readied;
     // touch aiming: L or R held, on the touch controls or any controller
     Device touchDevice = devices.get(TOUCH);
+    int effTouchAim = nativeTouch ? AIM_LOOK : touchAim;
     boolean touchHeld = touchDevice != null && (touchDevice.l2Key || touchDevice.r2Key)
         || Math.round(padL * 255f) >= TRIGGER_PRESSED || Math.round(padR * 255f) >= TRIGGER_PRESSED;
-    boolean touchAiming = touchAim != AIM_MOVE_STICK && touchHeld;
+    boolean touchAiming = effTouchAim != AIM_MOVE_STICK && touchHeld;
     if (!touchAiming) swipeX = swipeY = 0;  // a swipe left over from the aim before turns nothing
     // L or R held (a weapon or the knife ready): the touch move stick keeps its plain way (touchWalk)
     boolean weaponReady = touchDevice != null && (touchDevice.l2Key || touchDevice.r2Key)
@@ -845,17 +850,21 @@ public final class CoreInput {
         // or, by default, from the look zone and the touch C stick as a stick (whichever tilts further)
         cX = d.lx;
         cY = d.ly;
-        if (touchAim == AIM_LOOK) {
+        if (effTouchAim == AIM_LOOK) {
           mainX = mainY = 0;
-        } else if (touchAim == AIM_C_STICK) {
+        } else if (effTouchAim == AIM_C_STICK) {
           mainX = d.cStickX;
           mainY = d.cStickY;
         } else {
           mainX = d.rx;
           mainY = d.ry;
         }
-      } else if (touchAiming && touch && touchAim == AIM_LOOK) {
-        // the look zone aims by swipes (takeAimSwipe), not as a stick; the C stick stays the C stick
+      } else if (touchAiming && touch && effTouchAim == AIM_LOOK) {
+        // the look zone aims by swipes (takeAimSwipe), not as a stick; the C stick stays the C stick.
+        // In Native Touch mode with Move-While-Aiming off, zero the left stick so it never hijacks aim.
+        if (nativeTouch) {
+          mainX = mainY = 0;
+        }
         cX = d.cStickX;
         cY = d.cStickY;
       } else if (touchAiming && touch) {

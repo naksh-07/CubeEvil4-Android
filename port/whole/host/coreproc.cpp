@@ -146,6 +146,7 @@ struct Core {
     unsigned (*frameCount)(void);
     int (*gameThread)(void);
     long (*freeAt)(void);
+    uint64_t (*touchContext)(void);
     void (*addFrameHook)(void (*)(unsigned));
     void (*log)(const char*, ...);
     void (*logFile)(const char*);
@@ -373,6 +374,7 @@ void frameHook(unsigned)
     c->frames.store(core.frameCount ? core.frameCount() : 0);
     c->rumble.store(core.rumble());
     c->freeAt.store(core.freeAt ? (int32_t) core.freeAt() : -1);
+    c->touchContext.store(core.touchContext ? core.touchContext() : 0, std::memory_order_relaxed);
     gNewFrame.store(true);
     ring(c->inputBell);
 }
@@ -831,6 +833,7 @@ bool loadCore(std::string& problem)
     bind(core.frameCount, "re4_core_frame_count");
     bind(core.gameThread, "re4_core_game_thread");
     bind(core.freeAt, "re4_trace_free_at", false);
+    bind(core.touchContext, "re4_core_touch_context", false);
     bind(core.logFile, "re4_log_file", false);
     if (!gMissing.empty()) {
         problem = "missing in libre4_main.so (core process): " + gMissing;

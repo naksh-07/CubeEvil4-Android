@@ -3372,6 +3372,8 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     input.clear();
     mouseButtons = 0;
     main.removeCallbacks(mouseRest);
+    main.removeCallbacks(touchZoom);
+    touchZoomDirection = 0;
     if (touchControls != null) touchControls.reset();
     send();
   }
@@ -3727,6 +3729,9 @@ public final class CoreActivity extends Activity implements InputManager.InputDe
     @Override public void run() {
       if (destroyed || !resumed) return;
       int r = CoreBridge.rumble();
+      if (touchControls != null && TouchStyle.isNative(touchControls.look())) {
+        touchControls.updateContext(CoreBridge.touchContext());
+      }
       long now = SystemClock.uptimeMillis();
       // the game shows a menu (bit 4): the button mappings give way to the devices' defaults
       boolean gameMenu = (r & 0x10) != 0;

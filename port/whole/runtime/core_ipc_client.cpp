@@ -1181,3 +1181,9 @@ long re4ipc_free_at(void)
     Control* c = control();
     return c ? (long) c->freeAt.load() : -1;
 }
+
+uint64_t re4ipc_touch_context(void)
+{
+    Control* c = control();
+    return c ? c->touchContext.load(std::memory_order_relaxed) : 0;
+}

@@ -1,0 +1,29 @@
+# Port patch (mods): expose active cActionButton kind/btn/flags per frame to runtime/touch_context.cpp
+# so NativeTouchOverlay renders contextual Capcom RE4 icons and QTE triggers.
+--- a/src/game/act_btn.cpp
++++ b/src/game/act_btn.cpp
+@@ -41,6 +41,8 @@
+ // shows the first valid one (unless Disp_flg 0x1000 hides prompts or flags bit3) and, when its
+ // button test passes, runs the action (type 0 call, 1 SceExec task, 2 scenario area action
+ // with its exec flag / one-shot disable); then clears the table.
++extern "C" void re4_touch_act_clear(void);
++extern "C" void re4_touch_act_set(int kind, int btn, int flags);
+ void cActionButton::move()
+ {
+     u32 tag;
+@@ -48,6 +50,7 @@
+ 
+     Cckpt.m_ActBttn.setDispFlag(0);
+     setActive(0);
++    re4_touch_act_clear();
+     if (SpfFlagChk(pG, SPF_ACTBTN) || (StaFlagChk(pG, STA_DIEDEMO)) || m_stop_flag_old) {
+         init();
+         return;
+@@ -65,6 +68,7 @@
+         }
+         setActive(1);
+         if (!DpfFlagChk(pG, DPF_ACTBTN) && !(w->flags & ACTCTR_NO_DISP)) {
++            re4_touch_act_set((int) w->kind, (int) w->btn, (int) w->flags);
+             disp(w);
+             if (w->type == ACT_FUNC_SCE_AT) {
+                 re4_pickup_preview(w->arg); /* port (patch 0948, mods): the item's name before it is taken */

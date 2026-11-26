@@ -501,6 +501,8 @@ public final class CoreBridge {
   public static native void setLogFile(String path);
   /** Game frames so far (one per controller read), -1 without the counter. */
   public static native long gameFrames();
+  /** Packed 64-bit player/weapon/action/QTE context for native touch HUD (runtime/touch_context.cpp). */
+  public static native long touchContext();
   /** Pictures put on the screen so far: each game picture once, with "60 FPS" also the in-between ones. */
   public static native long pictures();
   /** The game stands without a pause for `seconds`: where its thread is, into the error log. */

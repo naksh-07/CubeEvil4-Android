@@ -320,7 +320,8 @@ add_library(re4_gamehooks_obj OBJECT runtime/state_trace.cpp runtime/core_bridge
     runtime/lock_on.cpp runtime/blink.cpp runtime/wheel_zoom.cpp runtime/enemy_random.cpp runtime/rt_shadow.cpp
     runtime/ashley_catchup.cpp runtime/health_bars.cpp runtime/mouse_menu.cpp
     runtime/title_skip.cpp
-    runtime/photo_mode.cpp)
+    runtime/photo_mode.cpp
+    runtime/touch_context.cpp)
 target_link_libraries(re4_gamehooks_obj PRIVATE re4_game_flags)
 target_include_directories(re4_gamehooks_obj PRIVATE runtime)
 string(APPEND RE4_LINK_OBJECTS "main=$<TARGET_OBJECTS:re4_gamehooks_obj>\n")

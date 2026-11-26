@@ -164,6 +164,7 @@ struct Control {
     // core process -> app, written once per game frame (its frame hook)
     alignas(64) std::atomic<uint32_t> rumble, frames;
     std::atomic<int32_t> freeAt;
+    std::atomic<uint64_t> touchContext;
     std::atomic<uint32_t> audioStats[5];
     std::atomic<uint32_t> audioSurround;  // re4_core_audio_surround: the game plays in Dolby Pro Logic II
     // the state frames: the index of the middle buffer | kSnapshotNew
@@ -191,6 +192,7 @@ struct Control {
 
 static_assert(std::atomic<uint32_t>::is_always_lock_free, "shared atomics must be lock-free");
 static_assert(std::atomic<int32_t>::is_always_lock_free, "shared atomics must be lock-free");
+static_assert(std::atomic<uint64_t>::is_always_lock_free, "shared atomics must be lock-free");
 
 // The bytes of the control block (header, three state frames, the sound ring).
 size_t controlBytes();

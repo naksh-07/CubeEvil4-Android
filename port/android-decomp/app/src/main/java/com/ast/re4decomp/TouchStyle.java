@@ -32,13 +32,15 @@ final class TouchStyle {
   /** RetroTouch's style without skins (the base of RE). */
   static final RetroTouchButtonStyle DEFAULT_BUTTON_STYLE = RetroTouchButtonStyle.ICONS;
 
-  /** The skins, in the order of the app menu and of the editor's style button. */
-  static final int RE = 0, GC = 1, PS2 = 2, XBOX = 3, LOOKS = 4;
+  /** The skins, in the order of the app menu and of the editor's style button (plus NATIVE overlay mode). */
+  static final int RE = 0, GC = 1, PS2 = 2, XBOX = 3, LOOKS = 4, NATIVE = 4;
   /** Their IDs (RetroTouch saves the chosen one) and names (the menu's buttons, the editor's style button). */
   static final String[] IDS = {"re", "gc", "ps2", "xbox"};
   static final String[] NAMES = {"RE", "GC", "PS2", "XBOX"};
   /** A new player's skin. */
   static final int DEFAULT_LOOK = RE;
+
+  static boolean isNative(int look) { return look == NATIVE; }
 
   /** The skin number of a skin ID, the default for an unknown one. */
   static int look(String id) {

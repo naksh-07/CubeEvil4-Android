@@ -415,6 +415,8 @@ void re4_core_slash(float tilt);
  * app notices a game that stands without a pause and samples where it is. */
 unsigned re4_core_frame_count(void);
 int re4_core_game_thread(void);
+/* Packed 64-bit player/weapon/action/QTE state for native touch HUD (runtime/touch_context.cpp). */
+uint64_t re4_core_touch_context(void);
 /* The memory card for the menu (runtime/re4_card_files.h, Re4CardFile):
  * only while the game stands and does not use the card, RE4_CARD_BUSY
  * otherwise. List, free blocks, the .gci name Dolphin gives a file, export
